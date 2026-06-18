@@ -95,8 +95,6 @@ def _validate_row(
             val = _to_decimal(row[field])
             if val is None:
                 errors.append(f"字段 '{field}' 不是有效数字")
-            elif val < 0:
-                errors.append(f"字段 '{field}' 不能为负数")
 
     # 3. 整数字段检查
     int_fields = ["fiscal_year", "period", "attachment_count", "account_level"]
@@ -196,8 +194,8 @@ async def validate_rows(
 
             valid_rows.append({"row_number": i, "data": normalized})
 
-    # 借贷平衡校验（批量）
-    _validate_balance(valid_rows, error_rows, data_type)
+    # 借贷平衡校验（关闭 — 多级科目导入时下级科目不一定借贷相等，由审计阶段另行检查）
+    # _validate_balance(valid_rows, error_rows, data_type)
 
     return valid_rows, error_rows
 
