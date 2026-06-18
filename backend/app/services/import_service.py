@@ -1,0 +1,119 @@
+"""导入服务 — 整合解析、匹配、校验、批量写入"""
+
+import uuid
+from pathlib import Path
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.file_parser import parse_file, parse_file_info
+from app.services.column_matcher import auto_match, apply_mapping, map_row, TYPE_FIELDS
+from app.services.validator import validate_rows
+
+from app.models.trial_balance import TrialBalance
+from app.models.journal_entry import JournalEntry
+from app.models.subsidiary_ledger import SubsidiaryLedger
+
+# 数据类型 → ORM 模型
+MODEL_MAP = {
+    "trial_balance": TrialBalance,
+    "journal": JournalEntry,
+    "subsidiary": SubsidiaryLedger,
+}
+
+
+async def preview_import(file_path: str, data_type: str) -> dict:
+    """
+    预览导入：解析文件并返回匹配结果，不实际写入数据库。
+
+    Returns:
+        {
+            "file_name": "...",
+            "headers": [...],
+            "matched": {...},
+            "unmatched": [...],
+            "missing": [...],
+            "preview_rows": [[...], ...],
+            "row_count": 1000
+        }
+    """
+    info = parse_file_info(file_path)
+    match_result = auto_match(info["headers"], data_type)
+
+    return {
+        "file_name": info["file_name"],
+        "headers": info["headers"],
+        "matched": match_result["matched"],
+        "unmatched": match_result["unmatched"],
+        "missing": match_result["missing"],
+        "preview_rows": info["preview_rows"],
+        "row_count": info["row_count"],
+        "data_type": data_type,
+    }
+
+
+async def import_data(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    file_path: str,
+    data_type: str,
+    column_mapping: dict[str, str] | None = None,
+) -> dict:
+    """
+    完整导入流程：
+    1. 解析文件
+    2. 列匹配（自动或使用用户映射）
+    3. 数据校验
+    4. 批量写入
+    5. 返回结果
+    """
+    # 1. 解析
+    headers, raw_rows = parse_file(file_path)
+
+    # 2. 匹配
+    if column_mapping is None:
+        # 自动匹配：auto_match 返回 {"标准字段": "原始表头"}
+        match_result = auto_match(headers, data_type)
+        field_to_header = match_result["matched"]
+    else:
+        # 用户映射：传入 {"原始表头": "标准字段"}，需要反转
+        field_to_header = {v: k for k, v in column_mapping.items()}
+
+    # 3. 将原始行转为标准字典
+    mapped_rows = []
+    for row in raw_rows:
+        mapped = map_row(row, headers, field_to_header)
+        # 补充公司 ID
+        mapped["company_id"] = company_id
+        mapped_rows.append(mapped)
+
+    # 4. 校验
+    valid_rows, error_rows = await validate_rows(db, company_id, mapped_rows, data_type)
+    total = len(raw_rows)
+
+    # 5. 批量写入
+    model_class = MODEL_MAP.get(data_type)
+    if model_class is None:
+        raise ValueError(f"未知的数据类型: {data_type}")
+
+    success_count = 0
+    objects = []
+    for item in valid_rows:
+        data = item["data"]
+        obj = model_class(**data)
+        objects.append(obj)
+
+    if objects:
+        db.add_all(objects)
+        await db.flush()
+        success_count = len(objects)
+
+    return {
+        "total": total,
+        "success": success_count,
+        "errors": [
+            {"row": e.get("row_number"), "message": "; ".join(e["errors"])}
+            for e in error_rows
+        ],
+        "file_name": Path(file_path).name,
+        "data_type": data_type,
+    }
