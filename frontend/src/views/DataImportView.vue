@@ -114,7 +114,7 @@
                     </div>
                     <div class="req-item">
                       <span class="req-dot"></span>
-                      单文件最大 10MB
+                      单文件不超过十兆
                     </div>
                     <div class="req-item">
                       <span class="req-dot"></span>
