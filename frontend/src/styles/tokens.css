@@ -1,0 +1,154 @@
+/* ================================================================
+   审计系统基座 — 设计 Token · 审计工作台
+   风格：专业蓝灰 · Minimalism · 企业级 SaaS 操作台
+   ================================================================ */
+
+:root {
+  /* ===== 主色系 (Professional Blue-Gray) ===== */
+  --color-primary-50: #eff4fa;
+  --color-primary-100: #dce6f3;
+  --color-primary-200: #b7cde6;
+  --color-primary-300: #89acd4;
+  --color-primary-400: #5c8bbf;
+  --color-primary-500: #3b6ea5;   /* 主色 — 专业蓝灰 */
+  --color-primary-600: #2f5887;
+  --color-primary-700: #244569;
+  --color-primary-800: #1a324c;
+  --color-primary-900: #0f1f30;
+
+  /* ===== 中性色 (Cool Gray) ===== */
+  --color-gray-50: #f7f8fa;
+  --color-gray-100: #f1f3f6;
+  --color-gray-200: #e4e7ec;
+  --color-gray-300: #cdd2d9;
+  --color-gray-400: #9aa0ab;
+  --color-gray-500: #727883;
+  --color-gray-600: #5a5f68;
+  --color-gray-700: #3d4148;
+  --color-gray-800: #2a2d33;
+  --color-gray-900: #16181c;
+
+  /* ===== 功能色 (Semantic · 低饱和) ===== */
+  --color-success: #4caf7d;
+  --color-success-light: #e8f5ef;
+  --color-success-dark: #3a8b63;
+  --color-warning: #d4913e;
+  --color-warning-light: #faf0e3;
+  --color-warning-dark: #b0742e;
+  --color-danger: #d95555;
+  --color-danger-light: #fbeaeb;
+  --color-danger-dark: #b44444;
+  --color-info: #727883;
+  --color-info-light: #eaebed;
+  --color-info-dark: #5a5f68;
+
+  /* ===== 侧边栏暗色轨道专用 ===== */
+  --color-track-bg: #1c2128;
+  --color-track-bg-hover: #262b33;
+  --color-track-bg-active: #2a323d;
+  --color-track-icon: #8894a3;
+  --color-track-icon-active: #dce6f3;
+  --color-track-border: rgba(255, 255, 255, 0.06);
+  --color-track-accent: #5c8bbf;      /* 左边线发光色 */
+
+  /* ===== 工作区面板 ===== */
+  --color-panel-bg: #f5f6f8;
+  --color-panel-border: #e4e7ec;
+
+  /* ===== 语义 Token (Semantic Tokens) ===== */
+  /* 文字 */
+  --text-primary: var(--color-gray-800);
+  --text-regular: var(--color-gray-700);
+  --text-secondary: var(--color-gray-600);
+  --text-placeholder: var(--color-gray-400);
+  --text-disabled: var(--color-gray-400);
+  --text-inverse: #ffffff;
+
+  /* 表面/背景 */
+  --bg-page: var(--color-gray-50);
+  --bg-card: #ffffff;
+  --bg-sidebar: var(--color-track-bg);
+  --bg-header: #ffffff;
+
+  /* 边框 */
+  --border-base: var(--color-gray-300);
+  --border-light: var(--color-gray-200);
+  --border-lighter: var(--color-gray-100);
+
+  /* 链接 */
+  --link-color: var(--color-primary-500);
+  --link-hover: var(--color-primary-400);
+
+  /* ===== 字体 (Typography) ===== */
+  --font-family-base: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 17px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 22px;
+  --font-size-3xl: 26px;
+  --font-size-number: 28px;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.25;
+  --line-height-base: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* ===== 间距 (4px base) ===== */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-7: 28px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+
+  /* ===== 圆角 (6-8px 为主) ===== */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-full: 9999px;
+
+  /* ===== 阴影 (收紧使用，边框为主) ===== */
+  --shadow-none: none;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 4px -1px rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 6px 12px -3px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+  --shadow-xl: 0 12px 20px -5px rgba(0, 0, 0, 0.08), 0 4px 8px -4px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+  --shadow-card-hover: 0 2px 8px rgba(59, 110, 165, 0.10);
+
+  /* ===== 过渡 ===== */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-ease-out: 250ms cubic-bezier(0.33, 1, 0.68, 1);
+
+  /* ===== Z-Index ===== */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-toast: 1080;
+
+  /* ===== 布局 (Shell) ===== */
+  --track-width: 56px;
+  --panel-width: 168px;
+  --header-height: 56px;
+  --content-max-width: 1320px;
+}

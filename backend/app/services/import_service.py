@@ -57,6 +57,8 @@ async def import_data(
     file_path: str,
     data_type: str,
     column_mapping: dict[str, str] | None = None,
+    fiscal_year: int | None = None,
+    period: int | None = None,
 ) -> dict:
     """
     完整导入流程：
@@ -82,13 +84,33 @@ async def import_data(
     mapped_rows = []
     for row in raw_rows:
         mapped = map_row(row, headers, field_to_header)
-        # 补充公司 ID
         mapped["company_id"] = company_id
+        # 手动指定的会计年度/期间（文件中无此列时使用）
+        if fiscal_year is not None and "fiscal_year" not in mapped:
+            mapped["fiscal_year"] = fiscal_year
+        if period is not None and "period" not in mapped:
+            mapped["period"] = period
         mapped_rows.append(mapped)
 
     # 4. 校验
     valid_rows, error_rows = await validate_rows(db, company_id, mapped_rows, data_type)
     total = len(raw_rows)
+
+    # 4.5 入库前最终守卫：确保每一行都有 fiscal_year 和 period
+    # （防止文件无此列且用户未传手动参数时穿透到数据库 NOT NULL 约束）
+    _valid_rows_filtered = []
+    for item in valid_rows:
+        d = item["data"]
+        row_errors = []
+        if "fiscal_year" not in d or d["fiscal_year"] is None:
+            row_errors.append("缺少会计年度（fiscal_year），请在文件中包含该列或通过导入参数手动指定")
+        if "period" not in d or d["period"] is None:
+            row_errors.append("缺少会计期间（period），请在文件中包含该列或通过导入参数手动指定")
+        if row_errors:
+            error_rows.append({"row_number": item["row_number"], "data": d, "errors": row_errors})
+        else:
+            _valid_rows_filtered.append(item)
+    valid_rows = _valid_rows_filtered
 
     # 5. 批量写入
     model_class = MODEL_MAP.get(data_type)

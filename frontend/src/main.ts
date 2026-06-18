@@ -6,6 +6,7 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import App from './App.vue'
 import router from './router'
 import './styles/global.css'
+import './styles/element-overrides.css'
 
 const app = createApp(App)
 app.use(ElementPlus, { locale: zhCn })

@@ -64,6 +64,8 @@ async def execute(
     company_id: str = Form(..., description="被审计单位 ID"),
     data_type: str = Form(..., description="数据类型: trial_balance / journal / subsidiary"),
     column_mapping: str | None = Form(None, description="JSON格式列映射: {\"原始表头\": \"标准字段\"}"),
+    fiscal_year: int | None = Form(None, description="会计年度（文件中无此列时手动指定）"),
+    period: int | None = Form(None, description="会计期间（文件中无此列时手动指定）"),
 ):
     """
     执行导入：上传文件 + 确认映射 → 校验 → 入库。
@@ -109,6 +111,8 @@ async def execute(
             file_path=str(file_path),
             data_type=data_type,
             column_mapping=mapping,
+            fiscal_year=fiscal_year,
+            period=period,
         )
         return result
     except Exception as e:

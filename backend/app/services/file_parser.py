@@ -59,7 +59,9 @@ def _parse_csv(file_path: str) -> tuple[list[str], list[list]]:
     data_rows = [
         [cell.strip() if isinstance(cell, str) else cell for cell in row]
         for row in data_rows
-        if any(cell not in (None, "", " ") for cell in row)
+        if any(
+            cell is not None and str(cell).strip() != "" for cell in row
+        )
     ]
 
     return headers, data_rows
