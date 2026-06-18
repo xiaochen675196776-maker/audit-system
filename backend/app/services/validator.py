@@ -194,8 +194,10 @@ async def validate_rows(
 
             valid_rows.append({"row_number": i, "data": normalized})
 
-    # 借贷平衡校验（关闭 — 多级科目导入时下级科目不一定借贷相等，由审计阶段另行检查）
-    # _validate_balance(valid_rows, error_rows, data_type)
+    # 借贷平衡校验 — 只对序时账做凭证级借贷平衡校验
+    # 科目余额表存在多级科目和汇总科目，不能按普通借贷合计直接拦截
+    if data_type == "journal":
+        _validate_journal_balance(valid_rows, error_rows)
 
     return valid_rows, error_rows
 

@@ -91,8 +91,8 @@ class TestValidateRow:
         errors = _validate_row(row, "trial_balance", required, set())
         assert any("account_code" in e for e in errors)
 
-    def test_negative_amount_error(self):
-        """金额为负数 → 错误"""
+    def test_negative_amount_allowed(self):
+        """负数金额 → 允许导入（最新口径不拦截）"""
         row = {
             "fiscal_year": "2024", "period": "1",
             "account_code": "1001", "account_name": "现金",
@@ -103,7 +103,8 @@ class TestValidateRow:
         }
         required = REQUIRED_FIELDS["trial_balance"]
         errors = _validate_row(row, "trial_balance", required, set())
-        assert any("不能为负数" in e for e in errors)
+        # 负数金额是正确的数字，应通过校验
+        assert errors == []
 
     def test_valid_row_no_errors(self):
         """完整有效行无错误"""

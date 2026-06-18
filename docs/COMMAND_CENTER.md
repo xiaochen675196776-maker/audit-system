@@ -67,28 +67,33 @@
 | `docs/tasks/TASK-011-ui-acceptance-fixes-round2.md` | DONE | 已执行但验收未通过 | 修复单位页错误提示、接口契约和手机空状态裁切 |
 | `docs/tasks/TASK-012-ui-copy-normalization.md` | DONE | 已执行但验收未通过 | 界面文案去包装化，用户可见界面不出现英文 |
 | `docs/tasks/TASK-013-ui-final-acceptance-fixes.md` | DONE | 已执行但验收未通过 | 修复 11/12 验收剩余阻塞项 |
-| `docs/tasks/TASK-014-visible-english-final-cleanup.md` | OPEN | 先执行 | 清理最后的用户可见英文与设计计划英文 |
+| `docs/tasks/TASK-014-visible-english-final-cleanup.md` | DONE | 已验收 | 清理最后的用户可见英文与设计计划英文 |
+| `docs/tasks/TASK-015-backend-import-validation-regression.md` | OPEN | 先执行 | 按新口径修复序时账借贷平衡校验并调整后端测试 |
+| `docs/tasks/TASK-016-import-initial-validation-hints.md` | OPEN | 可并行 | 修复导入页初始红色缺列误提示 |
 
 ## 推荐执行顺序
 
-1. 当前优先执行 `TASK-014`，清理最后的用户可见英文和设计计划英文。
-2. `TASK-014` 通过前，不再领取新的 UI 美化任务。
+1. 当前优先执行 `TASK-015`，只修序时账凭证借贷不平衡拦截，并把负数金额测试改成允许导入。
+2. `TASK-016` 可与 `TASK-015` 并行，范围只限数据导入页初始提示。
 3. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
 
 ## 最近一次总指挥验收
 
 - 验收日期：2026-06-18
-- 结论：不通过，已发布 `TASK-014` 修复最后阻塞项
-- 验收范围：`TASK-013`，重点复核 480px 单位页空状态、用户可见英文、接口请求和空白错误提示。
+- 结论：`TASK-014` 通过；系统整体不通过，已发布 `TASK-015` 和 `TASK-016`
+- 验收范围：`TASK-014`、三页浏览器烟测、后端导入测试。
 - 验收结果：
-  - `npm run build`：通过
-  - `git diff --check`：通过
-  - 包装词扫描：通过，`审计指挥舱`、`COMMAND CENTER`、`导入流水线`、`风险队列` 等零命中。
-  - 单位页接口契约：通过，请求为 `page_size=100`，浏览器网络记录返回 200，不再出现 422。
-  - 空白错误提示：通过，本轮没有空白红色 toast。
-  - 480px 单位页空状态：通过，独立空状态容器和按钮完整显示，按钮右侧未超出 480px 可视区。
-  - 用户可见英文：未通过，数据导入页仍显示 `单文件最大 10MB`。
-  - 设计计划文档：未通过，`docs/UI_OPTIMIZATION_PLAN.md` 仍有 `CRUD`。
+  - `npm run build`：通过。
+  - `git diff --check -- frontend docs`：通过。
+  - 英文残留扫描：通过，仅命中 `accept=".xlsx,.csv,.xls"` 技术属性和 `error.ts` 英文错误翻译匹配字符串。
+  - `node screenshot.cjs`：通过，生成桌面、平板、手机共 9 张截图。
+  - `/`、`/data/import`、`/data/companies`：浏览器控制台无错误，接口请求无失败。
+  - 480px 响应式：三页 `scrollWidth` 等于 `clientWidth`，未发现横向溢出。
+  - `/data/import`：不再显示 `10MB`、`CRUD`、`Network Error`、`Input should`。
+  - `/data/companies`：接口返回 200，新建单位弹窗可打开，空表单校验为中文。
+  - 后端 `D:\python\python.exe -m compileall app`：通过。
+  - 后端 `D:\python\python.exe -m pytest -q`：未通过，`3 failed, 79 passed, 1 warning`。按最新口径，两条负数金额失败属于测试口径失效，应改为允许负数金额；真正需要修复的是序时账凭证借贷不平衡未检出。
+  - 新发现非阻塞 UI 缺陷：`/data/import` 初始未上传文件时显示红色 `文件未含年度列，必须填写` 和 `文件未含期间列，必须填写`。
 
 ## 总指挥验收命令
 

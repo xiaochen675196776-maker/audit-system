@@ -252,8 +252,8 @@ class TestImportDataErrors:
             os.unlink(tmp.name)
 
     @pytest.mark.asyncio
-    async def test_negative_amount_rejected(self, db, sample_company_id):
-        """负数金额 → 进入错误行"""
+    async def test_negative_amount_allowed(self, db, sample_company_id):
+        """负数金额 → 允许导入（最新口径不拦截）"""
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
         )
@@ -268,9 +268,9 @@ class TestImportDataErrors:
                 db=db, company_id=sample_company_id,
                 file_path=tmp.name, data_type="journal",
             )
-            assert result["success"] == 0
-            assert len(result["errors"]) >= 1
-            assert any("不能为负数" in e["message"] for e in result["errors"])
+            # 负数金额是有效数字，应正常导入
+            assert result["success"] == 1
+            assert result["errors"] == []
         finally:
             os.unlink(tmp.name)
 

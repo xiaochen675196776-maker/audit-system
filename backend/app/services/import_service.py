@@ -81,6 +81,9 @@ async def import_data(
         field_to_header = {v: k for k, v in column_mapping.items()}
 
     # 3. 将原始行转为标准字典
+    known_fields = set(TYPE_FIELDS.get(data_type, []))
+    known_fields.add("company_id")  # 不是 TYPE_FIELDS 但需要传入模型
+
     mapped_rows = []
     for row in raw_rows:
         mapped = map_row(row, headers, field_to_header)
@@ -90,6 +93,15 @@ async def import_data(
             mapped["fiscal_year"] = fiscal_year
         if period is not None and "period" not in mapped:
             mapped["period"] = period
+
+        # 分离非标准字段 → extra_fields JSON
+        extra = {}
+        for key in list(mapped.keys()):
+            if key not in known_fields and mapped[key] is not None and mapped[key] != "":
+                extra[key] = mapped.pop(key)
+        if extra:
+            mapped["extra_fields"] = extra
+
         mapped_rows.append(mapped)
 
     # 4. 校验

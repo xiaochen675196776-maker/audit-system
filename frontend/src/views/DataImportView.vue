@@ -55,32 +55,32 @@
 
                 <el-row :gutter="12">
                   <el-col :span="12">
-                    <el-form-item label="会计年度" :required="!fileHasFiscalYear">
+                    <el-form-item label="会计年度" :required="previewDone && !fileHasFiscalYear">
                       <el-input-number
                         v-model="manualFiscalYear"
                         :min="2000"
                         :max="2100"
-                        :placeholder="fileHasFiscalYear ? '已在文件中' : '如 2025'"
+                        :placeholder="previewDone ? (fileHasFiscalYear ? '已在文件中' : '如 2025') : '上传文件后识别'"
                         controls-position="right"
                         class="form-full"
                       />
-                      <div class="field-note" :class="{ required: !fileHasFiscalYear }">
-                        {{ fileHasFiscalYear ? '✓ 已在文件中识别' : '文件未含年度列，必须填写' }}
+                      <div class="field-note" :class="{ required: previewDone && !fileHasFiscalYear }">
+                        {{ previewDone ? (fileHasFiscalYear ? '✓ 已在文件中识别' : '文件未含年度列，必须填写') : '上传文件后自动识别' }}
                       </div>
                     </el-form-item>
                   </el-col>
                   <el-col :span="12">
-                    <el-form-item label="会计期间" :required="!fileHasPeriod">
+                    <el-form-item label="会计期间" :required="previewDone && !fileHasPeriod">
                       <el-input-number
                         v-model="manualPeriod"
                         :min="1"
                         :max="12"
-                        :placeholder="fileHasPeriod ? '已在文件中' : '如 12'"
+                        :placeholder="previewDone ? (fileHasPeriod ? '已在文件中' : '如 12') : '上传文件后识别'"
                         controls-position="right"
                         class="form-full"
                       />
-                      <div class="field-note" :class="{ required: !fileHasPeriod }">
-                        {{ fileHasPeriod ? '✓ 已在文件中识别' : '文件未含期间列，必须填写' }}
+                      <div class="field-note" :class="{ required: previewDone && !fileHasPeriod }">
+                        {{ previewDone ? (fileHasPeriod ? '✓ 已在文件中识别' : '文件未含期间列，必须填写') : '上传文件后自动识别' }}
                       </div>
                     </el-form-item>
                   </el-col>
@@ -188,6 +188,7 @@
                         :placeholder="row.field_key ? undefined : '选择字段…'"
                         size="small"
                         class="map-select"
+                        :teleported="false"
                       >
                         <el-option-group label="操作">
                           <el-option label="⊘ 忽略此列" value="__ignore__" />
@@ -198,6 +199,14 @@
                             :key="f.value"
                             :label="f.label"
                             :value="f.value"
+                          />
+                        </el-option-group>
+                        <el-option-group label="辅助字段">
+                          <el-option
+                            v-for="(af, ai) in auxFields"
+                            :key="'aux' + ai"
+                            :label="af.name || '辅助字段' + (ai + 1)"
+                            :value="'__aux__' + ai"
                           />
                         </el-option-group>
                       </el-select>
@@ -270,6 +279,31 @@
                     <span class="check-dot" :class="manualPeriod ? 'ok' : 'warn'"></span>
                     <span>会计期间：{{ manualPeriod || '未填写' }}</span>
                     <span v-if="fileHasPeriod" class="check-note">（文件已含）</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 辅助字段命名 -->
+              <div class="check-block">
+                <div class="check-block-title">
+                  <el-icon :size="14"><EditPen /></el-icon>
+                  辅助字段命名（在映射中选「辅助字段」后在此命名）
+                </div>
+                <div class="check-list">
+                  <div
+                    v-for="(af, ai) in auxFields"
+                    :key="'auxname' + ai"
+                    class="check-item aux-name-row"
+                  >
+                    <span class="check-dot muted"></span>
+                    <span class="aux-name-label">辅助{{ ai + 1 }}</span>
+                    <el-input
+                      v-model="auxFields[ai].name"
+                      size="small"
+                      placeholder="输入字段名"
+                      class="aux-name-input"
+                      clearable
+                    />
                   </div>
                 </div>
               </div>
@@ -452,12 +486,18 @@ const companies = ref<Company[]>([])
 const manualFiscalYear = ref<number | null>(null)
 const manualPeriod = ref<number | null>(null)
 
+// 6 个辅助字段（用户可自定义名称）
+const auxFields = ref<{ name: string }[]>(
+  Array.from({ length: 6 }, () => ({ name: '' }))
+)
+
 // ===== 步骤 2：映射 =====
 const mappings = ref<MappingRow[]>([])
 const previewRows = ref<Record<string, string>[]>([])
 const previewHeaders = ref<string[]>([])
 const missingFields = ref<string[]>([])
 const previewing = ref(false)
+const previewDone = ref(false)
 const previewError = ref('')
 
 // 字段选项（value 必须与后端 TYPE_FIELDS / KEYWORD_MAP 完全一致）
@@ -507,9 +547,23 @@ const fieldOptions: Record<string, { label: string; value: string }[]> = {
 const availableFields = computed(() => fieldOptions[dataType.value] || [])
 
 // 统计
-const mappedCount = computed(() => mappings.value.filter((m) => m.field_key && m.field_key !== '__ignore__').length)
-const ignoredCount = computed(() => mappings.value.filter((m) => m.field_key === '__ignore__').length)
-const ignoredColumns = computed(() => mappings.value.filter((m) => m.field_key === '__ignore__'))
+const mappedCount = computed(() =>
+  mappings.value.filter((m) => m.field_key && m.field_key !== '__ignore__').length
+)
+const ignoredCount = computed(() =>
+  mappings.value.filter((m) => m.field_key === '__ignore__').length
+)
+const ignoredColumns = computed(() =>
+  mappings.value.filter((m) => m.field_key === '__ignore__')
+)
+
+// 获取辅助字段的实际名称（用于展示）
+function auxFieldDisplayName(key: string): string {
+  const match = key.match(/^__aux__(\d+)$/)
+  if (!match) return key
+  const idx = parseInt(match[1])
+  return auxFields.value[idx]?.name || `辅助字段${idx + 1}`
+}
 
 // 文件中是否已包含年度/期间列
 const fileHasFiscalYear = computed(() => mappings.value.some((m) => m.field_key === 'fiscal_year'))
@@ -669,6 +723,7 @@ async function goPreview() {
     })
 
     previewError.value = ''
+    previewDone.value = true
     activeStep.value = 1
   } catch (e: any) {
     const msg = extractError(e, '文件解析失败')
@@ -694,7 +749,11 @@ async function goExecute() {
     const columnMapping: Record<string, string> = {}
     for (const m of mappings.value) {
       if (m.field_key && m.field_key !== '__ignore__') {
-        columnMapping[m.file_column] = m.field_key
+        // 辅助字段 → 使用用户自定义名称
+        const resolvedKey = m.field_key.startsWith('__aux__')
+          ? auxFieldDisplayName(m.field_key)
+          : m.field_key
+        columnMapping[m.file_column] = resolvedKey
       }
     }
 
@@ -743,6 +802,7 @@ function resetImport() {
   dataType.value = 'trial_balance'
   manualFiscalYear.value = null
   manualPeriod.value = null
+  auxFields.value = Array.from({ length: 6 }, () => ({ name: '' }))
   fileList.value = []
   uploadRef.value?.clearFiles()
   mappings.value = []
@@ -750,6 +810,7 @@ function resetImport() {
   previewHeaders.value = []
   missingFields.value = []
   previewError.value = ''
+  previewDone.value = false
   previewing.value = false
   executing.value = false
   progress.value = 0
@@ -1051,6 +1112,10 @@ onMounted(() => {
   width: 100%;
 }
 
+.map-select :deep(.el-select-dropdown__wrap) {
+  max-height: 200px !important;
+}
+
 .sample-val {
   background: var(--color-gray-100);
   padding: 1px 6px;
@@ -1183,6 +1248,29 @@ onMounted(() => {
 .check-note {
   font-size: var(--font-size-xs);
   color: var(--text-placeholder);
+}
+
+/* 辅助字段命名 */
+.aux-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.aux-name-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  min-width: 42px;
+}
+
+.aux-name-input {
+  flex: 1;
+}
+
+.aux-name-input :deep(.el-input__inner) {
+  height: 28px;
+  font-size: var(--font-size-xs);
 }
 
 .check-all-ok {
