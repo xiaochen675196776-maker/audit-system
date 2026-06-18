@@ -68,32 +68,25 @@
 | `docs/tasks/TASK-012-ui-copy-normalization.md` | DONE | 已执行但验收未通过 | 界面文案去包装化，用户可见界面不出现英文 |
 | `docs/tasks/TASK-013-ui-final-acceptance-fixes.md` | DONE | 已执行但验收未通过 | 修复 11/12 验收剩余阻塞项 |
 | `docs/tasks/TASK-014-visible-english-final-cleanup.md` | DONE | 已验收 | 清理最后的用户可见英文与设计计划英文 |
-| `docs/tasks/TASK-015-backend-import-validation-regression.md` | OPEN | 先执行 | 按新口径修复序时账借贷平衡校验并调整后端测试 |
-| `docs/tasks/TASK-016-import-initial-validation-hints.md` | OPEN | 可并行 | 修复导入页初始红色缺列误提示 |
+| `docs/tasks/TASK-015-backend-import-validation-regression.md` | DONE | 已验收 | 按新口径修复序时账借贷平衡校验并调整后端测试 |
+| `docs/tasks/TASK-016-import-initial-validation-hints.md` | DONE | 已验收 | 修复导入页初始红色缺列误提示 |
+| `docs/tasks/TASK-017-field-mapping-layout-overflow.md` | OPEN | 先执行 | 修复字段映射页横向撑爆和右侧检查面板被挤出 |
 
 ## 推荐执行顺序
 
-1. 当前优先执行 `TASK-015`，只修序时账凭证借贷不平衡拦截，并把负数金额测试改成允许导入。
-2. `TASK-016` 可与 `TASK-015` 并行，范围只限数据导入页初始提示。
+1. 当前优先执行 `TASK-017`，修复字段映射页横向溢出。
+2. `TASK-017` 通过前，不再领取新的 UI 美化任务。
 3. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
 
 ## 最近一次总指挥验收
 
 - 验收日期：2026-06-18
-- 结论：`TASK-014` 通过；系统整体不通过，已发布 `TASK-015` 和 `TASK-016`
-- 验收范围：`TASK-014`、三页浏览器烟测、后端导入测试。
+- 结论：发现新的 UI 阻塞项，已发布 `TASK-017`
+- 验收范围：用户截图复核、字段映射页布局风险定位。
 - 验收结果：
-  - `npm run build`：通过。
-  - `git diff --check -- frontend docs`：通过。
-  - 英文残留扫描：通过，仅命中 `accept=".xlsx,.csv,.xls"` 技术属性和 `error.ts` 英文错误翻译匹配字符串。
-  - `node screenshot.cjs`：通过，生成桌面、平板、手机共 9 张截图。
-  - `/`、`/data/import`、`/data/companies`：浏览器控制台无错误，接口请求无失败。
-  - 480px 响应式：三页 `scrollWidth` 等于 `clientWidth`，未发现横向溢出。
-  - `/data/import`：不再显示 `10MB`、`CRUD`、`Network Error`、`Input should`。
-  - `/data/companies`：接口返回 200，新建单位弹窗可打开，空表单校验为中文。
-  - 后端 `D:\python\python.exe -m compileall app`：通过。
-  - 后端 `D:\python\python.exe -m pytest -q`：未通过，`3 failed, 79 passed, 1 warning`。按最新口径，两条负数金额失败属于测试口径失效，应改为允许负数金额；真正需要修复的是序时账凭证借贷不平衡未检出。
-  - 新发现非阻塞 UI 缺陷：`/data/import` 初始未上传文件时显示红色 `文件未含年度列，必须填写` 和 `文件未含期间列，必须填写`。
+  - 用户截图显示 `/data/import` 第 2 步字段映射表横向撑爆，右侧检查面板不可见或被挤出。
+  - 初步定位为字段映射页 CSS 宽度约束问题，不是导入业务逻辑问题。
+  - `TASK-017` 要求修复桌面和 480px 下的页面级横向溢出，同时不能回归字段下拉选择能力。
 
 ## 总指挥验收命令
 

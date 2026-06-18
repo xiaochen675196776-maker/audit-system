@@ -188,7 +188,8 @@
                         :placeholder="row.field_key ? undefined : '选择字段…'"
                         size="small"
                         class="map-select"
-                        :teleported="false"
+                        popper-class="map-select-popper"
+                        :teleported="true"
                       >
                         <el-option-group label="操作">
                           <el-option label="⊘ 忽略此列" value="__ignore__" />
@@ -1068,8 +1069,13 @@ onMounted(() => {
 
 .step2-layout {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: var(--spacing-5);
+}
+
+.step2-table {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-header-row {
@@ -1089,7 +1095,9 @@ onMounted(() => {
 .preview-card {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
   margin-bottom: var(--spacing-4);
 }
 
@@ -1110,9 +1118,10 @@ onMounted(() => {
 
 .map-select {
   width: 100%;
+  max-width: 220px;
 }
 
-.map-select :deep(.el-select-dropdown__wrap) {
+:global(.map-select-popper .el-select-dropdown__wrap) {
   max-height: 200px !important;
 }
 
@@ -1160,6 +1169,9 @@ onMounted(() => {
   border-radius: var(--radius-lg);
   padding: var(--spacing-4);
   height: fit-content;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .check-block {
