@@ -10,17 +10,17 @@ Python 3.12 + FastAPI · Vue 3 + Element Plus · PostgreSQL/SQLite · Docker Com
 
 ## 当前进度
 
-| 阶段 | 状态 | 会话 | 交付 |
-|------|------|------|------|
-| 项目骨架 | ✅ 完成 | — | backend/FastAPI + frontend/Vue3 + Docker Compose |
-| 数据模型 | ✅ 完成 | 会话 A | 五张 ORM 表 + Company CRUD API + Alembic 迁移 |
-| 导入引擎 | 🔲 待开始 | [会话 B](docs/sessions/session-b-import-engine.md) | 文件解析/智能匹配/校验/批量导入 |
-| 前端页面 | 🔲 待开始 | [会话 C](docs/sessions/session-c-frontend.md) | 公司管理/数据导入页/首页 |
-| 串联收尾 | 🔲 待开始 | 会话 D | API 对接 + 联调 + Docker 验证 |
+| 阶段 | 状态 | 交付 |
+|------|------|------|
+| 项目骨架 | ✅ 完成 | FastAPI + Vue3 + Docker Compose |
+| 数据模型 | ✅ 完成 | 5 张 ORM 表 + Company CRUD + Alembic 迁移 |
+| 导入引擎 | ✅ 完成 | 文件解析 / 智能匹配(83关键词) / 借贷校验 / 批量导入 |
+| 前端页面 | ✅ 完成 | 公司管理页 / 三步导入向导 / 首页仪表盘 |
+| 串联收尾 | 🔄 进行中 | 前后端联调 + Docker 验证 |
 
 ---
 
-## 核心 API（已可用）
+## 核心 API
 
 ```
 GET    /api/v1/health              健康检查
@@ -29,6 +29,8 @@ GET    /api/v1/companies/{id}      公司详情
 POST   /api/v1/companies           创建公司
 PUT    /api/v1/companies/{id}      更新公司
 DELETE /api/v1/companies/{id}      删除公司
+POST   /api/v1/imports/preview     预览导入（上传文件→返回匹配结果）
+POST   /api/v1/imports/execute     执行导入（上传文件→校验→入库）
 ```
 
 ## 数据库表
@@ -43,13 +45,6 @@ DELETE /api/v1/companies/{id}      删除公司
 
 ---
 
-## 如何开始新会话
-
-1. `git pull` 拉最新代码
-2. 打开对应的任务说明书（上方表格链接）
-3. 按说明书开发
-4. 完成后 `git push`
-
 ## 本地运行
 
 ```bash
@@ -58,8 +53,16 @@ cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# 前端
+# 前端（另一个终端）
 cd frontend
 npm install
 npm run dev
+# 打开 http://localhost:5173
+```
+
+## Docker 部署
+
+```bash
+docker compose up -d
+# 打开 http://localhost
 ```
