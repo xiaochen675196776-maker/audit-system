@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  # PostgreSQL 数据库
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit123
+      POSTGRES_DB: audit_system
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # FastAPI 后端
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://audit:audit123@db:5432/audit_system
+      DEBUG: "false"
+    volumes:
+      - ./backend/uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  # Vue 前端
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
