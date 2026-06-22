@@ -101,3 +101,20 @@ git diff --check -- backend frontend docs .gitignore
 
 - `TASK-020` 是下一步，其他 AI 应先完成列 ID / 映射契约 v2，再推进模板库后端和前端页面。
 - 当前工作区仍包含 `TASK-018` 已验收但未提交的源码、测试和文档改动；后续 AI 不得回滚。
+
+---
+
+### 2026-06-22 二次收口（Reasonix）
+
+**操作**：将 TASK-018/019 累积未提交改动收口为一次提交并推送。
+
+**提交**：`d3d3637` — 18 files, +1334/-30
+- 8 个已修改文件：.gitignore, imports.py, main.py, journal_entry.py, subsidiary_ledger.py, test_import_service.py, COMMAND_CENTER.md, error.ts
+- 10 个新建文件：schema.py, test_runtime_schema.py, TASK-018~TASK-025 任务文件
+
+**验收**：
+- pytest：89 passed, 0 failed
+- npm run build：通过，零类型错误
+- git diff --check：通过
+
+**GitHub 推送**：因当前网络环境限制（github.com:443 不可达），push 未成功。本地提交 `d3d3637` 已就绪，待网络恢复后执行 `git push origin master`。
