@@ -90,12 +90,13 @@
 | `docs/tasks/TASK-034-field-mapping-experience-frontend.md` | DONE | 已执行 | 导入页展示推荐来源、记录确认并提交记忆开关 |
 | `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 验收未通过，见 TASK-036 | 字段映射经验库总体验收与最小回归修复 |
 | `docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md` | DONE | 复验未通过，见 TASK-037 | 修复字段映射经验库验收阻塞项 |
-| `docs/tasks/TASK-037-template-source-confirmation-fixes.md` | DONE | 已执行 | 修复模板套用后的来源、置信度和确认记录 |
+| `docs/tasks/TASK-037-template-source-confirmation-fixes.md` | DONE | 复验未通过，见 TASK-038 | 修复模板套用后的来源、置信度和确认记录 |
+| `docs/tasks/TASK-038-cancel-template-confirmation-baseline.md` | DONE | 已执行 | 修复取消套用模板后的确认基准 |
 
 ## 推荐执行顺序
 
-1. 下一步执行 `TASK-037`，修复模板套用后的来源、置信度和确认记录。
-2. `TASK-037` 通过总指挥复验后，字段映射经验库第一版才算收口。
+1. 下一步执行 `TASK-038`，修复取消套用模板后的确认基准。
+2. `TASK-038` 通过总指挥复验后，字段映射经验库第一版才算收口。
 3. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
 4. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
 
@@ -152,6 +153,7 @@
   - `TASK-035`：总体验收，覆盖首次学习、再次推荐、冲突、关闭记忆、失败不保存、歧义字段、模板优先和重复表头。
   - `TASK-036`：修复总指挥验收发现的经验隔离、迁移、模板优先、前端展示和确认记录问题。
   - `TASK-037`：收口显式套用模板后的来源、置信度和确认记录。
+  - `TASK-038`：收口取消套用模板后的确认基准。
 
 ## 导入模板库验收未通过记录
 
@@ -220,32 +222,32 @@
 ## 最近一次总指挥验收
 
 - 验收日期：2026-06-22
-- 结论：`TASK-036` 不通过，必须先执行 `TASK-037`。
-- 验收范围：字段映射经验库验收阻塞修复，重点复核跨单位经验隔离、排序、迁移、模板优先、前端来源/置信度展示和确认记录。
+- 结论：`TASK-037` 不通过，必须先执行 `TASK-038`。
+- 验收范围：模板套用来源与确认记录收口，重点复核后端模板建议补齐、模板优先、前端套用模板元数据、取消模板后的确认基准。
 - 已通过验证：
-  - `D:\python\python.exe -m pytest`：通过，163 passed，3 warnings。
+  - `D:\python\python.exe -m pytest`：通过，166 passed，3 warnings。
   - `D:\python\python.exe -m compileall app`：通过。
   - `npm run build`：通过；保留 Vite/Rollup 体积和注释警告。
   - `git diff --check -- backend frontend docs .gitignore`：通过。
-  - 跨单位泄漏复现脚本：通过，`company_b {}`、`no_company {}`。
-  - `recommend_from_experience()` 已限制为当前单位或全局经验，并按 `success_count` / `updated_at` 排序。
-  - Alembic 迁移已真实创建 `field_mapping_experiences` 表和索引。
+  - 指定 `template_id` 预览时，`mapping_suggestions_v2` 已包含模板列，`source=template`，`confidence=1.0`。
+  - 同一列存在模板映射和经验建议时，模板建议优先。
+  - 前端套用模板后会设置 `suggestion_source=template`、`suggestion_confidence=1.0`、`original_field_key=模板字段`。
 - 阻塞项：
-  - 指定 `template_id` 预览时，后端返回 `applied_mapping_v2`，但 `mapping_suggestions_v2` 为空，模板来源没有按实际模板映射补齐。
-  - 前端 `applyTemplateCandidate()` 套用模板时只更新 `field_key/status`，没有把 `suggestion_source` 设为 `template`、`suggestion_confidence` 设为 `1.0`、`original_field_key` 设为模板字段。
-  - 因此套用模板后界面可能不显示“导入模板 / 100%”，执行时也可能把未修改模板推荐误记为 `user_corrected`。
-- 新任务：`docs/tasks/TASK-037-template-source-confirmation-fixes.md`
+  - `cancelTemplateApply()` 取消模板时清空了 `suggestion_source` 和 `suggestion_confidence`，但把 `original_field_key` 设置成当前 `field_key`。
+  - 取消模板后如果用户保留当前字段并直接执行，现有确认逻辑会提交 `confirmation_type=user_confirmed`。
+  - 取消模板后已经没有模板推荐语义，保留字段应按手动映射处理，不得误记为确认模板推荐。
+- 新任务：`docs/tasks/TASK-038-cancel-template-confirmation-baseline.md`
 
 ## 最新缺陷分派
 
 - 分派日期：2026-06-22
-- 新任务：`docs/tasks/TASK-037-template-source-confirmation-fixes.md`
+- 新任务：`docs/tasks/TASK-038-cancel-template-confirmation-baseline.md`
 - 状态：OPEN
-- 触发问题：`TASK-036` 复验发现模板套用后的来源、置信度和确认记录仍未闭环。
+- 触发问题：`TASK-037` 复验发现取消套用模板后的确认基准仍会导致误记 `user_confirmed`。
 - 初步根因：
-  - 后端指定 `template_id` 预览只返回 `applied_mapping_v2`，没有把模板映射补进 `mapping_suggestions_v2`。
-  - 前端套用模板只改字段值，没有同步推荐来源、置信度和确认基准。
-- 验收重点：指定模板预览必须返回 `source=template`、`confidence=1.0` 的建议；套用模板后界面显示“导入模板 / 100%”；未修改模板推荐提交 `user_confirmed`，修改后提交 `user_corrected`。
+  - 前端取消模板时把 `original_field_key` 设置成当前 `field_key`。
+  - 执行导入时 `original_field_key === field_key` 会被判定为 `user_confirmed`。
+- 验收重点：取消模板后不显示“导入模板 / 100%”；保留当前字段执行时提交 `user_corrected`；不破坏 `selectedTemplateId` 和 `templateDefaultValues` 清理。
 
 ## 总指挥验收命令
 

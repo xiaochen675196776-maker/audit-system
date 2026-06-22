@@ -974,7 +974,7 @@ function cancelTemplateApply() {
       if (m.suggestion_source === 'template') {
         m.suggestion_source = undefined
         m.suggestion_confidence = undefined
-        m.original_field_key = m.field_key
+        m.original_field_key = null  // 取消后不再以模板为基准 (TASK-038)
       }
     }
   }
