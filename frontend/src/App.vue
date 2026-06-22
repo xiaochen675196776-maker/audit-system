@@ -129,6 +129,7 @@ import {
   Fold,
   Setting,
   TrendCharts,
+  DocumentCopy,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -203,6 +204,7 @@ const activePanelLinks = computed<PanelLink[]>(() => {
   return [
     { path: '/data/import', label: '数据导入', icon: Upload, exact: true },
     { path: '/data/companies', label: '被审计单位', icon: OfficeBuilding, exact: true },
+    { path: '/data/templates', label: '导入模板', icon: DocumentCopy, exact: true },
   ]
 })
 
@@ -211,11 +213,13 @@ const pageTitleMap: Record<string, string> = {
   '/': '工作概览',
   '/data/import': '数据导入',
   '/data/companies': '被审计单位管理',
+  '/data/templates': '导入模板管理',
 }
 const pageSubtitleMap: Record<string, string> = {
   '/': '查看当前年度的数据导入、单位和待处理事项',
   '/data/import': '上传文件 · 映射字段 · 校验入库',
   '/data/companies': '管理审计对象信息',
+  '/data/templates': '管理全局导入模板 · 样本生成 · 测试套用',
 }
 
 const pageTitle = computed(() => pageTitleMap[route.path] || '')

@@ -18,6 +18,11 @@ const router = createRouter({
       name: 'companies',
       component: () => import('@/views/CompaniesView.vue'),
     },
+    {
+      path: '/data/templates',
+      name: 'templates',
+      component: () => import('@/views/ImportTemplatesView.vue'),
+    },
   ],
 })
 

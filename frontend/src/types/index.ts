@@ -20,15 +20,42 @@ export interface PaginatedResponse<T> {
 // ===== 导入相关 =====
 
 // 预览 API 返回的匹配结果
+export interface TemplateCandidate {
+  template_id: string
+  name: string
+  score: number
+  matched_fields: string[]
+  missing_fields: string[]
+  warnings: string[]
+  source_label: string | null
+}
+
+export interface ColumnInfo {
+  column_id: string
+  index: number
+  header: string
+  normalized_header: string
+  sample_values: string[]
+  duplicate_group: {
+    header: string
+    occurrence: number
+    total: number
+  } | null
+}
+
 export interface ImportPreviewResponse {
   file_name: string
   headers: string[]
-  matched: Record<string, string>   // { "标准字段": "原始表头" }
-  unmatched: string[]               // 未匹配的原始表头列表
-  missing: string[]                 // 缺少的必填字段
-  preview_rows: string[][]          // 前5行原始数据
+  columns: ColumnInfo[]
+  matched: Record<string, string>
+  unmatched: string[]
+  missing: string[]
+  preview_rows: string[][]
   row_count: number
   data_type: string
+  template_candidates?: TemplateCandidate[]
+  applied_mapping_v2?: Record<string, string>
+  applied_template_name?: string
 }
 
 // 前端映射表格行

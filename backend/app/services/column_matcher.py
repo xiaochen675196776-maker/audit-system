@@ -151,6 +151,29 @@ def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
+# 负向匹配规则：这些表头不能映射到某些字段（防止误判）
+NEGATIVE_MATCH: dict[str, list[str]] = {
+    "period": [
+        "本币期间异动", "期间异动", "本期异动", "本月异动",
+        "本币发生异动", "期间发生异动",
+    ],
+    "fiscal_year": [
+        "本币本年累计", "本年累计", "本年异动", "本年发生",
+        "本币累计", "累计发生",
+    ],
+}
+
+
+def _is_negative_match(header: str, field: str) -> bool:
+    """检查表头是否匹配负向规则"""
+    patterns = NEGATIVE_MATCH.get(field, [])
+    cleaned = header.strip()
+    for pattern in patterns:
+        if pattern in cleaned:
+            return True
+    return False
+
+
 def match_column(header: str, target_fields: list[str]) -> tuple[str | None, float]:
     """
     将单个表头匹配到目标字段。
@@ -163,6 +186,9 @@ def match_column(header: str, target_fields: list[str]) -> tuple[str | None, flo
     cleaned = header.strip()
 
     for field in target_fields:
+        # 负向匹配检查
+        if _is_negative_match(cleaned, field):
+            continue
         keywords = KEYWORD_MAP.get(field, [field])
         for kw in keywords:
             score = similarity(cleaned, kw)
@@ -255,6 +281,35 @@ def map_row(row: list, headers: list[str], mapping: dict[str, str]) -> dict:
     for field, header in mapping.items():
         if header in headers:
             idx = headers.index(header)
+            if idx < len(row):
+                result[field] = row[idx]
+    return result
+
+
+def map_row_by_column_ids(row: list, columns: list[dict], mapping_v2: dict[str, str]) -> dict:
+    """
+    按列 ID 映射一行原始数据（v2 映射契约）。
+
+    与 map_row() 的区别：通过稳定的 column_id → index 定位列，
+    不受重复表头影响。
+
+    Args:
+        row: 原始数据行
+        columns: build_columns() 返回的列描述符列表
+        mapping_v2: {"col_001": "voucher_date", "col_010": "summary", ...}
+
+    Returns:
+        {"voucher_date": "2024-01-15", "summary": "采购原材料", ...}
+    """
+    # 构建 column_id → index 快速查找
+    col_index: dict[str, int] = {}
+    for c in columns:
+        col_index[c["column_id"]] = c["index"]
+
+    result: dict[str, object] = {}
+    for col_id, field in mapping_v2.items():
+        if col_id in col_index:
+            idx = col_index[col_id]
             if idx < len(row):
                 result[field] = row[idx]
     return result

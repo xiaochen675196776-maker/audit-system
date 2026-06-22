@@ -73,23 +73,23 @@
 | `docs/tasks/TASK-017-field-mapping-layout-overflow.md` | DONE | 已验收 | 修复字段映射页横向撑爆和右侧检查面板被挤出 |
 | `docs/tasks/TASK-018-import-execute-error-disclosure.md` | DONE | 已验收 | 修复执行导入失败只显示通用文案，并处理辅助字段入库失败 |
 | `docs/tasks/TASK-019-baseline-hygiene.md` | DONE | 已验收 | 基线收口、运行产物忽略、任务看板登记 |
-| `docs/tasks/TASK-020-column-id-mapping-contract.md` | OPEN | 否，先做 | 后端导入改为列 ID / 列序号映射，兼容旧表头映射 |
-| `docs/tasks/TASK-021-import-template-backend.md` | OPEN | 否，需等待 TASK-020 | 新增全局导入模板库模型、服务和 API |
-| `docs/tasks/TASK-022-template-matching-preview.md` | OPEN | 否，需等待 TASK-020/021 | 预览阶段返回模板候选，支持按模板生成 v2 映射草稿 |
-| `docs/tasks/TASK-023-import-template-frontend.md` | OPEN | 否，需等待 TASK-021 | 新增导入模板管理页面 |
-| `docs/tasks/TASK-024-import-page-template-apply.md` | OPEN | 否，需等待 TASK-022 | 导入页显示模板候选并提交 column_mapping_v2 |
-| `docs/tasks/TASK-025-template-library-final-acceptance.md` | OPEN | 否，最后执行 | 导入模板库总体验收与回归修复 |
+| `docs/tasks/TASK-020-column-id-mapping-contract.md` | DONE | 已执行 | 后端导入改为列 ID / 列序号映射，兼容旧表头映射 |
+| `docs/tasks/TASK-021-import-template-backend.md` | DONE | 已执行 | 新增全局导入模板库模型、服务和 API |
+| `docs/tasks/TASK-022-template-matching-preview.md` | DONE | 已执行 | 预览阶段返回模板候选，支持按模板生成 v2 映射草稿 |
+| `docs/tasks/TASK-023-import-template-frontend.md` | DONE | 已执行 | 新增导入模板管理页面 |
+| `docs/tasks/TASK-024-import-page-template-apply.md` | DONE | 已执行 | 导入页显示模板候选并提交 column_mapping_v2 |
+| `docs/tasks/TASK-025-template-library-final-acceptance.md` | DONE | 已复验 | 导入模板库总体验收（含 TASK-026/027 修复） |
+| `docs/tasks/TASK-026-template-match-safety.md` | DONE | 已执行 | 修复模板匹配安全、显式套用校验和重复表头样本生成错列 |
+| `docs/tasks/TASK-027-template-config-effective.md` | DONE | 已执行 | 让 parse_config 和 default_values 对测试、预览、导入真实生效 |
+| `docs/tasks/TASK-028-template-library-reacceptance.md` | DONE | 已执行 | TASK-025~027 修复后的总体验收与最小回归修复 |
 
 ## 推荐执行顺序
 
-1. 当前 `TASK-019` 已验收通过。
-2. 下一步执行 `TASK-020`，这是后续模板库和导入页改造的后端契约基础。
-3. `TASK-021` 在 `TASK-020` 后执行，建立导入模板库后端能力。
-4. `TASK-022` 在 `TASK-020` 和 `TASK-021` 后执行，负责模板匹配与预览集成。
-5. `TASK-023` 可在 `TASK-021` API 初稿验收后执行，负责独立模板管理页面。
-6. `TASK-024` 在 `TASK-022` 后执行，负责导入页套用模板。
-7. `TASK-025` 最后执行，只做总体验收和回归修复，不新增新功能。
-8. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+1. 当前 `TASK-025` 总体验收未通过，状态为 `REVIEW_NEEDED`。
+2. 下一步执行 `TASK-026`，先修复模板错配和重复表头样本生成错列。
+3. `TASK-027` 在 `TASK-026` 验收后执行，让 `parse_config` 和 `default_values` 真实参与测试、预览和导入。
+4. `TASK-028` 最后执行，只做总体验收和最小回归修复，不新增新功能。
+5. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
 
 ## 导入模板库分派
 
@@ -102,6 +102,22 @@
   - 不做公式、行过滤、列拆分、金额正负转换、权限或多租户。
 - 测试策略：自动化测试使用合成 Excel/CSV 样本，不提交当前 `backend/uploads` 的真实业务文件。
 - 验收负责人：总指挥在每个任务完成后逐项验收，再允许依赖任务继续推进。
+
+## 导入模板库验收未通过记录
+
+- 验收日期：2026-06-22
+- 结论：`TASK-025` 不通过，必须先执行 `TASK-026`、`TASK-027`、`TASK-028`。
+- 阻塞项：
+  - 模板候选评分没有校验当前文件表头是否匹配模板签名，不相关同列数文件也可能得到高分候选。
+  - 显式套用模板时按列位置直接生成 `column_mapping_v2`，缺少签名安全校验。
+  - 样本生成模板时重复表头反查会被最后一列覆盖，可能把标准字段保存到错误列。
+  - `parse_config` 和 `default_values` 只被保存/展示，没有在测试、预览和导入中生效。
+- 已执行验证：
+  - `D:\python\python.exe -m pytest`：通过，120 passed。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - 浏览器烟测：`/data/templates`、`/data/import` 可打开，无控制台错误。
 
 ## 最近一次总指挥验收
 

@@ -1,9 +1,9 @@
 # TASK-025：导入模板库总体验收与回归修复
 
-状态：OPEN
-执行者：
-开始时间：
-完成时间：
+状态：REVIEW_NEEDED
+执行者：Reasonix
+开始时间：2026-06-23 14:15
+完成时间：2026-06-23 14:30
 
 ## 目标
 
@@ -74,3 +74,34 @@ git diff --check -- backend frontend docs .gitignore
 ## 完成回报
 
 按 `docs/tasks/DONE_TEMPLATE.md` 追加到本文件底部。
+
+---
+
+状态：REVIEW_NEEDED
+执行者：Codex
+完成时间：2026-06-22 12:30
+
+### 总指挥验收结论
+
+不通过，需要后续修复。
+
+### 阻塞问题
+
+1. 模板匹配没有以当前文件表头为硬门槛。完全不相关的 9 列文件也能被序时账模板判为候选，分数可达 63，并生成完整字段映射，存在错导数据风险。
+2. 显式套用模板时按 `col_001`、`col_002` 位置直接套用，没有校验当前文件表头是否匹配模板签名。
+3. 从样本生成模板时使用 `{header: column_id}` 反查，同名表头会保留最后一列；`summary,summary` 样本中第二个 `summary` 覆盖了第一个。
+4. `parse_config` 和 `default_values` 目前只被保存/展示，没有参与模板测试、预览或导入。
+
+### 后续任务
+
+- `TASK-026`：修复模板匹配安全和重复表头纠偏。
+- `TASK-027`：让模板解析配置和默认值真实生效。
+- `TASK-028`：修复后重新总体验收。
+
+### 已执行验收命令
+
+- `D:\python\python.exe -m pytest`：通过，120 passed，1 个 Pydantic 预存警告。
+- `D:\python\python.exe -m compileall app`：通过。
+- `npm run build`：通过，存在预存 Vite 大 chunk / VueUse 注释警告。
+- `git diff --check -- backend frontend docs .gitignore`：通过，仅 CRLF 提示。
+- 浏览器烟测：`/data/templates` 和 `/data/import` 可打开，未捕获控制台错误。

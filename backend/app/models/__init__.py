@@ -5,6 +5,7 @@ from app.models.account import Account
 from app.models.trial_balance import TrialBalance
 from app.models.journal_entry import JournalEntry
 from app.models.subsidiary_ledger import SubsidiaryLedger
+from app.models.import_template import ImportTemplate
 from app.models.enums import AccountDirection, AccountCategory, AuxiliaryType
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "TrialBalance",
     "JournalEntry",
     "SubsidiaryLedger",
+    "ImportTemplate",
     "AccountDirection",
     "AccountCategory",
     "AuxiliaryType",

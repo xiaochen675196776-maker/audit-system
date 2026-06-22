@@ -333,6 +333,39 @@
                 所有检查通过，可以开始导入
               </div>
             </div>
+
+            <!-- 模板候选（TASK-024） -->
+            <div v-if="templateCandidates.length > 0" class="template-candidates">
+              <div class="tc-header">
+                <span class="tc-title">推荐模板</span>
+                <el-button size="small" text @click="selectedTemplateId = null">
+                  {{ selectedTemplateId ? '取消套用' : '' }}
+                </el-button>
+              </div>
+              <div
+                v-for="tc in templateCandidates.slice(0, 3)"
+                :key="tc.template_id"
+                class="tc-card"
+                :class="{ selected: selectedTemplateId === tc.template_id }"
+                @click="applyTemplateCandidate(tc)"
+              >
+                <div class="tc-card-left">
+                  <div class="tc-name">{{ tc.name }}</div>
+                  <div class="tc-score">
+                    匹配 {{ tc.score }} 分 ·
+                    命中 {{ tc.matched_fields.length }} 字段 ·
+                    缺 {{ tc.missing_fields.length }} 字段
+                  </div>
+                  <div v-if="tc.warnings.length" class="tc-warnings">
+                    <span v-for="w in tc.warnings.slice(0,2)" :key="w">{{ w }}</span>
+                  </div>
+                </div>
+                <div class="tc-card-right">
+                  <el-tag v-if="selectedTemplateId === tc.template_id" type="success" size="small">已套用</el-tag>
+                  <el-tag v-else size="small">点击套用</el-tag>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 操作按钮 -->
@@ -500,6 +533,20 @@ const missingFields = ref<string[]>([])
 const previewing = ref(false)
 const previewDone = ref(false)
 const previewError = ref('')
+
+// 模板候选（TASK-024）
+interface TemplateCandidate {
+  template_id: string
+  name: string
+  score: number
+  matched_fields: string[]
+  missing_fields: string[]
+  warnings: string[]
+  source_label: string | null
+}
+const templateCandidates = ref<TemplateCandidate[]>([])
+const selectedTemplateId = ref<string | null>(null)
+const columnsInfo = ref<any[]>([])
 
 // 字段选项（value 必须与后端 TYPE_FIELDS / KEYWORD_MAP 完全一致）
 const fieldOptions: Record<string, { label: string; value: string }[]> = {
@@ -708,6 +755,11 @@ async function goPreview() {
       }
     })
 
+    // 模板候选 + 列信息（TASK-024）
+    templateCandidates.value = data.template_candidates || []
+    columnsInfo.value = data.columns || []
+    selectedTemplateId.value = null
+
     mappings.value = newMappings
     const manualFields: string[] = []
     if (manualFiscalYear.value) manualFields.push('fiscal_year')
@@ -748,13 +800,20 @@ async function goExecute() {
 
   try {
     const columnMapping: Record<string, string> = {}
+    const columnMappingV2: Record<string, string> = {}
+
     for (const m of mappings.value) {
       if (m.field_key && m.field_key !== '__ignore__') {
-        // 辅助字段 → 使用用户自定义名称
         const resolvedKey = m.field_key.startsWith('__aux__')
           ? auxFieldDisplayName(m.field_key)
           : m.field_key
         columnMapping[m.file_column] = resolvedKey
+
+        // v2 映射：使用 column_id 而非表头文本
+        const colInfo = columnsInfo.value.find((c: any) => c.index === mappings.value.indexOf(m))
+        if (colInfo) {
+          columnMappingV2[colInfo.column_id] = resolvedKey
+        }
       }
     }
 
@@ -763,6 +822,9 @@ async function goExecute() {
     formData.append('company_id', String(selectedCompanyId.value))
     formData.append('data_type', dataType.value)
     formData.append('column_mapping', JSON.stringify(columnMapping))
+    if (Object.keys(columnMappingV2).length > 0) {
+      formData.append('column_mapping_v2', JSON.stringify(columnMappingV2))
+    }
     if (manualFiscalYear.value) formData.append('fiscal_year', String(manualFiscalYear.value))
     if (manualPeriod.value) formData.append('period', String(manualPeriod.value))
 
@@ -797,6 +859,41 @@ function goBackToMapping() {
   activeStep.value = 1
 }
 
+// 套用模板候选（TASK-024）
+async function applyTemplateCandidate(tc: TemplateCandidate) {
+  selectedTemplateId.value = tc.template_id
+  try {
+    const formData = new FormData()
+    formData.append('file', fileList.value[0]!.raw as File)
+    formData.append('data_type', dataType.value)
+    formData.append('template_id', tc.template_id)
+
+    const { data } = await api.post('/imports/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    if (data.applied_mapping_v2) {
+      const v2 = data.applied_mapping_v2 as Record<string, string>
+      // 更新映射表：col_id → index → mapping row
+      const colIdToIndex: Record<string, number> = {}
+      for (const c of columnsInfo.value) {
+        colIdToIndex[c.column_id] = c.index
+      }
+      for (const [colId, fieldKey] of Object.entries(v2)) {
+        const idx = colIdToIndex[colId]
+        if (idx !== undefined && idx < mappings.value.length) {
+          mappings.value[idx].field_key = fieldKey
+          mappings.value[idx].status = fieldKey ? 'matched' : 'unmatched'
+        }
+      }
+      ElMessage.success(`已套用模板：${tc.name}`)
+    }
+  } catch (e: any) {
+    ElMessage.error(normalizeError(e, '模板套用失败'))
+    selectedTemplateId.value = null
+  }
+}
+
 function resetImport() {
   activeStep.value = 0
   selectedCompanyId.value = null
@@ -815,6 +912,9 @@ function resetImport() {
   previewing.value = false
   executing.value = false
   progress.value = 0
+  templateCandidates.value = []
+  selectedTemplateId.value = null
+  columnsInfo.value = []
   result.value = { success_count: 0, fail_count: 0, failures: [] }
 }
 
@@ -1453,6 +1553,40 @@ onMounted(() => {
   justify-content: center;
   gap: var(--spacing-3);
 }
+
+/* ============================================================
+   模板候选（TASK-024）
+   ============================================================ */
+.template-candidates {
+  margin-top: var(--spacing-4);
+  padding: var(--spacing-3);
+  background: var(--color-primary-50, #f0f5ff);
+  border: 1px solid var(--color-primary-200, #bdd3f0);
+  border-radius: var(--radius-md);
+}
+.tc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-2); }
+.tc-title { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+
+.tc-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3);
+  margin-bottom: var(--spacing-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.tc-card:hover { border-color: var(--color-primary-400); }
+.tc-card.selected { border-color: var(--color-success); background: rgba(103, 194, 58, 0.04); }
+
+.tc-card-left { min-width: 0; }
+.tc-name { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
+.tc-score { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
+.tc-warnings { font-size: var(--font-size-xs); color: var(--color-warning); margin-top: 2px; }
+.tc-card-right { flex-shrink: 0; margin-left: var(--spacing-2); }
 
 /* ============================================================
    响应式

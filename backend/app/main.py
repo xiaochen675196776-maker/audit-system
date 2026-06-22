@@ -15,6 +15,7 @@ import app.models  # noqa: F401
 from app.api.health import router as health_router
 from app.api.companies import router as companies_router
 from app.api.imports import router as imports_router
+from app.api.import_templates import router as templates_router
 
 settings = get_settings()
 
@@ -48,3 +49,4 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(companies_router, prefix="/api/v1")
 app.include_router(imports_router, prefix="/api/v1")
+app.include_router(templates_router, prefix="/api/v1")

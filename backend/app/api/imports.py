@@ -62,11 +62,14 @@ def _format_execute_error(e: Exception) -> dict:
 async def preview(
     file: UploadFile = File(...),
     data_type: str = Form(..., description="数据类型: trial_balance / journal / subsidiary"),
+    template_id: str | None = Form(None, description="指定模板 ID，返回套用后的 column_mapping_v2 草稿"),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     预览导入：上传文件 → 返回表头识别结果和自动匹配。
 
-    返回 matched（已匹配）、unmatched（未匹配）、missing（缺少的必填字段）。
+    返回 matched（已匹配）、unmatched（未匹配）、missing（缺少的必填字段）、
+    template_candidates（模板候选列表）、applied_mapping_v2（指定模板时）。
     """
     # 校验数据类型
     if data_type not in ("trial_balance", "journal", "subsidiary"):
@@ -89,8 +92,13 @@ async def preview(
         with open(temp_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        result = await preview_import(str(temp_path), data_type)
+        result = await preview_import(
+            str(temp_path), data_type,
+            db=db, template_id=template_id,
+        )
         return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -105,15 +113,18 @@ async def execute(
     file: UploadFile = File(...),
     company_id: str = Form(..., description="被审计单位 ID"),
     data_type: str = Form(..., description="数据类型: trial_balance / journal / subsidiary"),
-    column_mapping: str | None = Form(None, description="JSON格式列映射: {\"原始表头\": \"标准字段\"}"),
+    column_mapping: str | None = Form(None, description="JSON格式列映射 v1: {\"原始表头\": \"标准字段\"}"),
+    column_mapping_v2: str | None = Form(None, description="JSON格式列映射 v2: {\"col_001\": \"标准字段\", ...}"),
+    template_id: str | None = Form(None, description="模板 ID，用于应用 parse_config 和默认值"),
     fiscal_year: int | None = Form(None, description="会计年度（文件中无此列时手动指定）"),
     period: int | None = Form(None, description="会计期间（文件中无此列时手动指定）"),
 ):
     """
     执行导入：上传文件 + 确认映射 → 校验 → 入库。
 
-    column_mapping 为 JSON 字符串，key 为文件中表头，value 为标准字段。
-    若不传则使用自动匹配。
+    column_mapping_v2 为 JSON 字符串，key 为列 ID（col_001），value 为标准字段。
+    若同时传了 column_mapping 和 column_mapping_v2，优先使用 v2。
+    若不传任何映射则使用自动匹配。
     """
     # 校验数据类型
     if data_type not in ("trial_balance", "journal", "subsidiary"):
@@ -141,11 +152,28 @@ async def execute(
         # 解析用户映射
         import json
         mapping = None
-        if column_mapping:
+        mapping_v2 = None
+
+        if column_mapping_v2:
+            try:
+                mapping_v2 = json.loads(column_mapping_v2)
+            except json.JSONDecodeError:
+                raise HTTPException(400, detail="column_mapping_v2 JSON 格式无效，请检查是否为合法 JSON 对象")
+        elif column_mapping:
             try:
                 mapping = json.loads(column_mapping)
             except json.JSONDecodeError:
-                raise HTTPException(400, detail="column_mapping JSON 格式无效")
+                raise HTTPException(400, detail="column_mapping JSON 格式无效，请检查是否为合法 JSON 对象")
+
+        # 加载模板配置
+        parse_config = None
+        template_default_values = None
+        if template_id:
+            from app.services.template_service import get_template
+            tmpl = await get_template(db, uuid.UUID(template_id))
+            if tmpl:
+                parse_config = tmpl.parse_config or None
+                template_default_values = tmpl.default_values or None
 
         result = await import_data(
             db=db,
@@ -153,8 +181,11 @@ async def execute(
             file_path=str(file_path),
             data_type=data_type,
             column_mapping=mapping,
+            column_mapping_v2=mapping_v2,
             fiscal_year=fiscal_year,
             period=period,
+            parse_config=parse_config,
+            template_default_values=template_default_values,
         )
         return result
     except HTTPException:
