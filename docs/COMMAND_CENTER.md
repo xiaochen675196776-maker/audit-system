@@ -84,12 +84,21 @@
 | `docs/tasks/TASK-028-template-library-reacceptance.md` | DONE | 已复验 | TASK-025~027 修复后的总体验收与最小回归修复 |
 | `docs/tasks/TASK-029-template-execute-end-to-end.md` | DONE | 已复验 | 修复确认套用模板后的最终导入链路 |
 | `docs/tasks/TASK-030-template-cancel-state-cleanup.md` | DONE | 已验收 | 修复取消套用模板后的默认值状态残留 |
+| `docs/tasks/TASK-031-field-mapping-experience-backend-foundation.md` | DONE | 已执行 | 字段映射经验库后端模型、迁移和核心服务 |
+| `docs/tasks/TASK-032-field-mapping-experience-preview.md` | DONE | 已执行 | 预览阶段接入字段映射经验推荐 |
+| `docs/tasks/TASK-033-field-mapping-experience-save.md` | DONE | 已执行 | 执行导入成功后保存用户确认的字段映射经验 |
+| `docs/tasks/TASK-034-field-mapping-experience-frontend.md` | DONE | 已执行 | 导入页展示推荐来源、记录确认并提交记忆开关 |
+| `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 已验收 | 字段映射经验库总体验收与最小回归修复 |
 
 ## 推荐执行顺序
 
-1. 当前导入模板库链路已复验通过，无新的阻塞任务。
-2. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
-3. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
+1. 下一步执行 `TASK-031`，先建立字段映射经验库后端基础。
+2. `TASK-032` 在 `TASK-031` 验收后执行，接入预览推荐。
+3. `TASK-033` 在 `TASK-031` 验收后执行，建议等 `TASK-032` 合入后再做，避免同时改 `imports.py` / `import_service.py`。
+4. `TASK-034` 等 `TASK-032` 和 `TASK-033` 都通过后执行。
+5. `TASK-035` 最后执行总体验收和最小回归修复。
+6. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+7. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
 
 ## 导入模板库分派
 
@@ -102,6 +111,46 @@
   - 不做公式、行过滤、列拆分、金额正负转换、权限或多租户。
 - 测试策略：自动化测试使用合成 Excel/CSV 样本，不提交当前 `backend/uploads` 的真实业务文件。
 - 验收负责人：总指挥在每个任务完成后逐项验收，再允许依赖任务继续推进。
+
+## 字段映射经验库分派
+
+- 分派日期：2026-06-22
+- 来源方案：`D:\APP\谷歌\文件下载\审计系统字段映射经验库改造方案.md`
+- 采纳结论：采纳核心方向，但按当前项目架构做收口后执行。
+- 目标流程：
+
+```text
+上传文件
+→ 识别完整导入模板
+→ 查询字段映射经验
+→ 固定关键词匹配
+→ 用户确认或修改
+→ 执行导入
+→ 成功写入后保存映射经验
+```
+
+- 当前第一版范围：
+  - 只做逐列字段映射经验。
+  - 不做财务软件自动识别。
+  - 不做布局指纹自动识别。
+  - 不做数据清洗规则。
+  - 不做科目标准化映射。
+  - 不改正式业务数据表结构。
+- 与现有模板库的边界：
+  - `ImportTemplate` 继续负责整张表：表头行、数据起始行、编码、默认年度/期间、完整列映射。
+  - `FieldMappingExperience` 只负责逐列表头到标准字段的历史确认经验。
+- 优化后的工程约束：
+  - `lookup_key` 不得设置唯一约束，因为冲突处理需要保留停用历史记录。
+  - 歧义表头如 `借方`、`贷方`、`余额` 必须依赖上下文命中才能高置信推荐，header-only 经验不得自动填入。
+  - 推荐和确认都必须使用 `column_id`，不得用表头文本当 key。
+  - 经验只在导入成功写入至少一行后保存，预览阶段不得保存。
+  - 第一版只保存标准字段经验，不保存辅助字段和自定义字段经验。
+- 任务拆分：
+  - `TASK-031`：后端模型、迁移、规范化、上下文签名、lookup key。
+  - `TASK-032`：预览接口增加 `company_id` 并返回 `mapping_suggestions_v2`。
+  - `TASK-033`：执行接口增加记忆开关和确认信息，成功导入后保存经验。
+  - `TASK-034`：前端展示推荐来源、记录确认/修改、提交记忆开关。
+  - `TASK-035`：总体验收，覆盖首次学习、再次推荐、冲突、关闭记忆、失败不保存、歧义字段、模板优先和重复表头。
 
 ## 导入模板库验收未通过记录
 

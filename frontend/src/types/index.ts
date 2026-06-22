@@ -56,14 +56,25 @@ export interface ImportPreviewResponse {
   template_candidates?: TemplateCandidate[]
   applied_mapping_v2?: Record<string, string>
   applied_template_name?: string
+  template_default_values?: Record<string, any>
+  mapping_suggestions_v2?: Record<string, {
+    target_field: string
+    source: 'template' | 'company_experience' | 'global_experience' | 'keyword_match'
+    confidence: number
+    experience_id?: string
+  }>
 }
 
-// 前端映射表格行
 export interface MappingRow {
-  file_column: string        // 原始表头
-  field_key: string | null   // 用户选择的系统字段 value
+  file_column: string
+  field_key: string | null
   status: 'matched' | 'unmatched'
-  sample_value: string       // 第一行示例数据
+  sample_value: string
+  column_id: string
+  column_index: number
+  suggestion_source?: string
+  suggestion_confidence?: number
+  original_field_key?: string | null
 }
 
 // 执行 API 返回的错误项

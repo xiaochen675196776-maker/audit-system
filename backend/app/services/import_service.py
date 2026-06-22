@@ -29,6 +29,7 @@ async def preview_import(
     data_type: str,
     db: AsyncSession | None = None,
     template_id: str | None = None,
+    company_id: str | None = None,
 ) -> dict:
     """
     预览导入：解析文件并返回匹配结果，不实际写入数据库。
@@ -80,6 +81,30 @@ async def preview_import(
                 candidates = match_templates(file_path, data_type, templates)
                 result["template_candidates"] = candidates
 
+    # 字段映射经验推荐 (TASK-032) — 不覆盖已套用的模板映射
+    if db is not None and company_id:
+        from uuid import UUID as _UUID
+        try:
+            cid = _UUID(company_id)
+        except ValueError:
+            raise ValueError("无效的公司 ID")
+        from app.services.mapping_experience_service import recommend_from_experience
+        experience_suggestions = await recommend_from_experience(
+            db, cid, data_type, columns,
+        )
+        # 经验推荐不能覆盖模板已确认的映射
+        if "applied_mapping_v2" in result:
+            for col_id in result["applied_mapping_v2"]:
+                if col_id in experience_suggestions:
+                    experience_suggestions[col_id]["source"] = "template"
+        result["mapping_suggestions_v2"] = experience_suggestions
+
+    # 关键词匹配兜底 (无经验时的基础推荐)
+    if db is not None and "mapping_suggestions_v2" not in result:
+        result["mapping_suggestions_v2"] = _build_keyword_suggestions(
+            headers, columns, data_type,
+        )
+
     return result
 
 
@@ -94,6 +119,8 @@ async def import_data(
     period: int | None = None,
     parse_config: dict | None = None,
     template_default_values: dict | None = None,
+    remember_mapping: bool = True,
+    mapping_confirmations: dict | None = None,
 ) -> dict:
     """
     完整导入流程。
@@ -193,6 +220,18 @@ async def import_data(
         await db.flush()
         success_count = len(objects)
 
+        # 保存字段映射经验 (TASK-033)
+        if (
+            success_count > 0
+            and remember_mapping
+            and mapping_confirmations
+            and company_id
+        ):
+            from app.services.mapping_experience_service import save_mapping_experiences
+            await save_mapping_experiences(
+                db, company_id, data_type, columns, mapping_confirmations,
+            )
+
     return {
         "total": total,
         "success": success_count,
@@ -203,3 +242,27 @@ async def import_data(
         "file_name": Path(file_path).name,
         "data_type": data_type,
     }
+
+
+def _build_keyword_suggestions(
+    headers: list[str],
+    columns: list[dict],
+    data_type: str,
+) -> dict[str, dict]:
+    """关键词匹配兜底：按 column_id 生成基础建议"""
+    from app.services.column_matcher import match_column, TYPE_FIELDS
+    targets = TYPE_FIELDS.get(data_type, [])
+    suggestions: dict[str, dict] = {}
+    for c in columns:
+        col_id = c["column_id"]
+        header = c.get("header", "")
+        if not header:
+            continue
+        field, score = match_column(header, targets)
+        if field is not None and score >= 0.6:
+            suggestions[col_id] = {
+                "target_field": field,
+                "source": "keyword_match",
+                "confidence": round(score, 2),
+            }
+    return suggestions

@@ -63,6 +63,7 @@ async def preview(
     file: UploadFile = File(...),
     data_type: str = Form(..., description="数据类型: trial_balance / journal / subsidiary"),
     template_id: str | None = Form(None, description="指定模板 ID，返回套用后的 column_mapping_v2 草稿"),
+    company_id: str | None = Form(None, description="被审计单位ID，用于查询历史字段映射经验"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -94,7 +95,7 @@ async def preview(
 
         result = await preview_import(
             str(temp_path), data_type,
-            db=db, template_id=template_id,
+            db=db, template_id=template_id, company_id=company_id,
         )
         return result
     except ValueError as e:
@@ -118,6 +119,8 @@ async def execute(
     template_id: str | None = Form(None, description="模板 ID，用于应用 parse_config 和默认值"),
     fiscal_year: int | None = Form(None, description="会计年度（文件中无此列时手动指定）"),
     period: int | None = Form(None, description="会计期间（文件中无此列时手动指定）"),
+    remember_mapping: bool = Form(True, description="是否保存本次用户确认的字段映射经验"),
+    mapping_confirmations: str | None = Form(None, description="用户确认信息 JSON: {col_001: {target_field, confirmation_type}}"),
 ):
     """
     执行导入：上传文件 + 确认映射 → 校验 → 入库。
@@ -187,6 +190,15 @@ async def execute(
             parse_config = tmpl.parse_config or None
             template_default_values = tmpl.default_values or None
 
+        # 解析 user mapping confirmations
+        import json
+        mapping_conf = None
+        if mapping_confirmations:
+            try:
+                mapping_conf = json.loads(mapping_confirmations)
+            except json.JSONDecodeError:
+                raise HTTPException(400, detail="mapping_confirmations JSON 格式无效")
+
         result = await import_data(
             db=db,
             company_id=cid,
@@ -198,6 +210,8 @@ async def execute(
             period=period,
             parse_config=parse_config,
             template_default_values=template_default_values,
+            remember_mapping=remember_mapping,
+            mapping_confirmations=mapping_conf,
         )
         return result
     except HTTPException:

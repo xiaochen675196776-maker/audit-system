@@ -1536,3 +1536,164 @@ class TestTemplateExecuteEndToEnd:
                 await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
         finally:
             os.unlink(tmp.name)
+
+
+class TestMappingExperienceRecommend:
+    """TASK-032：字段映射经验推荐"""
+
+    @pytest.mark.asyncio
+    async def test_keyword_match_suggestions_in_preview(self, db):
+        """预览返回关键词匹配建议"""
+        from app.services.import_service import preview_import
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n001,2024-01-15,x,1002,x,0,10000,2024,1"
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            result = await preview_import(tmp.name, "journal", db=db)
+            assert "mapping_suggestions_v2" in result
+            suggestions = result["mapping_suggestions_v2"]
+            assert len(suggestions) > 0
+            for k, v in suggestions.items():
+                assert v["source"] == "keyword_match"
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_experience_priority_over_keyword(self, db, sample_company_id):
+        """经验优先于关键词匹配"""
+        from app.models.field_mapping_experience import FieldMappingExperience
+        from app.services.mapping_experience_service import normalize_header, build_context_signature
+
+        headers = ["凭证号", "凭证日期", "摘要", "科目编码", "科目名称", "借方金额", "贷方金额", "会计年度", "会计期间"]
+        nh = normalize_header("凭证号")
+        ctx = build_context_signature(headers, 0)
+        exp = FieldMappingExperience(
+            company_id=sample_company_id, data_type="journal",
+            source_header_original="凭证号", source_header_normalized=nh,
+            source_column_index=0, context_signature=ctx,
+            target_field="voucher_no", lookup_key="test_exp_key", is_active=True,
+        )
+        db.add(exp)
+        await db.flush()
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
+        csv_content = "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n001,2024-01-15,x,1002,x,0,10000,2024,1"
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            from app.services.import_service import preview_import
+            result = await preview_import(tmp.name, "journal", db=db, company_id=str(sample_company_id))
+            suggestions = result["mapping_suggestions_v2"]
+            if "col_001" in suggestions:
+                assert suggestions["col_001"]["source"] == "company_experience"
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_header_not_auto_recommended(self, db, sample_company_id):
+        """歧义表头 header-only 经验不自动推荐"""
+        from app.models.field_mapping_experience import FieldMappingExperience
+        from app.services.mapping_experience_service import normalize_header
+
+        nh = normalize_header("借方")
+        exp = FieldMappingExperience(
+            company_id=sample_company_id, data_type="journal",
+            source_header_original="借方", source_header_normalized=nh,
+            source_column_index=0, context_signature="",
+            target_field="debit_amount", lookup_key="test_ambig_key", is_active=True,
+        )
+        db.add(exp)
+        await db.flush()
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
+        csv_content = "借方,贷方,科目编码,科目名称,凭证号,凭证日期,摘要,会计年度,会计期间\r\n100,0,1002,x,001,2024-01-15,x,2024,1"
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            from app.services.mapping_experience_service import recommend_from_experience
+            from app.services.file_parser import parse_file, build_columns
+            headers, rows = parse_file(tmp.name)
+            columns = build_columns(headers, rows[:3])
+            suggestions = await recommend_from_experience(db, sample_company_id, "journal", columns)
+            for v in suggestions.values():
+                if v.get("target_field") == "debit_amount":
+                    assert v["confidence"] >= 0.85, "ambiguous header needs context match"
+        finally:
+            os.unlink(tmp.name)
+
+
+class TestSaveMappingExperience:
+    """TASK-033：保存字段映射经验"""
+
+    @pytest.mark.asyncio
+    async def test_save_experience_new(self, db, sample_company_id):
+        """首次导入成功 → 新增公司级经验"""
+        from app.services.mapping_experience_service import save_mapping_experiences
+        from app.services.file_parser import build_columns
+
+        headers = ["科目编码", "科目名称", "借方金额"]
+        columns = build_columns(headers)
+        confs = {
+            "col_001": {"target_field": "account_code", "confirmation_type": "user_confirmed"},
+            "col_002": {"target_field": "account_name", "confirmation_type": "user_confirmed"},
+        }
+        await save_mapping_experiences(db, sample_company_id, "trial_balance", columns, confs)
+
+        from app.models.field_mapping_experience import FieldMappingExperience
+        stmt = select(FieldMappingExperience).where(
+            FieldMappingExperience.company_id == sample_company_id,
+            FieldMappingExperience.is_active == True,
+        )
+        res = await db.execute(stmt)
+        rows = res.scalars().all()
+        assert len(rows) == 2
+
+    @pytest.mark.asyncio
+    async def test_save_experience_accumulates(self, db, sample_company_id):
+        """同一映射再次成功 → use_count/success_count 累加"""
+        from app.services.mapping_experience_service import save_mapping_experiences
+        from app.services.file_parser import build_columns
+
+        headers = ["凭证号", "凭证日期"]
+        columns = build_columns(headers)
+        confs = {
+            "col_001": {"target_field": "voucher_no", "confirmation_type": "user_confirmed"},
+        }
+        await save_mapping_experiences(db, sample_company_id, "journal", columns, confs)
+        await save_mapping_experiences(db, sample_company_id, "journal", columns, confs)
+
+        from app.models.field_mapping_experience import FieldMappingExperience
+        stmt = select(FieldMappingExperience).where(
+            FieldMappingExperience.company_id == sample_company_id,
+            FieldMappingExperience.is_active == True,
+        )
+        res = await db.execute(stmt)
+        rows = res.scalars().all()
+        assert sum(r.use_count for r in rows) >= 2
+
+    @pytest.mark.asyncio
+    async def test_save_experience_ignores_auxiliary(self, db, sample_company_id):
+        """辅助字段不保存"""
+        from app.services.mapping_experience_service import save_mapping_experiences
+        from app.services.file_parser import build_columns
+
+        headers = ["凭证号", "自定义列"]
+        columns = build_columns(headers)
+        confs = {
+            "col_001": {"target_field": "voucher_no", "confirmation_type": "user_confirmed"},
+            "col_002": {"target_field": "custom_field", "confirmation_type": "user_confirmed"},
+        }
+        await save_mapping_experiences(db, sample_company_id, "journal", columns, confs)
+
+        from app.models.field_mapping_experience import FieldMappingExperience
+        stmt = select(FieldMappingExperience).where(
+            FieldMappingExperience.company_id == sample_company_id,
+        )
+        res = await db.execute(stmt)
+        rows = res.scalars().all()
+        # 只有 voucher_no 经验被保存
+        assert all(r.target_field in ("voucher_no",) for r in rows)

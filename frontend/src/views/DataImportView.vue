@@ -373,6 +373,10 @@
           <div class="step-footer">
             <el-button size="large" @click="activeStep = 0">上一步</el-button>
             <div class="footer-main-action">
+              <el-checkbox
+                v-model="rememberMapping"
+                size="small"
+              >记住本次字段映射，下次自动推荐</el-checkbox>
               <el-button
                 type="primary"
                 size="large"
@@ -549,6 +553,7 @@ const templateCandidates = ref<TemplateCandidate[]>([])
 const selectedTemplateId = ref<string | null>(null)
 const columnsInfo = ref<any[]>([])
 const templateDefaultValues = ref<Record<string, any> | null>(null)
+const rememberMapping = ref(true)
 
 // 字段选项（value 必须与后端 TYPE_FIELDS / KEYWORD_MAP 完全一致）
 const fieldOptions: Record<string, { label: string; value: string }[]> = {
@@ -740,6 +745,9 @@ async function goPreview() {
     const formData = new FormData()
     formData.append('file', fileList.value[0].raw)
     formData.append('data_type', dataType.value)
+    if (selectedCompanyId.value) {
+      formData.append('company_id', String(selectedCompanyId.value))
+    }
 
     const { data } = await api.post<ImportPreviewResponse>('/imports/preview', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -756,11 +764,19 @@ async function goPreview() {
 
     const newMappings: MappingRow[] = headers.map((headerName, colIndex) => {
       const fieldKey = headerToField[headerName] || null
+      const colInfo = columnsInfo.value[colIndex]
+      const colId = colInfo?.column_id || `col_${String(colIndex + 1).padStart(3, '0')}`
+      const suggestion = data.mapping_suggestions_v2?.[colId]
       return {
         file_column: headerName,
-        field_key: fieldKey,
-        status: fieldKey ? 'matched' : 'unmatched',
+        field_key: (suggestion && suggestion.confidence >= 0.85) ? suggestion.target_field : fieldKey,
+        status: (suggestion && suggestion.confidence >= 0.85) ? 'matched' : (fieldKey ? 'matched' : 'unmatched'),
         sample_value: firstRow[colIndex] || '',
+        column_id: colId,
+        column_index: colIndex,
+        suggestion_source: suggestion?.source,
+        suggestion_confidence: suggestion?.confidence,
+        original_field_key: fieldKey,
       }
     })
 
@@ -838,6 +854,24 @@ async function goExecute() {
     if (selectedTemplateId.value) {
       formData.append('template_id', selectedTemplateId.value)
     }
+    formData.append('remember_mapping', String(rememberMapping.value))
+
+    // mapping_confirmations (TASK-034)
+    const confirmations: Record<string, any> = {}
+    for (const m of mappings.value) {
+      if (m.field_key && m.field_key !== '__ignore__' && m.column_id) {
+        const isInTargetFields = availableFields.value.some(f => f.value === m.field_key)
+        if (!isInTargetFields) continue
+        confirmations[m.column_id] = {
+          target_field: m.field_key,
+          confirmation_type: m.original_field_key === m.field_key ? 'user_confirmed' : 'user_corrected',
+        }
+      }
+    }
+    if (Object.keys(confirmations).length > 0) {
+      formData.append('mapping_confirmations', JSON.stringify(confirmations))
+    }
+
     if (manualFiscalYear.value) formData.append('fiscal_year', String(manualFiscalYear.value))
     if (manualPeriod.value) formData.append('period', String(manualPeriod.value))
 
