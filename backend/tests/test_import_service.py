@@ -1836,3 +1836,77 @@ class TestExperienceIsolation:
         col = suggestions.get("col_001", {})
         # 应选中 success_count 更高的经验
         assert col.get("confidence", 0) >= 1.0
+
+
+class TestTemplateSuggestions:
+    """TASK-037：模板套用来源补齐"""
+
+    @pytest.mark.asyncio
+    async def test_preview_with_template_returns_template_suggestions(self, db):
+        """指定 template_id 预览 → mapping_suggestions_v2 包含模板列"""
+        from app.services.template_service import create_template
+        from app.services.import_service import preview_import
+
+        t = await create_template(db, {
+            "name": "来源测试模板",
+            "data_type": "journal",
+            "is_active": True,
+            "header_signature": {"col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要"},
+            "column_rules": {"col_001": "voucher_no", "col_002": "voucher_date", "col_003": "summary"},
+        })
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
+        tmp.write("凭证号,凭证日期,摘要\r\n001,2024-01-15,采购")
+        tmp.close()
+        try:
+            result = await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
+            suggestions = result.get("mapping_suggestions_v2", {})
+            assert "col_001" in suggestions
+            assert suggestions["col_001"]["source"] == "template"
+            assert suggestions["col_001"]["confidence"] == 1.0
+            assert suggestions["col_001"]["target_field"] == "voucher_no"
+            assert "col_002" in suggestions
+            assert "col_003" in suggestions
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_preview_template_without_company_id_still_returns_template_suggestions(self, db):
+        """未传 company_id 但指定 template_id → 仍返回模板建议"""
+        from app.services.template_service import create_template
+        from app.services.import_service import preview_import
+
+        t = await create_template(db, {
+            "name": "无公司模板",
+            "data_type": "journal",
+            "is_active": True,
+            "header_signature": {"col_001": "凭证号"},
+            "column_rules": {"col_001": "voucher_no"},
+        })
+
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
+        tmp.write("凭证号\r\n001")
+        tmp.close()
+        try:
+            result = await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
+            suggestions = result.get("mapping_suggestions_v2", {})
+            assert len(suggestions) > 0
+            assert suggestions["col_001"]["source"] == "template"
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_no_template_no_db_still_gets_keyword_fallback(self):
+        """未指定模板 + 无 db → 关键词兜底仍工作"""
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
+        tmp.write("凭证号,凭证日期,摘要\r\n001,2024-01-15,采购")
+        tmp.close()
+        try:
+            from app.services.import_service import preview_import
+            result = await preview_import(tmp.name, "journal")
+            assert "applied_mapping_v2" not in result
+            suggestions = result.get("mapping_suggestions_v2", {})
+            for v in suggestions.values():
+                assert v["source"] == "keyword_match"
+        finally:
+            os.unlink(tmp.name)

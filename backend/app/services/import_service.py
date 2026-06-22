@@ -75,13 +75,22 @@ async def preview_import(
             result["applied_template_name"] = template.name
             if template.default_values:
                 result["template_default_values"] = template.default_values
+            # 模板建议必须进 mapping_suggestions_v2 (TASK-037)
+            result["mapping_suggestions_v2"] = {
+                col_id: {
+                    "target_field": field,
+                    "source": "template",
+                    "confidence": 1.0,
+                }
+                for col_id, field in mapping_v2.items()
+            }
         else:
             templates = await get_templates(db, data_type=data_type, is_active=True)
             if templates:
                 candidates = match_templates(file_path, data_type, templates)
                 result["template_candidates"] = candidates
 
-    # 字段映射经验推荐 (TASK-032) — 不覆盖已套用的模板映射
+    # 字段映射经验推荐 — 补充非模板列的推荐，不覆盖已有模板建议
     if db is not None and company_id:
         from uuid import UUID as _UUID
         try:
@@ -92,23 +101,20 @@ async def preview_import(
         experience_suggestions = await recommend_from_experience(
             db, cid, data_type, columns,
         )
-        # 模板映射优先：移除经验建议中已被模板覆盖的列
-        if "applied_mapping_v2" in result:
-            for col_id in list(experience_suggestions.keys()):
-                if col_id in result["applied_mapping_v2"]:
-                    # 替换为模板来源标记
-                    experience_suggestions[col_id] = {
-                        "target_field": result["applied_mapping_v2"][col_id],
-                        "source": "template",
-                        "confidence": 1.0,
-                    }
-        result["mapping_suggestions_v2"] = experience_suggestions
+        # 合并：模板建议优先，经验补充剩余列
+        existing = result.get("mapping_suggestions_v2", {})
+        for col_id, sugg in experience_suggestions.items():
+            if col_id not in existing:
+                existing[col_id] = sugg
+        result["mapping_suggestions_v2"] = existing
 
-    # 关键词匹配兜底 (无经验时的基础推荐)
-    if db is not None and "mapping_suggestions_v2" not in result:
-        result["mapping_suggestions_v2"] = _build_keyword_suggestions(
-            headers, columns, data_type,
-        )
+    # 关键词匹配兜底 — 补充尚未被覆盖的列
+    existing = result.get("mapping_suggestions_v2", {})
+    kw = _build_keyword_suggestions(headers, columns, data_type)
+    for col_id, sugg in kw.items():
+        if col_id not in existing:
+            existing[col_id] = sugg
+    result["mapping_suggestions_v2"] = existing
 
     return result
 

@@ -89,12 +89,13 @@
 | `docs/tasks/TASK-033-field-mapping-experience-save.md` | DONE | 已执行 | 执行导入成功后保存用户确认的字段映射经验 |
 | `docs/tasks/TASK-034-field-mapping-experience-frontend.md` | DONE | 已执行 | 导入页展示推荐来源、记录确认并提交记忆开关 |
 | `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 验收未通过，见 TASK-036 | 字段映射经验库总体验收与最小回归修复 |
-| `docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md` | DONE | 已执行 | 修复字段映射经验库验收阻塞项 |
+| `docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md` | DONE | 复验未通过，见 TASK-037 | 修复字段映射经验库验收阻塞项 |
+| `docs/tasks/TASK-037-template-source-confirmation-fixes.md` | DONE | 已执行 | 修复模板套用后的来源、置信度和确认记录 |
 
 ## 推荐执行顺序
 
-1. 下一步执行 `TASK-036`，先修复字段映射经验库验收阻塞项。
-2. `TASK-036` 通过总指挥复验后，字段映射经验库第一版才算收口。
+1. 下一步执行 `TASK-037`，修复模板套用后的来源、置信度和确认记录。
+2. `TASK-037` 通过总指挥复验后，字段映射经验库第一版才算收口。
 3. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
 4. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
 
@@ -150,6 +151,7 @@
   - `TASK-034`：前端展示推荐来源、记录确认/修改、提交记忆开关。
   - `TASK-035`：总体验收，覆盖首次学习、再次推荐、冲突、关闭记忆、失败不保存、歧义字段、模板优先和重复表头。
   - `TASK-036`：修复总指挥验收发现的经验隔离、迁移、模板优先、前端展示和确认记录问题。
+  - `TASK-037`：收口显式套用模板后的来源、置信度和确认记录。
 
 ## 导入模板库验收未通过记录
 
@@ -218,34 +220,32 @@
 ## 最近一次总指挥验收
 
 - 验收日期：2026-06-22
-- 结论：`TASK-035` 不通过，必须先执行 `TASK-036`。
-- 验收范围：字段映射经验库后端模型/迁移、预览推荐、导入后保存、导入页展示与确认记录、模板优先、跨单位经验隔离。
+- 结论：`TASK-036` 不通过，必须先执行 `TASK-037`。
+- 验收范围：字段映射经验库验收阻塞修复，重点复核跨单位经验隔离、排序、迁移、模板优先、前端来源/置信度展示和确认记录。
 - 已通过验证：
-  - `D:\python\python.exe -m pytest`：通过，159 passed，1 warning。
+  - `D:\python\python.exe -m pytest`：通过，163 passed，3 warnings。
   - `D:\python\python.exe -m compileall app`：通过。
   - `npm run build`：通过；保留 Vite/Rollup 体积和注释警告。
   - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - 跨单位泄漏复现脚本：通过，`company_b {}`、`no_company {}`。
+  - `recommend_from_experience()` 已限制为当前单位或全局经验，并按 `success_count` / `updated_at` 排序。
+  - Alembic 迁移已真实创建 `field_mapping_experiences` 表和索引。
 - 阻塞项：
-  - `mapping_experience_service.recommend_from_experience()` 查询经验时没有限制当前单位或全局经验，A 单位私有经验会被 B 单位和无单位预览当成 `global_experience` 使用。
-  - `mapping_experience_service._pick_best_experience()` 把 `not same_company` 全部归为全局候选，且同优先级内没有按 `success_count` / `updated_at` 确定排序。
-  - `backend/alembic/versions/20260622_0001_add_field_mapping_experiences.py` 是空迁移，正式部署不会创建 `field_mapping_experiences` 表。
-  - 显式套用模板后，`mapping_suggestions_v2` 只把已有经验建议改成 `template` 来源，没有以实际模板映射补齐模板建议。
-  - 导入页映射表未实际展示推荐来源和置信度。
-  - 导入页 `original_field_key` 记录的是旧关键词匹配字段，不是实际自动填入的经验推荐字段，可能把“未修改推荐”误报为 `user_corrected`。
-- 新任务：`docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md`
+  - 指定 `template_id` 预览时，后端返回 `applied_mapping_v2`，但 `mapping_suggestions_v2` 为空，模板来源没有按实际模板映射补齐。
+  - 前端 `applyTemplateCandidate()` 套用模板时只更新 `field_key/status`，没有把 `suggestion_source` 设为 `template`、`suggestion_confidence` 设为 `1.0`、`original_field_key` 设为模板字段。
+  - 因此套用模板后界面可能不显示“导入模板 / 100%”，执行时也可能把未修改模板推荐误记为 `user_corrected`。
+- 新任务：`docs/tasks/TASK-037-template-source-confirmation-fixes.md`
 
 ## 最新缺陷分派
 
 - 分派日期：2026-06-22
-- 新任务：`docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md`
+- 新任务：`docs/tasks/TASK-037-template-source-confirmation-fixes.md`
 - 状态：OPEN
-- 触发问题：`TASK-035` 总体验收发现字段映射经验库存在跨单位经验泄漏、空 Alembic 迁移、模板优先标记不完整、前端推荐来源/置信度未展示、确认类型记录不准等阻塞项。
+- 触发问题：`TASK-036` 复验发现模板套用后的来源、置信度和确认记录仍未闭环。
 - 初步根因：
-  - 经验推荐查询没有过滤为当前单位或全局经验。
-  - 推荐候选分类把所有非当前单位经验都当成全局经验。
-  - 迁移文件只保留占位，没有实际建表。
-  - 前端构造映射行时没有把实际自动推荐字段写入 `original_field_key`，映射表也没有渲染推荐来源和置信度。
-- 验收重点：不得跨单位推荐私有经验；迁移必须真实创建表；模板映射优先；推荐来源和置信度中文可见；未修改推荐提交 `user_confirmed`，修改或手动选择提交 `user_corrected`。
+  - 后端指定 `template_id` 预览只返回 `applied_mapping_v2`，没有把模板映射补进 `mapping_suggestions_v2`。
+  - 前端套用模板只改字段值，没有同步推荐来源、置信度和确认基准。
+- 验收重点：指定模板预览必须返回 `source=template`、`confidence=1.0` 的建议；套用模板后界面显示“导入模板 / 100%”；未修改模板推荐提交 `user_confirmed`，修改后提交 `user_corrected`。
 
 ## 总指挥验收命令
 

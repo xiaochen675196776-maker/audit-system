@@ -949,6 +949,10 @@ async function applyTemplateCandidate(tc: TemplateCandidate) {
         if (idx !== undefined && idx < mappings.value.length) {
           mappings.value[idx].field_key = fieldKey
           mappings.value[idx].status = fieldKey ? 'matched' : 'unmatched'
+          // 模板来源元数据 (TASK-037)
+          mappings.value[idx].suggestion_source = 'template'
+          mappings.value[idx].suggestion_confidence = 1.0
+          mappings.value[idx].original_field_key = fieldKey
         }
       }
       // 捕获模板默认值
@@ -964,6 +968,16 @@ async function applyTemplateCandidate(tc: TemplateCandidate) {
 
 // 取消套用模板（清理模板相关状态）
 function cancelTemplateApply() {
+  // 清除模板来源标记 (TASK-037)
+  if (selectedTemplateId.value) {
+    for (const m of mappings.value) {
+      if (m.suggestion_source === 'template') {
+        m.suggestion_source = undefined
+        m.suggestion_confidence = undefined
+        m.original_field_key = m.field_key
+      }
+    }
+  }
   selectedTemplateId.value = null
   templateDefaultValues.value = null
 }
