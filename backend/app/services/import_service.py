@@ -92,11 +92,16 @@ async def preview_import(
         experience_suggestions = await recommend_from_experience(
             db, cid, data_type, columns,
         )
-        # 经验推荐不能覆盖模板已确认的映射
+        # 模板映射优先：移除经验建议中已被模板覆盖的列
         if "applied_mapping_v2" in result:
-            for col_id in result["applied_mapping_v2"]:
-                if col_id in experience_suggestions:
-                    experience_suggestions[col_id]["source"] = "template"
+            for col_id in list(experience_suggestions.keys()):
+                if col_id in result["applied_mapping_v2"]:
+                    # 替换为模板来源标记
+                    experience_suggestions[col_id] = {
+                        "target_field": result["applied_mapping_v2"][col_id],
+                        "source": "template",
+                        "confidence": 1.0,
+                    }
         result["mapping_suggestions_v2"] = experience_suggestions
 
     # 关键词匹配兜底 (无经验时的基础推荐)

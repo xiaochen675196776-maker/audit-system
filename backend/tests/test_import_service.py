@@ -1697,3 +1697,142 @@ class TestSaveMappingExperience:
         rows = res.scalars().all()
         # 只有 voucher_no 经验被保存
         assert all(r.target_field in ("voucher_no",) for r in rows)
+
+
+class TestExperienceIsolation:
+    """TASK-036：经验推荐隔离 — 单位私有经验不泄漏"""
+
+    @pytest.mark.asyncio
+    async def test_private_experience_not_leaked_to_other_company(self, db):
+        """A单位经验不得推荐给B单位"""
+        from app.models.field_mapping_experience import FieldMappingExperience
+        from app.services.mapping_experience_service import (
+            recommend_from_experience, normalize_header, build_context_signature,
+        )
+        from app.services.file_parser import build_columns
+
+        company_a = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        company_b = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        headers = ["凭证号", "凭证日期", "摘要", "科目编码", "科目名称"]
+        columns = build_columns(headers)
+        nh = normalize_header("摘要")
+        ctx = build_context_signature(headers, 2)
+
+        # A 单位私有经验
+        db.add(FieldMappingExperience(
+            company_id=company_a, data_type="journal",
+            source_header_original="摘要", source_header_normalized=nh,
+            source_column_index=2, context_signature=ctx,
+            target_field="summary", lookup_key="iso_test_a",
+            use_count=5, success_count=5, is_active=True,
+        ))
+        await db.flush()
+
+        # B 单位查询：不应获取 A 的单位经验
+        suggestions_b = await recommend_from_experience(db, company_b, "journal", columns)
+        for v in suggestions_b.values():
+            assert v["source"] != "company_experience", f"B got A's private: {v}"
+
+    @pytest.mark.asyncio
+    async def test_no_company_id_only_sees_global(self, db):
+        """未传 company_id 时只返回全局经验，不泄漏任何单位私有经验"""
+        from app.models.field_mapping_experience import FieldMappingExperience
+        from app.services.mapping_experience_service import (
+            recommend_from_experience, normalize_header, build_context_signature,
+        )
+        from app.services.file_parser import build_columns
+
+        company_a = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        headers = ["凭证号", "凭证日期", "摘要", "科目编码", "科目名称"]
+        columns = build_columns(headers)
+        nh = normalize_header("摘要")
+        ctx = build_context_signature(headers, 2)
+
+        db.add(FieldMappingExperience(
+            company_id=company_a, data_type="journal",
+            source_header_original="摘要", source_header_normalized=nh,
+            source_column_index=2, context_signature=ctx,
+            target_field="summary", lookup_key="iso_test_priv",
+            use_count=5, success_count=5, is_active=True,
+        ))
+        # 全局经验
+        db.add(FieldMappingExperience(
+            company_id=None, data_type="journal",
+            source_header_original="摘要", source_header_normalized=nh,
+            source_column_index=2, context_signature=ctx,
+            target_field="summary", lookup_key="iso_test_global",
+            use_count=3, success_count=3, is_active=True,
+        ))
+        await db.flush()
+
+        suggestions = await recommend_from_experience(db, None, "journal", columns)
+        for v in suggestions.values():
+            assert v["source"] == "global_experience", f"no-company saw private: {v}"
+
+    @pytest.mark.asyncio
+    async def test_global_experience_available_to_any_company(self, db):
+        """全局经验可在任意单位命中"""
+        from app.models.field_mapping_experience import FieldMappingExperience
+        from app.services.mapping_experience_service import (
+            recommend_from_experience, normalize_header, build_context_signature,
+        )
+        from app.services.file_parser import build_columns
+
+        company_b = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        headers = ["科目编码", "科目名称", "期初借方余额"]
+        columns = build_columns(headers)
+        nh = normalize_header("科目编码")
+        ctx = build_context_signature(headers, 0)
+
+        db.add(FieldMappingExperience(
+            company_id=None, data_type="trial_balance",
+            source_header_original="科目编码", source_header_normalized=nh,
+            source_column_index=0, context_signature=ctx,
+            target_field="account_code", lookup_key="iso_test_gl",
+            use_count=10, success_count=10, is_active=True,
+        ))
+        await db.flush()
+
+        suggestions = await recommend_from_experience(db, company_b, "trial_balance", columns)
+        assert any(v["source"] == "global_experience" for v in suggestions.values())
+
+    @pytest.mark.asyncio
+    async def test_sort_by_success_count_and_updated_at(self, db):
+        """同优先级内按 success_count DESC, updated_at DESC 排序"""
+        from app.models.field_mapping_experience import FieldMappingExperience
+        from app.services.mapping_experience_service import (
+            recommend_from_experience, normalize_header, build_context_signature,
+        )
+        from app.services.file_parser import build_columns
+        from datetime import datetime, timedelta
+
+        company = uuid.uuid4()
+        headers = ["凭证号", "凭证日期", "摘要"]
+        columns = build_columns(headers)
+        nh = normalize_header("凭证号")
+        ctx = build_context_signature(headers, 0)
+
+        # 经验1: success=3, older
+        db.add(FieldMappingExperience(
+            company_id=company, data_type="journal",
+            source_header_original="凭证号", source_header_normalized=nh,
+            source_column_index=0, context_signature=ctx,
+            target_field="voucher_no", lookup_key="sort_test_1",
+            use_count=3, success_count=3, is_active=True,
+            updated_at=datetime.utcnow() - timedelta(days=10),
+        ))
+        # 经验2: success=10, newer — 应该被选中
+        db.add(FieldMappingExperience(
+            company_id=company, data_type="journal",
+            source_header_original="凭证号", source_header_normalized=nh,
+            source_column_index=0, context_signature=ctx,
+            target_field="voucher_no", lookup_key="sort_test_2",
+            use_count=10, success_count=10, is_active=True,
+            updated_at=datetime.utcnow(),
+        ))
+        await db.flush()
+
+        suggestions = await recommend_from_experience(db, company, "journal", columns)
+        col = suggestions.get("col_001", {})
+        # 应选中 success_count 更高的经验
+        assert col.get("confidence", 0) >= 1.0

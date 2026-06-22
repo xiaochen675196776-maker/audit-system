@@ -88,17 +88,15 @@
 | `docs/tasks/TASK-032-field-mapping-experience-preview.md` | DONE | 已执行 | 预览阶段接入字段映射经验推荐 |
 | `docs/tasks/TASK-033-field-mapping-experience-save.md` | DONE | 已执行 | 执行导入成功后保存用户确认的字段映射经验 |
 | `docs/tasks/TASK-034-field-mapping-experience-frontend.md` | DONE | 已执行 | 导入页展示推荐来源、记录确认并提交记忆开关 |
-| `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 已验收 | 字段映射经验库总体验收与最小回归修复 |
+| `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 验收未通过，见 TASK-036 | 字段映射经验库总体验收与最小回归修复 |
+| `docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md` | DONE | 已执行 | 修复字段映射经验库验收阻塞项 |
 
 ## 推荐执行顺序
 
-1. 下一步执行 `TASK-031`，先建立字段映射经验库后端基础。
-2. `TASK-032` 在 `TASK-031` 验收后执行，接入预览推荐。
-3. `TASK-033` 在 `TASK-031` 验收后执行，建议等 `TASK-032` 合入后再做，避免同时改 `imports.py` / `import_service.py`。
-4. `TASK-034` 等 `TASK-032` 和 `TASK-033` 都通过后执行。
-5. `TASK-035` 最后执行总体验收和最小回归修复。
-6. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
-7. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
+1. 下一步执行 `TASK-036`，先修复字段映射经验库验收阻塞项。
+2. `TASK-036` 通过总指挥复验后，字段映射经验库第一版才算收口。
+3. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+4. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
 
 ## 导入模板库分派
 
@@ -151,6 +149,7 @@
   - `TASK-033`：执行接口增加记忆开关和确认信息，成功导入后保存经验。
   - `TASK-034`：前端展示推荐来源、记录确认/修改、提交记忆开关。
   - `TASK-035`：总体验收，覆盖首次学习、再次推荐、冲突、关闭记忆、失败不保存、歧义字段、模板优先和重复表头。
+  - `TASK-036`：修复总指挥验收发现的经验隔离、迁移、模板优先、前端展示和确认记录问题。
 
 ## 导入模板库验收未通过记录
 
@@ -218,30 +217,35 @@
 
 ## 最近一次总指挥验收
 
-- 验收日期：2026-06-20
-- 结论：`TASK-018` 通过；验收中补充了旧库运行期补列，当前无新的阻塞任务
-- 验收范围：导入执行失败原因展示、序时账/辅助明细账辅助字段入库、旧 SQLite 库结构兼容、后端测试、前端构建、浏览器失败页。
-- 验收结果：
+- 验收日期：2026-06-22
+- 结论：`TASK-035` 不通过，必须先执行 `TASK-036`。
+- 验收范围：字段映射经验库后端模型/迁移、预览推荐、导入后保存、导入页展示与确认记录、模板优先、跨单位经验隔离。
+- 已通过验证：
+  - `D:\python\python.exe -m pytest`：通过，159 passed，1 warning。
   - `D:\python\python.exe -m compileall app`：通过。
-  - `D:\python\python.exe -m pytest`：通过，89 passed。
-  - `npm run build`：通过。
-  - `git diff --check -- backend frontend docs`：通过。
-  - 旧 `backend/audit.db` 启动后已补齐 `journal_entries.extra_fields` 和 `subsidiary_ledgers.extra_fields`。
-  - 实际 API 验收：序时账带辅助字段 `source_type` 导入返回 `success=2`、`errors=[]`。
-  - 浏览器验收：失败页显示结构化具体原因，不再只显示“导入失败”；无 Vue 运行时错误。
-  - 验收截图：`frontend/ui-acceptance-shots/task-018-error-display.png`。
+  - `npm run build`：通过；保留 Vite/Rollup 体积和注释警告。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+- 阻塞项：
+  - `mapping_experience_service.recommend_from_experience()` 查询经验时没有限制当前单位或全局经验，A 单位私有经验会被 B 单位和无单位预览当成 `global_experience` 使用。
+  - `mapping_experience_service._pick_best_experience()` 把 `not same_company` 全部归为全局候选，且同优先级内没有按 `success_count` / `updated_at` 确定排序。
+  - `backend/alembic/versions/20260622_0001_add_field_mapping_experiences.py` 是空迁移，正式部署不会创建 `field_mapping_experiences` 表。
+  - 显式套用模板后，`mapping_suggestions_v2` 只把已有经验建议改成 `template` 来源，没有以实际模板映射补齐模板建议。
+  - 导入页映射表未实际展示推荐来源和置信度。
+  - 导入页 `original_field_key` 记录的是旧关键词匹配字段，不是实际自动填入的经验推荐字段，可能把“未修改推荐”误报为 `user_corrected`。
+- 新任务：`docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md`
 
 ## 最新缺陷分派
 
-- 分派日期：2026-06-18
-- 新任务：`docs/tasks/TASK-018-import-execute-error-disclosure.md`
-- 状态：已验收
-- 触发问题：用户导入 74 列、12502 行的序时账类文件时，第 2 步提示“所有检查通过”，第 3 步只显示“导入请求失败 / 导入失败”，没有具体原因。
+- 分派日期：2026-06-22
+- 新任务：`docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md`
+- 状态：OPEN
+- 触发问题：`TASK-035` 总体验收发现字段映射经验库存在跨单位经验泄漏、空 Alembic 迁移、模板优先标记不完整、前端推荐来源/置信度未展示、确认类型记录不准等阻塞项。
 - 初步根因：
-  - 前端 `normalizeError()` 会把无法识别的后端 `detail` 吞掉，只返回兜底“导入失败”。
-  - 后端 `/imports/execute` 对异常使用 `detail=str(e)`，没有结构化中文错误。
-  - 序时账/辅助明细账使用自定义辅助字段时，后端会生成 `extra_fields`，但 `JournalEntry` 和 `SubsidiaryLedger` 模型当前不支持该字段。
-- 验收重点：失败页必须显示具体中文原因；辅助字段导入要么支持入库，要么在导入前明确阻止；不得再出现只有“导入失败”的结果页。
+  - 经验推荐查询没有过滤为当前单位或全局经验。
+  - 推荐候选分类把所有非当前单位经验都当成全局经验。
+  - 迁移文件只保留占位，没有实际建表。
+  - 前端构造映射行时没有把实际自动推荐字段写入 `original_field_key`，映射表也没有渲染推荐来源和置信度。
+- 验收重点：不得跨单位推荐私有经验；迁移必须真实创建表；模板映射优先；推荐来源和置信度中文可见；未修改推荐提交 `user_confirmed`，修改或手动选择提交 `user_corrected`。
 
 ## 总指挥验收命令
 

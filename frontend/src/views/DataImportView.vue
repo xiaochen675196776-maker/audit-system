@@ -180,6 +180,8 @@
                     <template #default="{ row, $index }">
                       <span class="file-col-name">{{ row.file_column }}</span>
                       <span class="file-col-index">（第{{ $index + 1 }}列）</span>
+                      <span v-if="row.suggestion_source" class="file-col-source">{{ sourceLabel(row.suggestion_source) }}</span>
+                      <span v-if="row.suggestion_confidence" class="file-col-conf">{{ confidenceText(row.suggestion_confidence) }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="映射到系统字段" min-width="200">
@@ -685,7 +687,22 @@ function extractError(e: any, defaultMsg: string): string {
   return normalizeError(e, defaultMsg)
 }
 
-// 查找缺失字段的中文名
+// 推荐来源中文标签
+function sourceLabel(s: string | undefined): string {
+  const map: Record<string, string> = {
+    template: '导入模板',
+    company_experience: '该客户历史确认',
+    global_experience: '通用历史经验',
+    keyword_match: '系统字段识别',
+  }
+  return map[s || ''] || ''
+}
+
+// 置信度格式化
+function confidenceText(c: number | undefined): string {
+  if (c === undefined || c === null) return ''
+  return Math.round(c * 100) + '%'
+}
 function missingFieldLabel(key: string): string {
   for (const opts of Object.values(fieldOptions)) {
     const found = opts.find((f) => f.value === key)
@@ -764,19 +781,20 @@ async function goPreview() {
 
     const newMappings: MappingRow[] = headers.map((headerName, colIndex) => {
       const fieldKey = headerToField[headerName] || null
-      const colInfo = columnsInfo.value[colIndex]
-      const colId = colInfo?.column_id || `col_${String(colIndex + 1).padStart(3, '0')}`
+      const colInfo = columnsInfo.value[colIndex] || { column_id: `col_${String(colIndex + 1).padStart(3, '0')}` }
+      const colId = colInfo.column_id
       const suggestion = data.mapping_suggestions_v2?.[colId]
+      const autoField = (suggestion && suggestion.confidence >= 0.85) ? suggestion.target_field : fieldKey
       return {
         file_column: headerName,
-        field_key: (suggestion && suggestion.confidence >= 0.85) ? suggestion.target_field : fieldKey,
-        status: (suggestion && suggestion.confidence >= 0.85) ? 'matched' : (fieldKey ? 'matched' : 'unmatched'),
+        field_key: autoField,
+        status: autoField ? 'matched' : 'unmatched',
         sample_value: firstRow[colIndex] || '',
         column_id: colId,
         column_index: colIndex,
         suggestion_source: suggestion?.source,
         suggestion_confidence: suggestion?.confidence,
-        original_field_key: fieldKey,
+        original_field_key: autoField,  // 自动填入的推荐字段，修改前即为确认基准
       }
     })
 
@@ -1274,6 +1292,19 @@ onMounted(() => {
 }
 
 .file-col-index {
+  font-size: var(--font-size-xs);
+  color: var(--text-placeholder);
+  white-space: nowrap;
+}
+
+.file-col-source {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary-600);
+  white-space: nowrap;
+  margin-left: var(--spacing-1);
+}
+
+.file-col-conf {
   font-size: var(--font-size-xs);
   color: var(--text-placeholder);
   white-space: nowrap;

@@ -102,9 +102,14 @@ async def recommend_from_experience(
     """
     从经验库推荐字段映射，按 column_id 返回建议。
 
+    隔离规则：
+    - 传了 company_id：匹配该单位经验 + 全局经验 (company_id IS NULL)
+    - 未传 company_id：只匹配全局经验，不得读取任意单位私有经验
+
     优先级：同客户上下文 > 全局上下文 > 同客户 header-only > 全局 header-only
+    同级内按 success_count DESC, updated_at DESC 排序
     """
-    from sqlalchemy import select, and_, or_
+    from sqlalchemy import select, and_, or_, desc
 
     suggestions: dict[str, dict] = {}
     headers = [c.get("header", "") for c in columns]
@@ -119,13 +124,33 @@ async def recommend_from_experience(
         ctx = build_context_signature(headers, col_idx)
         ambiguous = is_ambiguous_header(nh)
 
-        # 查询所有匹配经验
-        stmt = select(FieldMappingExperience).where(
-            and_(
-                FieldMappingExperience.data_type == data_type,
-                FieldMappingExperience.source_header_normalized == nh,
-                FieldMappingExperience.is_active == True,
+        # 隔离：按 company_id 范围查询
+        if company_id is not None:
+            stmt = select(FieldMappingExperience).where(
+                and_(
+                    FieldMappingExperience.data_type == data_type,
+                    FieldMappingExperience.source_header_normalized == nh,
+                    FieldMappingExperience.is_active == True,
+                    or_(
+                        FieldMappingExperience.company_id == company_id,
+                        FieldMappingExperience.company_id == None,
+                    ),
+                )
             )
+        else:
+            stmt = select(FieldMappingExperience).where(
+                and_(
+                    FieldMappingExperience.data_type == data_type,
+                    FieldMappingExperience.source_header_normalized == nh,
+                    FieldMappingExperience.is_active == True,
+                    FieldMappingExperience.company_id == None,
+                )
+            )
+
+        # 按 success_count DESC, updated_at DESC 排序
+        stmt = stmt.order_by(
+            desc(FieldMappingExperience.success_count),
+            desc(FieldMappingExperience.updated_at),
         )
         result = await db.execute(stmt)
         experiences = result.scalars().all()
@@ -144,11 +169,10 @@ def _pick_best_experience(
     normalized_header: str,
     ambiguous: bool,
 ) -> dict | None:
-    """从经验列表中选出最佳匹配，按优先级返回"""
+    """从经验列表中选出最佳匹配，按优先级 + 统计排序返回"""
     cid_str = str(company_id) if company_id else None
-    ambiguous_flag = ambiguous
 
-    # 分级收集
+    # 分级收集（experiences 已按 success_count/updated_at 排序）
     same_company_ctx = []
     global_ctx = []
     same_company_header = []
@@ -158,17 +182,19 @@ def _pick_best_experience(
         exp_cid = str(exp.company_id) if exp.company_id else None
         same_ctx = (exp.context_signature == context_signature)
         same_company = (cid_str is not None and exp_cid == cid_str)
+        is_global = (exp.company_id is None)
 
         if same_company and same_ctx:
             same_company_ctx.append(exp)
-        elif not same_company and same_ctx:
+        elif is_global and same_ctx:
             global_ctx.append(exp)
         elif same_company and not same_ctx:
             same_company_header.append(exp)
-        elif not same_company and not same_ctx:
+        elif is_global and not same_ctx:
             global_header.append(exp)
+        # 其他单位的经验：不收集（已在查询中过滤，但保底）
 
-    # 按优先级选择
+    # 按优先级选择（每组内已排序）
     target = None
     source = ""
     confidence = 0.0
@@ -181,11 +207,11 @@ def _pick_best_experience(
         target = global_ctx[0]
         source = "global_experience"
         confidence = 0.9
-    elif not ambiguous_flag and same_company_header:
+    elif not ambiguous and same_company_header:
         target = same_company_header[0]
         source = "company_experience"
         confidence = 0.85
-    elif not ambiguous_flag and global_header:
+    elif not ambiguous and global_header:
         target = global_header[0]
         source = "global_experience"
         confidence = 0.75
