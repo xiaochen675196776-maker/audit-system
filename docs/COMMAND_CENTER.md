@@ -82,14 +82,14 @@
 | `docs/tasks/TASK-026-template-match-safety.md` | DONE | 已执行 | 修复模板匹配安全、显式套用校验和重复表头样本生成错列 |
 | `docs/tasks/TASK-027-template-config-effective.md` | DONE | 已执行 | 让 parse_config 和 default_values 对测试、预览、导入真实生效 |
 | `docs/tasks/TASK-028-template-library-reacceptance.md` | DONE | 已复验 | TASK-025~027 修复后的总体验收与最小回归修复 |
-| `docs/tasks/TASK-029-template-execute-end-to-end.md` | DONE | 已执行 | 修复确认套用模板后的最终导入链路 |
+| `docs/tasks/TASK-029-template-execute-end-to-end.md` | DONE | 已复验 | 修复确认套用模板后的最终导入链路 |
+| `docs/tasks/TASK-030-template-cancel-state-cleanup.md` | DONE | 已验收 | 修复取消套用模板后的默认值状态残留 |
 
 ## 推荐执行顺序
 
-1. 当前 `TASK-028` 复验未通过，先执行 `TASK-029`。
-2. `TASK-029` 修复确认套用模板后的最终导入链路：执行请求携带 `template_id`、模板默认值参与前端检查、重复表头显示列序号。
-3. `TASK-029` 完成并通过验收后，再重新执行 `TASK-028` / `TASK-025` 总体验收。
-4. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+1. 当前导入模板库链路已复验通过，无新的阻塞任务。
+2. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+3. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
 
 ## 导入模板库分派
 
@@ -136,6 +136,36 @@
   - 针对性服务层复现：带标题行、模板默认年度/期间的样本，预览指定模板成功；最终导入不带模板配置失败，带模板配置成功。
   - 模板安全回归：不相关文件已被拒绝；`summary,summary` 样本生成保留第一列为 `summary`。
   - 浏览器烟测：`/data/templates`、`/data/import` 可打开，无控制台错误。
+
+## 导入模板执行链路复验未通过记录
+
+- 验收日期：2026-06-22
+- 结论：`TASK-029` 不通过，必须先执行 `TASK-030`。
+- 已通过项：
+  - `D:\python\python.exe -m pytest`：通过，134 passed。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - 针对性接口复现：`/imports/execute` 带 `template_id + column_mapping_v2` 能按模板 `parse_config/default_values` 成功导入。
+  - 针对性接口复现：不存在、停用、类型不一致、非法 UUID 模板均返回中文 400 错误。
+- 阻塞项：
+  - 点击“取消套用”只清空 `selectedTemplateId`，没有清空 `templateDefaultValues`。
+  - 重新普通预览时没有清空旧的 `templateDefaultValues`。
+  - 前端可能继续用旧模板默认年度/期间放行校验，但最终执行请求不带 `template_id`，后端不会补默认值。
+
+## 导入模板库最终复验通过记录
+
+- 验收日期：2026-06-22
+- 结论：`TASK-029` / `TASK-030` 通过，导入模板库链路当前无阻塞。
+- 验收结果：
+  - `D:\python\python.exe -m pytest`：通过，134 passed。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - 取消套用模板会同时清空 `selectedTemplateId` 和 `templateDefaultValues`。
+  - 重新普通预览和套用模板失败都会清空旧模板默认值。
+  - `mappingValid` 只有在仍选中模板时才使用模板默认年度/期间补齐。
+  - 浏览器烟测：`/data/import`、`/data/templates` 可打开，无控制台错误。
 
 ## 最近一次总指挥验收
 

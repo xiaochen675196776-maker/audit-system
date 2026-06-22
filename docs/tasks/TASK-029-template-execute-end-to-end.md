@@ -92,3 +92,31 @@ git diff --check -- backend frontend docs .gitignore
 ## 完成回报
 
 按 `docs/tasks/DONE_TEMPLATE.md` 追加到本文件底部。
+
+## 总指挥复验结论
+
+- 验收日期：2026-06-22
+- 结论：不通过，需先执行 `TASK-030-template-cancel-state-cleanup.md`。
+- 已通过项：
+  - `D:\python\python.exe -m pytest`：通过，134 passed。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - `/imports/execute` 带 `template_id + column_mapping_v2` 能按模板 `parse_config/default_values` 成功导入。
+  - `/imports/execute` 对不存在、停用、类型不一致、非法 UUID 模板返回中文 400 错误。
+- 阻塞项：
+  - 前端点击“取消套用”只清空 `selectedTemplateId`，没有清空 `templateDefaultValues`。
+  - 重新普通预览时也没有清空旧的 `templateDefaultValues`。
+  - 因此前端可能继续用旧模板默认年度/期间放行校验，但最终执行请求不带 `template_id`，后端不会补默认值。
+
+## 总指挥二次复验结论
+
+- 验收日期：2026-06-22
+- 结论：通过；`TASK-030` 已修复本任务遗留的前端默认值状态残留。
+- 验收结果：
+  - `D:\python\python.exe -m pytest`：通过，134 passed。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - `/imports/execute` 模板执行链路保持通过。
+  - 取消套用、普通预览、套用失败均不会残留旧模板默认值。

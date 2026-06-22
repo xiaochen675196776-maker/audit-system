@@ -339,7 +339,7 @@
             <div v-if="templateCandidates.length > 0" class="template-candidates">
               <div class="tc-header">
                 <span class="tc-title">推荐模板</span>
-                <el-button size="small" text @click="selectedTemplateId = null">
+                <el-button size="small" text @click="cancelTemplateApply()">
                   {{ selectedTemplateId ? '取消套用' : '' }}
                 </el-button>
               </div>
@@ -643,11 +643,11 @@ const mappingValid = computed(() => {
   )
   if (manualFiscalYear.value) mappedKeys.add('fiscal_year')
   if (manualPeriod.value) mappedKeys.add('period')
-  // 模板默认值也能补齐年度/期间
-  if (templateDefaultValues.value?.fiscal_year && !mappedKeys.has('fiscal_year')) {
+  // 模板默认值也能补齐年度/期间（仅当模板仍被选中时）
+  if (selectedTemplateId.value && templateDefaultValues.value?.fiscal_year && !mappedKeys.has('fiscal_year')) {
     mappedKeys.add('fiscal_year')
   }
-  if (templateDefaultValues.value?.period && !mappedKeys.has('period')) {
+  if (selectedTemplateId.value && templateDefaultValues.value?.period && !mappedKeys.has('period')) {
     mappedKeys.add('period')
   }
   return missingFields.value.every((f) => mappedKeys.has(f))
@@ -768,6 +768,7 @@ async function goPreview() {
     templateCandidates.value = data.template_candidates || []
     columnsInfo.value = data.columns || []
     selectedTemplateId.value = null
+    templateDefaultValues.value = null
 
     mappings.value = newMappings
     const manualFields: string[] = []
@@ -905,7 +906,14 @@ async function applyTemplateCandidate(tc: TemplateCandidate) {
   } catch (e: any) {
     ElMessage.error(normalizeError(e, '模板套用失败'))
     selectedTemplateId.value = null
+    templateDefaultValues.value = null
   }
+}
+
+// 取消套用模板（清理模板相关状态）
+function cancelTemplateApply() {
+  selectedTemplateId.value = null
+  templateDefaultValues.value = null
 }
 
 function resetImport() {
