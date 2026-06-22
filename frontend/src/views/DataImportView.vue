@@ -176,9 +176,10 @@
                   class="mapping-table"
                   size="small"
                 >
-                  <el-table-column label="文件列名" width="140">
-                    <template #default="{ row }">
+                  <el-table-column label="文件列名" width="160">
+                    <template #default="{ row, $index }">
                       <span class="file-col-name">{{ row.file_column }}</span>
+                      <span class="file-col-index">（第{{ $index + 1 }}列）</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="映射到系统字段" min-width="200">
@@ -547,6 +548,7 @@ interface TemplateCandidate {
 const templateCandidates = ref<TemplateCandidate[]>([])
 const selectedTemplateId = ref<string | null>(null)
 const columnsInfo = ref<any[]>([])
+const templateDefaultValues = ref<Record<string, any> | null>(null)
 
 // 字段选项（value 必须与后端 TYPE_FIELDS / KEYWORD_MAP 完全一致）
 const fieldOptions: Record<string, { label: string; value: string }[]> = {
@@ -641,6 +643,13 @@ const mappingValid = computed(() => {
   )
   if (manualFiscalYear.value) mappedKeys.add('fiscal_year')
   if (manualPeriod.value) mappedKeys.add('period')
+  // 模板默认值也能补齐年度/期间
+  if (templateDefaultValues.value?.fiscal_year && !mappedKeys.has('fiscal_year')) {
+    mappedKeys.add('fiscal_year')
+  }
+  if (templateDefaultValues.value?.period && !mappedKeys.has('period')) {
+    mappedKeys.add('period')
+  }
   return missingFields.value.every((f) => mappedKeys.has(f))
 })
 
@@ -825,6 +834,9 @@ async function goExecute() {
     if (Object.keys(columnMappingV2).length > 0) {
       formData.append('column_mapping_v2', JSON.stringify(columnMappingV2))
     }
+    if (selectedTemplateId.value) {
+      formData.append('template_id', selectedTemplateId.value)
+    }
     if (manualFiscalYear.value) formData.append('fiscal_year', String(manualFiscalYear.value))
     if (manualPeriod.value) formData.append('period', String(manualPeriod.value))
 
@@ -886,6 +898,8 @@ async function applyTemplateCandidate(tc: TemplateCandidate) {
           mappings.value[idx].status = fieldKey ? 'matched' : 'unmatched'
         }
       }
+      // 捕获模板默认值
+      templateDefaultValues.value = data.template_default_values || null
       ElMessage.success(`已套用模板：${tc.name}`)
     }
   } catch (e: any) {
@@ -915,6 +929,7 @@ function resetImport() {
   templateCandidates.value = []
   selectedTemplateId.value = null
   columnsInfo.value = []
+  templateDefaultValues.value = null
   result.value = { success_count: 0, fail_count: 0, failures: [] }
 }
 
@@ -1214,6 +1229,12 @@ onMounted(() => {
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
+}
+
+.file-col-index {
+  font-size: var(--font-size-xs);
+  color: var(--text-placeholder);
+  white-space: nowrap;
 }
 
 .map-select {

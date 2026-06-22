@@ -165,15 +165,27 @@ async def execute(
             except json.JSONDecodeError:
                 raise HTTPException(400, detail="column_mapping JSON 格式无效，请检查是否为合法 JSON 对象")
 
-        # 加载模板配置
+        # 加载模板配置（含校验）
         parse_config = None
         template_default_values = None
         if template_id:
             from app.services.template_service import get_template
-            tmpl = await get_template(db, uuid.UUID(template_id))
-            if tmpl:
-                parse_config = tmpl.parse_config or None
-                template_default_values = tmpl.default_values or None
+            try:
+                tid = uuid.UUID(template_id)
+            except ValueError:
+                raise HTTPException(400, detail="template_id 格式无效")
+            tmpl = await get_template(db, tid)
+            if tmpl is None:
+                raise HTTPException(400, detail=f"模板不存在（ID: {template_id}），请检查模板是否已被删除")
+            if not tmpl.is_active:
+                raise HTTPException(400, detail=f"模板「{tmpl.name}」已停用，请启用后再导入")
+            if tmpl.data_type != data_type:
+                raise HTTPException(
+                    400,
+                    detail=f"模板数据类型（{tmpl.data_type}）与本次导入类型（{data_type}）不一致",
+                )
+            parse_config = tmpl.parse_config or None
+            template_default_values = tmpl.default_values or None
 
         result = await import_data(
             db=db,

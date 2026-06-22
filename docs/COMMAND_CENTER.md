@@ -81,15 +81,15 @@
 | `docs/tasks/TASK-025-template-library-final-acceptance.md` | DONE | 已复验 | 导入模板库总体验收（含 TASK-026/027 修复） |
 | `docs/tasks/TASK-026-template-match-safety.md` | DONE | 已执行 | 修复模板匹配安全、显式套用校验和重复表头样本生成错列 |
 | `docs/tasks/TASK-027-template-config-effective.md` | DONE | 已执行 | 让 parse_config 和 default_values 对测试、预览、导入真实生效 |
-| `docs/tasks/TASK-028-template-library-reacceptance.md` | DONE | 已执行 | TASK-025~027 修复后的总体验收与最小回归修复 |
+| `docs/tasks/TASK-028-template-library-reacceptance.md` | DONE | 已复验 | TASK-025~027 修复后的总体验收与最小回归修复 |
+| `docs/tasks/TASK-029-template-execute-end-to-end.md` | DONE | 已执行 | 修复确认套用模板后的最终导入链路 |
 
 ## 推荐执行顺序
 
-1. 当前 `TASK-025` 总体验收未通过，状态为 `REVIEW_NEEDED`。
-2. 下一步执行 `TASK-026`，先修复模板错配和重复表头样本生成错列。
-3. `TASK-027` 在 `TASK-026` 验收后执行，让 `parse_config` 和 `default_values` 真实参与测试、预览和导入。
-4. `TASK-028` 最后执行，只做总体验收和最小回归修复，不新增新功能。
-5. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+1. 当前 `TASK-028` 复验未通过，先执行 `TASK-029`。
+2. `TASK-029` 修复确认套用模板后的最终导入链路：执行请求携带 `template_id`、模板默认值参与前端检查、重复表头显示列序号。
+3. `TASK-029` 完成并通过验收后，再重新执行 `TASK-028` / `TASK-025` 总体验收。
+4. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
 
 ## 导入模板库分派
 
@@ -117,6 +117,24 @@
   - `D:\python\python.exe -m compileall app`：通过。
   - `npm run build`：通过。
   - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - 浏览器烟测：`/data/templates`、`/data/import` 可打开，无控制台错误。
+
+## 导入模板库复验未通过记录
+
+- 验收日期：2026-06-22
+- 结论：`TASK-028` 不通过，必须先执行 `TASK-029`。
+- 阻塞项：
+  - 导入页最终执行导入时没有提交已确认的 `template_id`，导致模板 `parse_config` 和 `default_values` 在最后一步失效。
+  - 后端 `/imports/execute` 收到 `template_id` 时缺少存在性、启用状态和数据类型一致性校验。
+  - 套用模板后，前端缺失字段检查没有把模板默认年度/期间纳入判断，文件无年度/期间列时仍可能阻止导入。
+  - 字段映射表仍只显示原始列名，没有按要求显示 `说明（第 26 列）` 这类列序号。
+- 已执行验证：
+  - `D:\python\python.exe -m pytest`：通过，130 passed。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs .gitignore`：通过。
+  - 针对性服务层复现：带标题行、模板默认年度/期间的样本，预览指定模板成功；最终导入不带模板配置失败，带模板配置成功。
+  - 模板安全回归：不相关文件已被拒绝；`summary,summary` 样本生成保留第一列为 `summary`。
   - 浏览器烟测：`/data/templates`、`/data/import` 可打开，无控制台错误。
 
 ## 最近一次总指挥验收
