@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Numeric, Text, func
+from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Numeric, Text, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -36,6 +36,9 @@ class JournalEntry(Base):
     )
 
     attachment_count: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="附件数")
+
+    # 灵活扩展（不同财务软件或用户自定义映射的额外列）
+    extra_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="额外字段")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

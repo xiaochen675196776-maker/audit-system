@@ -38,4 +38,13 @@ Thumbs.db
 # Uploads
 uploads/*
 !uploads/.gitkeep
+backend/uploads/import_*
+!backend/uploads/.gitkeep
+
+# Runtime logs and acceptance artifacts
+*.out.log
+*.err.log
+frontend/vite-ui-acceptance.log
+frontend/ui-acceptance-shots/*
+!frontend/ui-acceptance-shots/.gitkeep
 .reasonix/

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import engine, Base
+from app.core.schema import ensure_runtime_schema
 
 # 导入所有模型，确保注册到 Base.metadata
 import app.models  # noqa: F401
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
     """应用生命周期：启动时创建表，关闭时释放连接"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(ensure_runtime_schema)
     yield
     await engine.dispose()
 

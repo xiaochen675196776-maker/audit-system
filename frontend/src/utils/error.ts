@@ -2,9 +2,9 @@
  * 将后端错误响应归一化为纯中文消息字符串。
  *
  * 覆盖场景：
- * - detail 是字符串 — 若为已知英文模式则翻译，否则只记 console 并返回中文兜底
+ * - detail 是字符串 — 若为已知英文模式则翻译，若含中文直接展示，否则记 console 并返回中文兜底
+ * - detail 是结构化对象 — 解析 message/reason/suggestion 字段
  * - detail 是 FastAPI ValidationError 数组 — 翻译每条 msg
- * - detail 是对象 — 翻译 message 字段
  * - error.message 字符串（网络错误等）— 翻译已知模式
  * - 全部为空时使用 fallback
  *
@@ -17,6 +17,11 @@ interface FastAPIErrorItem {
   loc?: (string | number)[]
   input?: unknown
   ctx?: Record<string, unknown>
+}
+
+/** 检查字符串是否包含中文 */
+function hasChinese(s: string): boolean {
+  return /[\u4e00-\u9fff]/.test(s)
 }
 
 /** 把已知英文错误短语翻译为中文；无法翻译时返回 null */
@@ -53,6 +58,21 @@ function translateMessage(raw: string): string | null {
   return null
 }
 
+/** 从结构化错误对象中提取中文消息列表 */
+function extractStructuredMessages(detail: Record<string, any>): string[] {
+  const parts: string[] = []
+  if (typeof detail.message === 'string' && detail.message.trim()) {
+    parts.push(detail.message)
+  }
+  if (typeof detail.reason === 'string' && detail.reason.trim()) {
+    parts.push(detail.reason)
+  }
+  if (typeof detail.suggestion === 'string' && detail.suggestion.trim()) {
+    parts.push(detail.suggestion)
+  }
+  return parts
+}
+
 export function normalizeError(e: unknown, fallback: string): string {
   const err = e as Record<string, any> | undefined
 
@@ -61,12 +81,32 @@ export function normalizeError(e: unknown, fallback: string): string {
   if (typeof detail === 'string' && detail.trim().length > 0) {
     const translated = translateMessage(detail)
     if (translated) return `${fallback}：${translated}`
+    // 如果 detail 包含中文，直接展示
+    if (hasChinese(detail)) return `${fallback}：${detail}`
     // 无法翻译的英文原文只记 console，不展示给用户
     console.error('[normalizeError] detail:', detail)
     return fallback
   }
 
-  // 2. FastAPI RequestValidationError detail 数组
+  // 2. detail 是结构化对象（{ message, reason, suggestion } 等）
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    const parts = extractStructuredMessages(detail)
+    if (parts.length > 0) {
+      return parts.join('\n')
+    }
+    // 兼容旧格式 detail.message
+    if (typeof detail.message === 'string' && detail.message.trim().length > 0) {
+      const translated = translateMessage(detail.message)
+      if (translated) return `${fallback}：${translated}`
+      if (hasChinese(detail.message)) return `${fallback}：${detail.message}`
+      console.error('[normalizeError] detail.message:', detail.message)
+      return fallback
+    }
+    console.error('[normalizeError] detail object:', JSON.stringify(detail))
+    return fallback
+  }
+
+  // 3. FastAPI RequestValidationError detail 数组
   if (Array.isArray(detail) && detail.length > 0) {
     const translated = detail
       .map((item: FastAPIErrorItem) => translateMessage(item.msg || ''))
@@ -79,18 +119,6 @@ export function normalizeError(e: unknown, fallback: string): string {
     if (rawMsgs.length > 0) {
       console.error('[normalizeError] validation detail:', rawMsgs)
     }
-    return fallback
-  }
-
-  // 3. detail 是对象
-  if (detail && typeof detail === 'object') {
-    if (typeof detail.message === 'string' && detail.message.trim().length > 0) {
-      const translated = translateMessage(detail.message)
-      if (translated) return `${fallback}：${translated}`
-      console.error('[normalizeError] detail.message:', detail.message)
-      return fallback
-    }
-    console.error('[normalizeError] detail object:', JSON.stringify(detail))
     return fallback
   }
 

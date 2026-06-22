@@ -41,7 +41,7 @@ class TestModelFieldMapping:
         model = JournalEntry
         orm_columns = set(model.__table__.columns.keys())
         expected = TYPE_FIELDS["journal"] + ["company_id"]
-        auto_fields = {"id", "created_at"}
+        auto_fields = {"id", "created_at", "extra_fields"}
         relevant_orm = orm_columns - auto_fields
         relevant_expected = set(expected)
         assert relevant_expected.issubset(relevant_orm | {"company_id"}), \
@@ -53,7 +53,7 @@ class TestModelFieldMapping:
         model = SubsidiaryLedger
         orm_columns = set(model.__table__.columns.keys())
         expected = TYPE_FIELDS["subsidiary"] + ["company_id"]
-        auto_fields = {"id", "created_at"}
+        auto_fields = {"id", "created_at", "extra_fields"}
         relevant_orm = orm_columns - auto_fields
         relevant_expected = set(expected)
         assert relevant_expected.issubset(relevant_orm | {"company_id"}), \
@@ -405,3 +405,177 @@ class TestPreviewImport:
             assert result["row_count"] == 1
         finally:
             os.unlink(tmp.name)
+
+
+class TestImportExtraFields:
+    """辅助字段导入 — 验证 JournalEntry / SubsidiaryLedger 支持 extra_fields"""
+
+    @pytest.mark.asyncio
+    async def test_journal_import_with_extra_fields(self, db, sample_company_id):
+        """序时账带自定义辅助字段 → 正常入库，extra_fields 写入 JSON"""
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间,来源类型,交易对象\r\n"
+            "001,2024-01-15,采购,1403,原材料,10000,0,2024,1,采购订单,供应商A\r\n"
+            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1,采购订单,供应商A"
+        )
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            # 映射：标准字段 + 辅助字段用自定义名
+            mapping = {
+                "凭证号": "voucher_no",
+                "凭证日期": "voucher_date",
+                "摘要": "summary",
+                "科目编码": "account_code",
+                "科目名称": "account_name",
+                "借方金额": "debit_amount",
+                "贷方金额": "credit_amount",
+                "会计年度": "fiscal_year",
+                "会计期间": "period",
+                "来源类型": "source_type",  # 辅助字段
+                "交易对象": "counterparty",  # 辅助字段
+            }
+            result = await import_data(
+                db=db, company_id=sample_company_id,
+                file_path=tmp.name, data_type="journal",
+                column_mapping=mapping,
+            )
+            assert result["total"] == 2
+            assert result["success"] == 2
+
+            stmt = select(JournalEntry).where(JournalEntry.company_id == sample_company_id)
+            res = await db.execute(stmt)
+            rows = res.scalars().all()
+            assert len(rows) == 2
+            # extra_fields 应包含自定义辅助字段
+            for row in rows:
+                assert row.extra_fields is not None
+                assert row.extra_fields.get("source_type") == "采购订单"
+                assert row.extra_fields.get("counterparty") == "供应商A"
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_subsidiary_import_with_extra_fields(self, db, sample_company_id):
+        """辅助明细账带自定义辅助字段 → 正常入库，extra_fields 写入 JSON"""
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,"
+            "辅助核算类型,辅助核算编码,辅助核算名称,会计年度,会计期间,账款类型,来源单号\r\n"
+            "001,2024-01-15,采购,1403,原材料,10000,0,供应商,SUP001,A公司,2024,1,应付,PO001\r\n"
+            "001,2024-01-15,采购,1002,银行存款,0,10000,供应商,SUP001,A公司,2024,1,应付,PO001"
+        )
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            mapping = {
+                "凭证号": "voucher_no",
+                "凭证日期": "voucher_date",
+                "摘要": "summary",
+                "科目编码": "account_code",
+                "科目名称": "account_name",
+                "借方金额": "debit_amount",
+                "贷方金额": "credit_amount",
+                "辅助核算类型": "auxiliary_type",
+                "辅助核算编码": "auxiliary_code",
+                "辅助核算名称": "auxiliary_name",
+                "会计年度": "fiscal_year",
+                "会计期间": "period",
+                "账款类型": "bill_type",  # 辅助字段
+                "来源单号": "source_no",  # 辅助字段
+            }
+            result = await import_data(
+                db=db, company_id=sample_company_id,
+                file_path=tmp.name, data_type="subsidiary",
+                column_mapping=mapping,
+            )
+            assert result["total"] == 2
+            assert result["success"] == 2
+
+            stmt = select(SubsidiaryLedger).where(SubsidiaryLedger.company_id == sample_company_id)
+            res = await db.execute(stmt)
+            rows = res.scalars().all()
+            assert len(rows) == 2
+            for row in rows:
+                assert row.extra_fields is not None
+                assert row.extra_fields.get("bill_type") == "应付"
+                assert row.extra_fields.get("source_no") == "PO001"
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_journal_import_with_extra_fields_no_crash(self, db, sample_company_id):
+        """序时账带辅助字段不崩溃 → 确认不再抛出 TypeError"""
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间,备注\r\n"
+            "001,2024-01-15,测试,1002,银行存款,100,100,2024,1,这是一条备注"
+        )
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            mapping = {
+                "凭证号": "voucher_no",
+                "凭证日期": "voucher_date",
+                "摘要": "summary",
+                "科目编码": "account_code",
+                "科目名称": "account_name",
+                "借方金额": "debit_amount",
+                "贷方金额": "credit_amount",
+                "会计年度": "fiscal_year",
+                "会计期间": "period",
+                "备注": "remark",  # 辅助字段
+            }
+            # 不应抛出 TypeError
+            result = await import_data(
+                db=db, company_id=sample_company_id,
+                file_path=tmp.name, data_type="journal",
+                column_mapping=mapping,
+            )
+            assert result["success"] == 1
+            assert result["errors"] == []
+        finally:
+            os.unlink(tmp.name)
+
+
+class TestStructuredErrorResponse:
+    """结构化错误响应 — 验证 _format_execute_error 返回中文结构化 detail"""
+
+    def test_format_extra_fields_error(self):
+        """extra_fields 错误 → 返回中文结构化信息"""
+        from app.api.imports import _format_execute_error
+        err = TypeError("'extra_fields' is an invalid keyword argument for JournalEntry")
+        detail = _format_execute_error(err)
+        assert isinstance(detail, dict)
+        assert "message" in detail
+        assert "reason" in detail
+        assert "suggestion" in detail
+        assert "辅助字段" in detail["reason"] or "自定义" in detail["reason"]
+
+    def test_format_unknown_error(self):
+        """未知异常 → 返回中文结构化信息（不包含原始英文 traceback）"""
+        from app.api.imports import _format_execute_error
+        err = RuntimeError("something went terribly wrong")
+        detail = _format_execute_error(err)
+        assert isinstance(detail, dict)
+        assert "message" in detail
+        assert "服务器处理导入数据时发生错误" in detail["message"]
+        # 不应包含原始英文异常消息
+        assert "terribly" not in str(detail)
+        assert "RuntimeError" not in str(detail)
+
+    def test_format_not_null_error(self):
+        """NOT NULL 约束错误 → 返回中文原因"""
+        from app.api.imports import _format_execute_error
+        import sqlite3
+        err = sqlite3.IntegrityError("NOT NULL constraint failed: journal_entries.voucher_no")
+        detail = _format_execute_error(err)
+        assert "message" in detail
+        assert "必填字段缺失" in detail["reason"]

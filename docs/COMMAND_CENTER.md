@@ -70,23 +70,65 @@
 | `docs/tasks/TASK-014-visible-english-final-cleanup.md` | DONE | 已验收 | 清理最后的用户可见英文与设计计划英文 |
 | `docs/tasks/TASK-015-backend-import-validation-regression.md` | DONE | 已验收 | 按新口径修复序时账借贷平衡校验并调整后端测试 |
 | `docs/tasks/TASK-016-import-initial-validation-hints.md` | DONE | 已验收 | 修复导入页初始红色缺列误提示 |
-| `docs/tasks/TASK-017-field-mapping-layout-overflow.md` | OPEN | 先执行 | 修复字段映射页横向撑爆和右侧检查面板被挤出 |
+| `docs/tasks/TASK-017-field-mapping-layout-overflow.md` | DONE | 已验收 | 修复字段映射页横向撑爆和右侧检查面板被挤出 |
+| `docs/tasks/TASK-018-import-execute-error-disclosure.md` | DONE | 已验收 | 修复执行导入失败只显示通用文案，并处理辅助字段入库失败 |
+| `docs/tasks/TASK-019-baseline-hygiene.md` | DONE | 已验收 | 基线收口、运行产物忽略、任务看板登记 |
+| `docs/tasks/TASK-020-column-id-mapping-contract.md` | OPEN | 否，先做 | 后端导入改为列 ID / 列序号映射，兼容旧表头映射 |
+| `docs/tasks/TASK-021-import-template-backend.md` | OPEN | 否，需等待 TASK-020 | 新增全局导入模板库模型、服务和 API |
+| `docs/tasks/TASK-022-template-matching-preview.md` | OPEN | 否，需等待 TASK-020/021 | 预览阶段返回模板候选，支持按模板生成 v2 映射草稿 |
+| `docs/tasks/TASK-023-import-template-frontend.md` | OPEN | 否，需等待 TASK-021 | 新增导入模板管理页面 |
+| `docs/tasks/TASK-024-import-page-template-apply.md` | OPEN | 否，需等待 TASK-022 | 导入页显示模板候选并提交 column_mapping_v2 |
+| `docs/tasks/TASK-025-template-library-final-acceptance.md` | OPEN | 否，最后执行 | 导入模板库总体验收与回归修复 |
 
 ## 推荐执行顺序
 
-1. 当前优先执行 `TASK-017`，修复字段映射页横向溢出。
-2. `TASK-017` 通过前，不再领取新的 UI 美化任务。
-3. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+1. 当前 `TASK-019` 已验收通过。
+2. 下一步执行 `TASK-020`，这是后续模板库和导入页改造的后端契约基础。
+3. `TASK-021` 在 `TASK-020` 后执行，建立导入模板库后端能力。
+4. `TASK-022` 在 `TASK-020` 和 `TASK-021` 后执行，负责模板匹配与预览集成。
+5. `TASK-023` 可在 `TASK-021` API 初稿验收后执行，负责独立模板管理页面。
+6. `TASK-024` 在 `TASK-022` 后执行，负责导入页套用模板。
+7. `TASK-025` 最后执行，只做总体验收和回归修复，不新增新功能。
+8. 新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+
+## 导入模板库分派
+
+- 分派日期：2026-06-22
+- 目标：把导入能力升级为“全局导入模板库 + 稳定列 ID 映射 + 模板自动推荐 + 用户确认套用”。
+- 范围：
+  - 支持解析 + 映射模板。
+  - 支持重复表头、空表头和列序号稳定映射。
+  - 支持模板管理页面和导入页模板候选。
+  - 不做公式、行过滤、列拆分、金额正负转换、权限或多租户。
+- 测试策略：自动化测试使用合成 Excel/CSV 样本，不提交当前 `backend/uploads` 的真实业务文件。
+- 验收负责人：总指挥在每个任务完成后逐项验收，再允许依赖任务继续推进。
 
 ## 最近一次总指挥验收
 
-- 验收日期：2026-06-18
-- 结论：发现新的 UI 阻塞项，已发布 `TASK-017`
-- 验收范围：用户截图复核、字段映射页布局风险定位。
+- 验收日期：2026-06-20
+- 结论：`TASK-018` 通过；验收中补充了旧库运行期补列，当前无新的阻塞任务
+- 验收范围：导入执行失败原因展示、序时账/辅助明细账辅助字段入库、旧 SQLite 库结构兼容、后端测试、前端构建、浏览器失败页。
 - 验收结果：
-  - 用户截图显示 `/data/import` 第 2 步字段映射表横向撑爆，右侧检查面板不可见或被挤出。
-  - 初步定位为字段映射页 CSS 宽度约束问题，不是导入业务逻辑问题。
-  - `TASK-017` 要求修复桌面和 480px 下的页面级横向溢出，同时不能回归字段下拉选择能力。
+  - `D:\python\python.exe -m compileall app`：通过。
+  - `D:\python\python.exe -m pytest`：通过，89 passed。
+  - `npm run build`：通过。
+  - `git diff --check -- backend frontend docs`：通过。
+  - 旧 `backend/audit.db` 启动后已补齐 `journal_entries.extra_fields` 和 `subsidiary_ledgers.extra_fields`。
+  - 实际 API 验收：序时账带辅助字段 `source_type` 导入返回 `success=2`、`errors=[]`。
+  - 浏览器验收：失败页显示结构化具体原因，不再只显示“导入失败”；无 Vue 运行时错误。
+  - 验收截图：`frontend/ui-acceptance-shots/task-018-error-display.png`。
+
+## 最新缺陷分派
+
+- 分派日期：2026-06-18
+- 新任务：`docs/tasks/TASK-018-import-execute-error-disclosure.md`
+- 状态：已验收
+- 触发问题：用户导入 74 列、12502 行的序时账类文件时，第 2 步提示“所有检查通过”，第 3 步只显示“导入请求失败 / 导入失败”，没有具体原因。
+- 初步根因：
+  - 前端 `normalizeError()` 会把无法识别的后端 `detail` 吞掉，只返回兜底“导入失败”。
+  - 后端 `/imports/execute` 对异常使用 `detail=str(e)`，没有结构化中文错误。
+  - 序时账/辅助明细账使用自定义辅助字段时，后端会生成 `extra_fields`，但 `JournalEntry` 和 `SubsidiaryLedger` 模型当前不支持该字段。
+- 验收重点：失败页必须显示具体中文原因；辅助字段导入要么支持入库，要么在导入前明确阻止；不得再出现只有“导入失败”的结果页。
 
 ## 总指挥验收命令
 
