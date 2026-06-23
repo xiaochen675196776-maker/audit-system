@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>审计系统基座</title>
+    <!-- __AUDIT_CONFIG_PLACEHOLDER__: Electron 预加载脚本在此注入 window.__AUDIT_CONFIG__ -->
+    <script>
+      // 桌面端 Electron 通过 preload.js 注入 window.__AUDIT_CONFIG__
+      // 浏览器开发模式使用默认配置（Vite proxy 相对路径）
+      window.__AUDIT_CONFIG__ = window.__AUDIT_CONFIG__ || {};
+    </script>
   </head>
   <body>
     <div id="app"></div>

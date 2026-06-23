@@ -88,17 +88,116 @@
 | `docs/tasks/TASK-032-field-mapping-experience-preview.md` | DONE | 已执行 | 预览阶段接入字段映射经验推荐 |
 | `docs/tasks/TASK-033-field-mapping-experience-save.md` | DONE | 已执行 | 执行导入成功后保存用户确认的字段映射经验 |
 | `docs/tasks/TASK-034-field-mapping-experience-frontend.md` | DONE | 已执行 | 导入页展示推荐来源、记录确认并提交记忆开关 |
-| `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 验收未通过，见 TASK-036 | 字段映射经验库总体验收与最小回归修复 |
-| `docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md` | DONE | 复验未通过，见 TASK-037 | 修复字段映射经验库验收阻塞项 |
-| `docs/tasks/TASK-037-template-source-confirmation-fixes.md` | DONE | 复验未通过，见 TASK-038 | 修复模板套用后的来源、置信度和确认记录 |
-| `docs/tasks/TASK-038-cancel-template-confirmation-baseline.md` | DONE | 已执行 | 修复取消套用模板后的确认基准 |
+| `docs/tasks/TASK-035-field-mapping-experience-final-acceptance.md` | DONE | 已复验，修复链路已完成 | 字段映射经验库总体验收与最小回归修复 |
+| `docs/tasks/TASK-036-field-mapping-experience-acceptance-fixes.md` | DONE | 已复验，修复链路已完成 | 修复字段映射经验库验收阻塞项 |
+| `docs/tasks/TASK-037-template-source-confirmation-fixes.md` | DONE | 已复验，修复链路已完成 | 修复模板套用后的来源、置信度和确认记录 |
+| `docs/tasks/TASK-038-cancel-template-confirmation-baseline.md` | DONE | 已验收，字段映射经验库第一版已收口 | 修复取消套用模板后的确认基准 |
+| `docs/tasks/TASK-039-standard-trial-balance-model-foundation.md` | DONE | 不可并行，必须先做 | 标准科目、客户科目映射、标准余额表模型底座 |
+| `docs/tasks/TASK-040-standard-accounts-import-backend.md` | DONE | 依赖 TASK-039 | 标准科目表 Excel 导入和查询 API |
+| `docs/tasks/TASK-041-standard-accounts-frontend.md` | DONE | 依赖 TASK-040 | 标准科目表前端管理页 |
+| `docs/tasks/TASK-042-standard-trial-balance-transform-engine.md` | DONE | 依赖 TASK-039，可与 040/043/046 并行 | 客户科目层级识别、父级校验、金额借贷拆分 |
+| `docs/tasks/TASK-043-client-account-mapping-experience-backend.md` | DONE | 依赖 TASK-039，可与 040/042/046 并行 | 客户科目到标准科目的映射经验推荐与保存 |
+| `docs/tasks/TASK-044-standard-trial-balance-import-api.md` | DONE | 依赖 TASK-040/042/043 | 科目余额表标准化导入后端完整流程 |
+| `docs/tasks/TASK-045-standardized-import-wizard-frontend.md` | DONE | 依赖 TASK-044 | 导入页接入科目余额表标准化导入 |
+| `docs/tasks/TASK-046-standard-trial-balance-view-backend.md` | DONE | 依赖 TASK-039，可与 040/042/043 并行 | 科目余额表数据查看后端 API |
+| `docs/tasks/TASK-047-data-view-frontend.md` | DONE | 依赖 TASK-046 | 数据查看页，先实现科目余额表 |
+| `docs/tasks/TASK-048-standard-trial-balance-final-acceptance.md` | DONE | 最后执行 | 科目余额表标准化导入总体验收与回归修复（复验通过） |
+| `docs/tasks/TASK-049-standard-account-built-in-template-correction.md` | DONE | 当前优先执行 | 修正标准科目为系统内置模板，移除普通用户上传标准模板入口 |
+| `docs/tasks/TASK-050-standardized-import-wizard-sequential-flow.md` | DONE | 当前优先执行 | 修正字段确认后直接完成的问题，强制进入层级和科目匹配确认 |
+| `docs/tasks/TASK-051-standardized-import-manual-mapping-unblocks.md` | DONE | 当前优先执行 | 人工科目映射后解除旧阻止项，动态计算阻止项 |
+| `docs/tasks/TASK-052-desktop-migration-plan.md` | DONE | 本轮优先 | 桌面端迁移设计文档与任务登记 |
+| `docs/tasks/TASK-053-backend-local-desktop-runtime.md` | DONE | 可与 TASK-054 并行 | 后端本地桌面运行时改造（数据目录、端口、启动） |
+| `docs/tasks/TASK-054-frontend-runtime-api-base.md` | DONE | 可与 TASK-053 并行 | 前端运行时 API 基地址动态化 |
+| `docs/tasks/TASK-055-electron-shell-mvp.md` | DONE | 依赖 TASK-053/054 | Electron 壳 MVP（主进程、窗口、生命周期） |
+| `docs/tasks/TASK-056-backend-pyinstaller-package.md` | DONE | 依赖 TASK-053，可与 TASK-055 并行 | 后端 PyInstaller 打包为可执行文件 |
+| `docs/tasks/TASK-057-desktop-acceptance.md` | REVIEW_NEEDED | 最后执行 | 桌面端整体验收（TASK-058 已修复 5 个启动阻塞项，待复验） |
+| `docs/tasks/TASK-058-desktop-startup-blockers.md` | DONE | 当前优先，阻塞修复 | 修复 TASK-057 验收中 5 个启动阻塞项 |
+| `docs/tasks/TASK-059-desktop-python-stdout-encoding.md` | DONE | 当前优先 | 修复桌面端 Python stdout 编码乱码（中文 Windows GBK） |
+
+## 科目余额表标准化导入验收结论
+
+- 最终验收日期：2026-06-22 22:25
+- 结论：**验收通过，允许进入后续任务。**
+- 复验人：Reasonix (TASK-048)
+- 验证通过项：
+  - `D:\python\python.exe -m pytest`：**339 passed**, 3 warnings
+  - `npm run build`：通过
+  - `D:\python\python.exe -m compileall app`：通过
+  - `git diff --check -- backend frontend docs .gitignore`：通过
+  - 浏览器验收：三页面全部 0 errors
+  - TASK-049：标准科目改为系统内置种子数据
+  - TASK-050：导入向导连续流程
+  - TASK-051：人工映射后动态解除旧阻止项
+- 非阻塞：前端 chunk 体积优化
+- 允许进入后续任务：**是（序时账/辅助明细账标准化导入）**
 
 ## 推荐执行顺序
 
-1. 下一步执行 `TASK-038`，修复取消套用模板后的确认基准。
-2. `TASK-038` 通过总指挥复验后，字段映射经验库第一版才算收口。
-3. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
-4. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
+1. `TASK-048` 复验已通过，允许继续设计序时账和辅助明细账标准化导入。
+2. 已完成修正：`TASK-049` 系统内置；`TASK-050` 连续流程；`TASK-051` 动态解除阻止。
+3. 历史依赖链保留。
+4. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+5. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
+5. 历史依赖链保留：`TASK-039` 先于 `TASK-040/042/043/046`，`TASK-044` 依赖 `TASK-040/042/043`，`TASK-045` 依赖 `TASK-044`，`TASK-047` 依赖 `TASK-046`。
+6. 后续新 UI 任务必须先阅读 `docs/UI_OPTIMIZATION_PLAN.md`。
+7. 新导入能力扩展必须继续使用合成样本测试，不提交 `backend/uploads` 真实业务文件。
+
+## 科目余额表标准化导入分派
+
+- 分派日期：2026-06-22
+- 设计方案：`docs/STANDARD_TRIAL_BALANCE_NORMALIZATION_DESIGN.md`
+- 目标流程：
+
+```text
+客户原始科目余额表
+→ 字段映射
+→ 数据清洗与金额拆分
+→ 客户科目匹配标准科目
+→ 生成标准科目余额表
+→ 校验
+→ 入库
+→ 数据查看
+```
+
+- 核心结论：
+  - 标准科目表是系统内置的全局统一模板，源文件为 `C:\Users\陈锐\Desktop\科目余额表.xlsx`。
+  - 普通用户不上传、不替换标准科目模板；标准科目由系统初始化或维护流程同步。
+  - 内置标准科目模板全量同步：同代码更新、新代码新增、模板缺失的旧代码停用，不删除。
+  - 客户科目代码可选；客户科目名称建议有，但无名称有代码时也可进入待映射。
+  - 余额方向、科目类别可选。
+  - 金额列不要求六列全有，但至少要有一个可映射的期初、发生额或期末金额列。
+  - 支持“已有借贷列直接映射”和“单列金额按标准科目方向拆分”。
+  - 未映射到启用标准科目的末级客户科目阻止最终入库。
+  - 字段确认后必须进入层级识别和科目匹配确认，不能直接导入完成。
+  - 科目匹配确认属于 `/data/import` 标准化导入向导内部步骤，不是单独功能入口。
+  - 用户确认后的客户科目到标准科目映射要保存为经验，下次作为候选。
+  - 历史映射指向停用标准科目时，不自动套用，只作为警告候选。
+  - 保留原始导入行快照；标准余额表保存导入当时的标准科目代码、名称、类别、方向快照。
+  - 客户有多级明细时，只把末级真实金额行写入标准余额表；父级在查看时动态汇总。
+  - 父级金额与子级汇总不一致时给 warning，由用户决定是否继续。
+  - 数据查看先定 `科目余额表`、`序时账`、`辅助明细账` 三个入口；第一版只实现科目余额表。
+- 任务拆分：
+  - `TASK-039`：标准科目、映射经验、导入批次、原始行快照、标准余额表模型底座。
+  - `TASK-040`：标准科目表 Excel 导入后端 API。
+  - `TASK-041`：标准科目表前端管理页。
+  - `TASK-042`：客户科目层级识别、父级校验、金额借贷拆分引擎。
+  - `TASK-043`：客户科目到标准科目的映射经验推荐与保存。
+  - `TASK-044`：科目余额表标准化导入后端流程 API。
+  - `TASK-045`：现有导入页接入标准化导入向导。
+  - `TASK-046`：科目余额表数据查看后端 API。
+  - `TASK-047`：数据查看前端页面，序时账和辅助明细账先占位。
+  - `TASK-048`：总体验收与回归修复。
+  - `TASK-049`：修正标准科目为系统内置模板，移除普通用户上传标准模板入口。
+  - `TASK-050`：修正标准化导入向导连续流程，字段确认后进入科目匹配和警告确认。
+  - `TASK-051`：修复人工映射后旧阻止项动态解除，允许继续校验和入库。
+- 第一版不做：
+  - 序时账标准化导入。
+  - 辅助明细账标准化导入。
+  - 公式计算。
+  - 行过滤、列拆分、金额复杂清洗。
+  - 多租户隔离标准科目表。
+  - 自动套用全局候选映射。
+  - 普通用户上传或维护系统标准科目模板。
 
 ## 导入模板库分派
 
@@ -219,35 +318,81 @@
   - `mappingValid` 只有在仍选中模板时才使用模板默认年度/期间补齐。
   - 浏览器烟测：`/data/import`、`/data/templates` 可打开，无控制台错误。
 
+## 桌面端迁移分派
+
+- 分派日期：2026-06-22
+- 设计方案：`docs/DESKTOP_MIGRATION_PLAN.md`
+- 目标：将审计系统迁移为 Windows 桌面端可本地运行的应用，第一版不要求正式安装包。
+- 核心决策：
+  - 第一版不做登录、注册、授权。
+  - 保留现有 Vue + FastAPI 技术栈。
+  - 桌面端采用 Electron 作为第一版桌面壳。
+  - 后端继续使用 FastAPI，本地运行，数据库使用 SQLite。
+  - 用户数据、上传文件、日志必须放到 `%APPDATA%\审计系统\`，不能放安装目录。
+  - Web/Docker 路线暂时保留，不破坏现有浏览器开发方式。
+- 任务拆分：
+  - `TASK-052`：桌面端迁移设计文档与任务登记。
+  - `TASK-053`：后端本地桌面运行时改造。
+  - `TASK-054`：前端运行时 API 基地址动态化。
+  - `TASK-055`：Electron 壳 MVP。
+  - `TASK-056`：后端 PyInstaller 打包。
+  - `TASK-057`：桌面端整体验收。
+- 第一版不做：
+  - 正式安装包（.exe/.msi）、代码签名。
+  - macOS / Linux 适配。
+  - 系统托盘、开机自启、卸载程序。
+  - 自动更新、云同步、崩溃上报。
+  - electron-builder 打包配置。
+
+## 桌面端迁移第一阶段验收结论
+
+- 验收日期：2026-06-23
+- 结论：**REVIEW_NEEDED — 代码验证通过，环境步骤需在 Windows 桌面环境手动完成。**
+- 验收人：Reasonix (TASK-057)
+- 验证通过项：
+  - `D:\python\python.exe -m pytest`：**339 passed**, 3 warnings
+  - `npm run build`：通过
+  - `D:\python\python.exe -m compileall app`：通过
+  - `git diff --check -- backend frontend desktop electron docs scripts`：通过（仅 LF/CRLF 警告）
+  - 后端桌面运行时逻辑验证：端口探测、数据目录切换、config 重定向均正确
+  - Electron 主进程/backend.js/preload.js 架构完整
+  - 前端动态 API 基地址切换正确
+  - PyInstaller spec 和构建脚本就绪
+- 环境阻塞项（非代码问题）：
+  1. Electron 二进制未下载（需 `cd desktop && npm install`）
+  2. PyInstaller 打包未执行（需 `cd backend && .\scripts\build_desktop.ps1`）
+  3. 桌面端 GUI 无法在当前 headless 环境验证
+- 非阻塞观察项：
+  1. `config.py` 使用已弃用的 `class Config`（Pydantic v2 DeprecationWarning）
+  2. `desktop.py` 和 `main.py` 各执行一次 Alembic 迁移（幂等无害）
+  3. `backend/uploads/` 下有测试残留文件未被 `.gitignore` 覆盖
+- 允许进入后续任务：**是（正式安装包 / 自动更新 / 授权），但建议先在 Windows 桌面环境跑通一次完整的 `desktop:dev` 和 PyInstaller 打包流程。**
+
 ## 最近一次总指挥验收
 
 - 验收日期：2026-06-22
-- 结论：`TASK-037` 不通过，必须先执行 `TASK-038`。
-- 验收范围：模板套用来源与确认记录收口，重点复核后端模板建议补齐、模板优先、前端套用模板元数据、取消模板后的确认基准。
-- 已通过验证：
+- 结论：`TASK-038` 通过，字段映射经验库第一版当前无阻塞。
+- 验收范围：取消套用模板后的确认基准、模板来源展示、模板默认值清理、字段映射经验库前后端回归。
+- 验收结果：
   - `D:\python\python.exe -m pytest`：通过，166 passed，3 warnings。
   - `D:\python\python.exe -m compileall app`：通过。
   - `npm run build`：通过；保留 Vite/Rollup 体积和注释警告。
   - `git diff --check -- backend frontend docs .gitignore`：通过。
-  - 指定 `template_id` 预览时，`mapping_suggestions_v2` 已包含模板列，`source=template`，`confidence=1.0`。
-  - 同一列存在模板映射和经验建议时，模板建议优先。
-  - 前端套用模板后会设置 `suggestion_source=template`、`suggestion_confidence=1.0`、`original_field_key=模板字段`。
-- 阻塞项：
-  - `cancelTemplateApply()` 取消模板时清空了 `suggestion_source` 和 `suggestion_confidence`，但把 `original_field_key` 设置成当前 `field_key`。
-  - 取消模板后如果用户保留当前字段并直接执行，现有确认逻辑会提交 `confirmation_type=user_confirmed`。
-  - 取消模板后已经没有模板推荐语义，保留字段应按手动映射处理，不得误记为确认模板推荐。
-- 新任务：`docs/tasks/TASK-038-cancel-template-confirmation-baseline.md`
+  - `cancelTemplateApply()` 会清空 `suggestion_source`、`suggestion_confidence`，并将 `original_field_key` 置为 `null`。
+  - 取消模板后保留当前字段执行时，会按 `user_corrected` 提交确认记录。
+  - 取消模板后继续清空 `selectedTemplateId` 和 `templateDefaultValues`。
+  - 指定 `template_id` 预览时，模板建议仍返回 `source=template`、`confidence=1.0`，且模板建议优先于经验建议。
 
-## 最新缺陷分派
+## 上一轮缺陷分派（已验收）
 
 - 分派日期：2026-06-22
 - 新任务：`docs/tasks/TASK-038-cancel-template-confirmation-baseline.md`
-- 状态：OPEN
+- 状态：已验收
 - 触发问题：`TASK-037` 复验发现取消套用模板后的确认基准仍会导致误记 `user_confirmed`。
 - 初步根因：
   - 前端取消模板时把 `original_field_key` 设置成当前 `field_key`。
   - 执行导入时 `original_field_key === field_key` 会被判定为 `user_confirmed`。
-- 验收重点：取消模板后不显示“导入模板 / 100%”；保留当前字段执行时提交 `user_corrected`；不破坏 `selectedTemplateId` 和 `templateDefaultValues` 清理。
+- 验收结论：已修复。取消模板后不显示“导入模板 / 100%”；保留当前字段执行时提交 `user_corrected`；`selectedTemplateId` 和 `templateDefaultValues` 清理逻辑未破坏。
 
 ## 总指挥验收命令
 

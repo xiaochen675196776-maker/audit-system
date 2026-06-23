@@ -130,6 +130,8 @@ import {
   Setting,
   TrendCharts,
   DocumentCopy,
+  DataAnalysis,
+  Collection,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -205,6 +207,8 @@ const activePanelLinks = computed<PanelLink[]>(() => {
     { path: '/data/import', label: '数据导入', icon: Upload, exact: true },
     { path: '/data/companies', label: '被审计单位', icon: OfficeBuilding, exact: true },
     { path: '/data/templates', label: '导入模板', icon: DocumentCopy, exact: true },
+    { path: '/data/standard-accounts', label: '标准科目', icon: Collection, exact: true },
+    { path: '/data/view', label: '数据查看', icon: DataAnalysis, exact: true },
   ]
 })
 
@@ -214,12 +218,16 @@ const pageTitleMap: Record<string, string> = {
   '/data/import': '数据导入',
   '/data/companies': '被审计单位管理',
   '/data/templates': '导入模板管理',
+  '/data/standard-accounts': '标准科目表查看',
+  '/data/view': '数据查看',
 }
 const pageSubtitleMap: Record<string, string> = {
   '/': '查看当前年度的数据导入、单位和待处理事项',
   '/data/import': '上传文件 · 映射字段 · 校验入库',
   '/data/companies': '管理审计对象信息',
   '/data/templates': '管理全局导入模板 · 样本生成 · 测试套用',
+  '/data/standard-accounts': '系统内置标准科目 · 只读查看',
+  '/data/view': '科目余额表 · 序时账 · 辅助明细账',
 }
 
 const pageTitle = computed(() => pageTitleMap[route.path] || '')
@@ -241,6 +249,10 @@ function handleCommand() {
     router.push('/data/import')
   } else if (q.includes('单位') || q.includes('公司') || q.includes('company')) {
     router.push('/data/companies')
+  } else if (q.includes('模板') || q.includes('template')) {
+    router.push('/data/templates')
+  } else if (q.includes('查看') || q.includes('数据')) {
+    router.push('/data/view')
   } else if (q.includes('首页') || q.includes('总览') || q.includes('home')) {
     router.push('/')
   }

@@ -1,0 +1,14 @@
+{
+  "name": "audit-system-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "审计系统桌面端 Electron 壳",
+  "main": "main.js",
+  "scripts": {
+    "desktop:dev": "electron .",
+    "postinstall": "electron --version > nul 2>&1 || echo 'Electron installed'"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11"
+  }
+}

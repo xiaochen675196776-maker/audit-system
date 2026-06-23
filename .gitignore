@@ -7,11 +7,14 @@ venv/
 env/
 dist/
 *.egg
+backend/dist/
+backend/build/
 
 # Node.js / Frontend
 node_modules/
 frontend/dist/
 frontend/.vite/
+desktop/node_modules/
 
 # IDE
 .idea/

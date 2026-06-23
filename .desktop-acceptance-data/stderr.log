@@ -1,0 +1,10 @@
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 514f9f31aab1, init: core tables
+INFO  [alembic.runtime.migration] Running upgrade 514f9f31aab1 -> 20260622_0001, add field_mapping_experiences table
+INFO  [alembic.runtime.migration] Running upgrade 20260622_0001 -> 20260622_0002, add standard trial balance model foundation tables
+INFO:     Started server process [17064]
+INFO:     Waiting for application startup.
+D:\python\Lib\site-packages\uvicorn\lifespan\on.py:91: RuntimeWarning: coroutine 'run_async_migrations' was never awaited
+  return
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback

@@ -22,6 +22,434 @@
     <!-- 步骤面板 -->
     <div class="wizard-body">
       <transition name="step-fade" mode="out-in">
+        <!-- ====== 标准化导入流程 ====== -->
+        <template v-if="isStandardized">
+          <div v-if="activeStep === 0" key="std-step1" class="step-content">
+            <h3 class="panel-title">上传客户科目余额表</h3>
+            <p class="panel-desc">选择 Excel 或 CSV 文件，系统将自动解析表头和数据行。</p>
+            <div class="step1-layout">
+              <div class="step1-form">
+                <el-form label-width="90px" label-position="top" class="config-form">
+                  <el-form-item label="客户标识">
+                    <el-input v-model="stdCustomerLabel" placeholder="被审计单位名称" clearable />
+                  </el-form-item>
+                  <el-row :gutter="12">
+                    <el-col :span="12">
+                      <el-form-item label="会计年度">
+                        <el-input-number v-model="stdFiscalYear" :min="2000" :max="2100" placeholder="如 2025" controls-position="right" class="form-full" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="会计期间">
+                        <el-input-number v-model="stdPeriod" :min="1" :max="12" placeholder="如 12" controls-position="right" class="form-full" />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                </el-form>
+              </div>
+              <div class="step1-upload">
+                <el-upload
+                  ref="stdUploadRef"
+                  :auto-upload="false"
+                  :limit="1"
+                  :on-change="stdHandleFileChange"
+                  :on-remove="stdHandleFileRemove"
+                  :file-list="stdFileList"
+                  drag
+                  accept=".xlsx,.csv,.xls"
+                  class="drag-upload"
+                >
+                  <el-icon class="upload-icon"><UploadFilled /></el-icon>
+                  <div class="upload-text">拖拽文件到此处，或 <em>点击上传</em></div>
+                </el-upload>
+              </div>
+            </div>
+            <div v-if="stdPreviewError" class="preview-error">
+              <el-alert :title="stdPreviewError" type="error" :closable="true" show-icon @close="stdPreviewError = ''" />
+            </div>
+            <div class="step-footer">
+              <div v-if="!stdCanPreview && !stdPreviewing && !stdPreviewError" class="footer-hint">
+                <el-icon :size="14"><InfoFilled /></el-icon>
+                {{ stdPreviewHint }}
+              </div>
+              <el-button type="primary" size="large" :disabled="!stdCanPreview" :loading="stdPreviewing" @click="stdGoPreview">
+                {{ stdPreviewing ? '正在解析文件...' : '下一步：字段与金额映射' }}
+                <el-icon v-if="!stdPreviewing" style="margin-left: 4px;"><ArrowRight /></el-icon>
+              </el-button>
+            </div>
+          </div>
+
+          <div v-else-if="activeStep === 1" key="std-step2" class="step-content">
+            <h3 class="panel-title">字段映射与金额列配置</h3>
+            <p class="panel-desc">将文件中的列映射到标准字段，并配置金额列的拆分方式。</p>
+
+            <!-- 字段映射表 -->
+            <h4 class="sub-title">字段映射</h4>
+            <div class="mapping-table-card">
+              <el-table :data="stdMappings" stripe size="small">
+                <el-table-column label="文件列名" width="150">
+                  <template #default="{ row }">{{ row.header_text }}<span class="file-col-index">（第{{ row.column_index + 1 }}列）</span></template>
+                </el-table-column>
+                <el-table-column label="映射到字段" min-width="200">
+                  <template #default="{ row, $index }">
+                    <el-select v-model="stdMappings[$index].field_name" placeholder="选择字段" size="small" class="map-select" @change="stdOnFieldChange($index)">
+                      <el-option label="⊘ 忽略此列" value="__ignore__" />
+                      <el-option-group label="科目信息">
+                        <el-option label="客户科目代码" value="account_code" />
+                        <el-option label="客户科目名称" value="account_name" />
+                        <el-option label="余额方向" value="balance_direction" />
+                        <el-option label="科目类别" value="account_category" />
+                      </el-option-group>
+                      <el-option-group label="金额列">
+                        <el-option label="期初金额" value="opening_amount" />
+                        <el-option label="本期发生额" value="current_amount" />
+                        <el-option label="期末金额" value="ending_amount" />
+                        <el-option label="期初借方" value="opening_debit" />
+                        <el-option label="期初贷方" value="opening_credit" />
+                        <el-option label="本期借方" value="current_debit" />
+                        <el-option label="本期贷方" value="current_credit" />
+                        <el-option label="期末借方" value="ending_debit" />
+                        <el-option label="期末贷方" value="ending_credit" />
+                      </el-option-group>
+                      <el-option-group label="其他">
+                        <el-option label="会计年度（文件含）" value="fiscal_year" />
+                        <el-option label="会计期间（文件含）" value="period" />
+                      </el-option-group>
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="金额模式" width="180" v-if="stdHasAmountFields">
+                  <template #default="{ row }">
+                    <template v-if="stdIsSingleAmountField(row.field_name)">
+                      <el-select v-model="stdMappings[stdMappings.indexOf(row)].split_mode" placeholder="选择拆分方式" size="small" style="width:160px">
+                        <el-option label="按标准方向拆分" value="single_by_direction" />
+                        <el-option label="全部记入借方" value="single_as_debit" />
+                        <el-option label="全部记入贷方" value="single_as_credit" />
+                      </el-select>
+                    </template>
+                    <template v-else-if="stdIsDualAmountField(row.field_name)">
+                      <el-tag size="small" type="info">借贷双列</el-tag>
+                    </template>
+                    <span v-else style="color:var(--text-placeholder)">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="示例" width="120" align="center">
+                  <template #default="{ row }">
+                    <code class="sample-val">{{ row.sample_value || '-' }}</code>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+
+            <!-- 层级模式 -->
+            <h4 class="sub-title">层级识别模式</h4>
+            <el-radio-group v-model="stdHierarchyMode" class="hierarchy-mode-group">
+              <el-radio value="auto">自动（代码 + 缩进综合判断）</el-radio>
+              <el-radio value="code">仅按科目代码前缀</el-radio>
+              <el-radio value="indent">仅按 Excel 缩进</el-radio>
+              <el-radio value="flat">平铺（不识别层级）</el-radio>
+            </el-radio-group>
+
+            <!-- 年度/期间 -->
+            <h4 class="sub-title">导入期间</h4>
+            <div class="period-confirm">
+              <span>年度：{{ stdEffectiveFiscalYear }} · 期间：{{ stdEffectivePeriod }}月</span>
+              <span v-if="!stdEffectiveFiscalYear" class="field-note required">请在上方文件列中映射年度列或手动填写</span>
+            </div>
+
+            <div class="step-footer">
+              <el-button size="large" @click="stdStepBack">上一步</el-button>
+              <el-button type="primary" size="large" :disabled="!stdCanAnalyze" :loading="stdAnalyzing" @click="stdGoAnalyze">
+                {{ stdAnalyzing ? '正在分析数据...' : '下一步：层级与科目匹配' }}
+              </el-button>
+            </div>
+          </div>
+
+          <div v-else-if="activeStep === 2" key="std-step3" class="step-content">
+            <div class="std-review-grid">
+              <!-- 左侧：层级树 -->
+              <div class="std-review-left">
+                <h3 class="panel-title">科目层级确认</h3>
+                <div v-if="stdHasWarnings" class="warning-block">
+                  <el-alert type="warning" :closable="false" show-icon>
+                    <template #title>
+                      共 {{ stdWarnings.length }} 条警告需确认
+                    </template>
+                  </el-alert>
+                </div>
+                <el-table :data="stdFlatHierarchy" stripe size="small" max-height="400" row-key="row_index">
+                  <el-table-column label="#" width="50" align="center">
+                    <template #default="{ row }">{{ row.row_index + 1 }}</template>
+                  </el-table-column>
+                  <el-table-column prop="client_account_code" label="科目代码" width="120" />
+                  <el-table-column prop="client_account_name" label="科目名称" min-width="140" />
+                  <el-table-column label="层级" width="70" align="center">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.is_summary" size="small" type="warning">父级</el-tag>
+                      <el-tag v-else-if="row.is_leaf" size="small" type="success">末级</el-tag>
+                      <span v-else>-</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="来源" width="80">
+                    <template #default="{ row }">
+                      <span class="level-source-tag">{{ levelSourceLabel(row.level_source) }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+
+                <!-- 金额预览 -->
+                <h4 class="sub-title" style="margin-top:16px">金额明细预览</h4>
+                <el-table :data="stdFlatAmounts" stripe size="small" max-height="300">
+                  <el-table-column label="#" width="50" align="center">
+                    <template #default="{ row }">{{ row.row_index + 1 }}</template>
+                  </el-table-column>
+                  <el-table-column label="期初借" width="110" align="right">
+                    <template #default="{ row }">{{ fmtAmount(row.opening_debit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="期初贷" width="110" align="right">
+                    <template #default="{ row }">{{ fmtAmount(row.opening_credit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="本期借" width="110" align="right">
+                    <template #default="{ row }">{{ fmtAmount(row.current_debit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="本期贷" width="110" align="right">
+                    <template #default="{ row }">{{ fmtAmount(row.current_credit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="期末借" width="110" align="right">
+                    <template #default="{ row }">{{ fmtAmount(row.ending_debit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="期末贷" width="110" align="right">
+                    <template #default="{ row }">{{ fmtAmount(row.ending_credit) }}</template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <!-- 右侧：科目匹配 -->
+              <div class="std-review-right">
+                <h3 class="panel-title">科目匹配</h3>
+                <p class="panel-desc">为每个客户科目确认对应的标准科目</p>
+
+                <div v-if="stdBlockingErrors.length > 0" class="error-block">
+                  <el-alert type="error" :closable="false" show-icon>
+                    <template #title>
+                      存在 {{ stdBlockingErrors.length }} 条阻止入库的错误
+                    </template>
+                  </el-alert>
+                  <div v-for="e in stdBlockingErrors" :key="e.message" class="blocking-error-item">
+                    {{ e.message }}
+                  </div>
+                </div>
+
+                <div v-for="(rec, ri) in stdMappingRecs" :key="ri" class="match-row">
+                  <div class="match-row-header">
+                    <span class="match-client-label">
+                      {{ rec.client_account_code || '?' }} {{ rec.client_account_name || '(无名称)' }}
+                    </span>
+                    <!-- 手动映射后显示已选标准科目 -->
+                    <span v-if="stdSelectedMapping(ri) && !rec.candidates.some(c => c.standard_account_id === stdSelectedMapping(ri)!.standard_account_id)" class="manual-selected-badge">
+                      <el-tag type="success" size="small">已选</el-tag>
+                      <code class="manual-selected-code">{{ stdSelectedMapping(ri)!.standard_account_code }}</code>
+                      <span class="manual-selected-name">{{ stdSelectedMapping(ri)!.standard_account_name }}</span>
+                      <span class="manual-selected-source">（手动选择）</span>
+                    </span>
+                  </div>
+                  <!-- 候选列表 -->
+                  <div v-if="rec.candidates.length > 0" class="match-candidates">
+                    <div
+                      v-for="(c, ci) in rec.candidates.slice(0, 4)"
+                      :key="ci"
+                      class="match-candidate"
+                      :class="{
+                        selected: stdSelectedMapping(ri)?.standard_account_id === c.standard_account_id,
+                        warning: !!c.warning
+                      }"
+                      @click="stdSelectCandidate(ri, c)"
+                    >
+                      <div class="mc-left">
+                        <span class="mc-code">{{ c.standard_account_code }}</span>
+                        <span class="mc-name">{{ c.standard_account_name }}</span>
+                        <span class="mc-source">{{ matchSourceLabel(c.source) }}</span>
+                        <span v-if="c.warning" class="mc-warning">{{ c.warning }}</span>
+                      </div>
+                      <div class="mc-right">
+                        <el-tag v-if="stdSelectedMapping(ri)?.standard_account_id === c.standard_account_id" type="success" size="small">已选</el-tag>
+                        <span v-else class="mc-score">{{ Math.round(c.score * 100) }}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 手动搜索 -->
+                  <div class="match-search">
+                    <el-input
+                      v-model="stdSearchQueries[ri]"
+                      size="small"
+                      placeholder="搜索标准科目..."
+                      clearable
+                      @input="stdSearchAccounts(ri)"
+                      style="width:200px"
+                    />
+                    <div v-if="stdSearchResults[ri]?.length" class="match-search-results">
+                      <div
+                        v-for="sr in stdSearchResults[ri].slice(0, 5)"
+                        :key="sr.id"
+                        class="match-search-item"
+                        :class="{ disabled: !sr.is_active }"
+                        @click="stdSelectSearchedAccount(ri, sr)"
+                      >
+                        <span>{{ sr.account_code }} {{ sr.account_name }}</span>
+                        <el-tag v-if="!sr.is_active" size="small" type="danger">停用</el-tag>
+                      </div>
+                    </div>
+                    <!-- 已手动选择时显示当前选择 + 清除按钮 -->
+                    <div v-if="stdSelectedMapping(ri) && !stdSearchResults[ri]?.length && !stdSearchQueries[ri]" class="match-current-selection">
+                      <el-tag type="success" size="small" closable @close="stdClearMapping(ri)">
+                        {{ stdSelectedMapping(ri)!.standard_account_code }} {{ stdSelectedMapping(ri)!.standard_account_name }}
+                      </el-tag>
+                    </div>
+                  </div>
+                  <span v-if="!rec.candidates.length && !stdSelectedMapping(ri)" class="unmapped-hint">未匹配，请搜索标准科目</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="step-footer">
+              <el-button size="large" @click="stdStepBack">上一步</el-button>
+              <el-button type="primary" size="large" :disabled="!stdCanConfirm" @click="stdGoConfirm">
+                下一步：校验与确认
+                <el-icon style="margin-left: 4px;"><ArrowRight /></el-icon>
+              </el-button>
+              <div v-if="!stdCanConfirm" class="footer-hint">
+                <el-icon :size="14"><InfoFilled /></el-icon>
+                {{ stdConfirmHint }}
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="activeStep === 3" key="std-step4" class="step-content">
+            <h3 class="panel-title">校验与确认</h3>
+            <p class="panel-desc">检查以下警告和错误，确认无误后方可执行最终入库。</p>
+
+            <!-- 阻止项（必须先解决） -->
+            <div v-if="stdBlockingErrors.length > 0" class="confirmation-section">
+              <h4 class="sub-title">
+                <el-icon :size="16" color="var(--color-danger)"><CircleCloseFilled /></el-icon>
+                阻止入库项（{{ stdBlockingErrors.length }} 条）
+              </h4>
+              <el-alert type="error" :closable="false" show-icon class="confirmation-alert">
+                <template #title>以下问题必须修正才能执行入库。请返回上一步完成科目映射。</template>
+              </el-alert>
+              <div class="confirmation-list">
+                <div v-for="(e, i) in stdBlockingErrors" :key="'be'+i" class="confirmation-item error-item">
+                  <el-tag size="small" type="danger">{{ errorCategoryLabel(e.category) }}</el-tag>
+                  <span>{{ e.message }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 警告项（需用户确认） -->
+            <div v-if="stdWarnings.length > 0" class="confirmation-section">
+              <h4 class="sub-title">
+                <el-icon :size="16" color="var(--color-warning)"><WarningFilled /></el-icon>
+                警告项（{{ stdWarnings.length }} 条）
+              </h4>
+              <el-alert type="warning" :closable="false" show-icon class="confirmation-alert">
+                <template #title>以下警告需要您确认。确认后仍可继续导入，但建议先检查数据。</template>
+              </el-alert>
+              <div class="confirmation-list">
+                <div v-for="(w, i) in stdWarnings" :key="'w'+i" class="confirmation-item warning-item">
+                  <el-tag size="small" type="warning">{{ warningCategoryLabel(w.category) }}</el-tag>
+                  <span>{{ w.message }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 未映射科目 -->
+            <div v-if="stdUnmappedCount > 0" class="confirmation-section">
+              <h4 class="sub-title">
+                <el-icon :size="16" color="var(--color-danger)"><CircleCloseFilled /></el-icon>
+                未映射科目（{{ stdUnmappedCount }} 个）
+              </h4>
+              <el-alert type="error" :closable="false" show-icon>
+                <template #title>还有 {{ stdUnmappedCount }} 个科目未映射到标准科目，请返回上一步完成映射。</template>
+              </el-alert>
+            </div>
+
+            <!-- 全部通过时 -->
+            <div v-if="stdBlockingErrors.length === 0 && stdWarnings.length === 0 && stdUnmappedCount === 0" class="confirmation-section">
+              <el-alert type="success" :closable="false" show-icon>
+                <template #title>所有检查已通过，可以执行入库。</template>
+              </el-alert>
+            </div>
+
+            <!-- 警告确认复选框 -->
+            <div v-if="stdWarnings.length > 0 && stdBlockingErrors.length === 0 && stdUnmappedCount === 0" class="warning-confirm-box">
+              <el-checkbox v-model="stdWarningsConfirmed" size="large">
+                <span class="warning-confirm-text">我已确认以上 {{ stdWarnings.length }} 条警告，了解可能的数据差异风险，仍然继续入库</span>
+              </el-checkbox>
+            </div>
+
+            <!-- 映射摘要 -->
+            <h4 class="sub-title" style="margin-top:16px">映射摘要</h4>
+            <el-table :data="stdConfirmedMappingSummary" stripe size="small" max-height="300">
+              <el-table-column label="客户科目代码" width="140">
+                <template #default="{ row }">{{ row.client_account_code || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="客户科目名称" min-width="150">
+                <template #default="{ row }">{{ row.client_account_name || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="→ 标准科目" width="200">
+                <template #default="{ row }">
+                  <code>{{ row.standard_account_code }}</code>
+                  <span style="margin-left:6px;color:var(--text-secondary)">{{ row.standard_account_name }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="来源" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.warning ? 'warning' : ''">{{ matchSourceLabel(row.source) }}</el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <div class="step-footer">
+              <el-button size="large" @click="stdStepBack">上一步：科目匹配</el-button>
+              <el-button type="primary" size="large" :disabled="!stdCanExecute" :loading="stdExecuting" @click="stdGoExecute">
+                {{ stdExecuting ? '正在执行导入...' : '确认并执行入库' }}
+              </el-button>
+              <div v-if="!stdCanExecute && !stdExecuting" class="footer-hint">
+                <el-icon :size="14"><InfoFilled /></el-icon>
+                {{ stdExecuteHint }}
+              </div>
+            </div>
+          </div>
+
+          <div v-else key="std-step5" class="step-content">
+            <div v-if="stdExecuting" class="importing">
+              <el-icon :size="40" class="importing-icon is-loading"><Loading /></el-icon>
+              <h3>正在执行标准化导入...</h3>
+              <el-progress :percentage="progress" :stroke-width="20" :text-inside="true" class="import-progress" />
+              <p class="importing-note">正在生成标准科目余额表，请勿关闭页面</p>
+            </div>
+            <div v-else class="result-block">
+              <div class="result-header" :class="stdExecuteError ? 'error' : 'success'">
+                <el-icon :size="28"><component :is="stdExecuteError ? CircleCloseFilled : CircleCheckFilled" /></el-icon>
+                <div>
+                  <h3>{{ stdExecuteError ? '导入失败' : '标准化导入完成' }}</h3>
+                  <p v-if="!stdExecuteError">
+                    生成 {{ stdExecuteResult.entry_count }} 条标准科目余额表
+                    · 保存 {{ stdExecuteResult.mapping_saved_count }} 条映射经验
+                  </p>
+                  <p v-else>{{ stdExecuteError }}</p>
+                </div>
+              </div>
+              <div class="result-actions">
+                <el-button type="primary" @click="stdResetImport">继续导入</el-button>
+                <el-button @click="$router.push('/data/view')">查看数据</el-button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ====== 原有三步导入流程 ====== -->
+        <template v-else>
         <!-- ====== 步骤 1：上传文件 ====== -->
         <div v-if="activeStep === 0" key="step1" class="step-content">
           <div class="step1-layout">
@@ -48,6 +476,7 @@
                 <el-form-item label="数据类型">
                   <el-select v-model="dataType" placeholder="选择数据类型" class="form-full">
                     <el-option label="科目余额表" value="trial_balance" />
+                    <el-option label="科目余额表标准化导入" value="standardized_trial_balance" />
                     <el-option label="序时账" value="journal" />
                     <el-option label="辅助明细账" value="subsidiary" />
                   </el-select>
@@ -479,6 +908,7 @@
             </div>
           </div>
         </div>
+        </template>
       </transition>
     </div>
   </div>
@@ -510,11 +940,22 @@ import type {
 } from '@/types'
 
 // ===== 步骤定义 =====
-const steps = [
-  { label: '上传文件' },
-  { label: '字段映射' },
-  { label: '执行导入' },
-]
+const steps = computed(() => {
+  if (dataType.value === 'standardized_trial_balance') {
+    return [
+      { label: '上传文件' },
+      { label: '字段与金额映射' },
+      { label: '层级与科目匹配' },
+      { label: '校验与确认' },
+      { label: '入库完成' },
+    ]
+  }
+  return [
+    { label: '上传文件' },
+    { label: '字段映射' },
+    { label: '执行导入' },
+  ]
+})
 
 // ===== 步骤状态 =====
 const activeStep = ref(0)
@@ -677,9 +1118,10 @@ const isSystemError = computed(() =>
 
 // 步骤进度条宽度
 const trackProgress = computed(() => {
+  const total = steps.value.length
   if (activeStep.value === 0) return '0%'
-  if (activeStep.value === 1) return '50%'
-  return '100%'
+  if (activeStep.value >= total - 1) return '100%'
+  return `${Math.round((activeStep.value / (total - 1)) * 100)}%`
 })
 
 // 提取后端错误详情
@@ -1009,6 +1451,550 @@ function resetImport() {
 
 onMounted(() => {
   fetchCompanies()
+})
+
+// ============================================================
+// 标准化导入流程 — TASK-045
+// ============================================================
+
+const isStandardized = computed(() => dataType.value === 'standardized_trial_balance')
+
+// 步骤 1：上传
+const stdFileList = ref<UploadFile[]>([])
+const stdUploadRef = ref<UploadInstance>()
+const stdCustomerLabel = ref('')
+const stdFiscalYear = ref<number | null>(null)
+const stdPeriod = ref<number | null>(null)
+const stdPreviewing = ref(false)
+const stdPreviewError = ref('')
+const stdBatchId = ref<string | null>(null)
+const stdColumns = ref<import('@/types').StdColumnInfo[]>([])
+const stdSampleRows = ref<Record<string, string>[]>([])
+const stdTotalRows = ref(0)
+
+const stdCanPreview = computed(() => stdFileList.value.length > 0 && !stdPreviewing.value)
+const stdPreviewHint = computed(() => {
+  if (stdFileList.value.length === 0) return '请先上传文件'
+  return ''
+})
+
+function stdHandleFileChange(file: UploadFile) { stdFileList.value = [file] }
+function stdHandleFileRemove() { stdFileList.value = [] }
+
+async function stdGoPreview() {
+  if (!stdFileList.value[0]?.raw) { ElMessage.warning('请先选择文件'); return }
+  stdPreviewing.value = true
+  stdPreviewError.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('file', stdFileList.value[0].raw)
+    if (stdFiscalYear.value) fd.append('fiscal_year', String(stdFiscalYear.value))
+    if (stdPeriod.value) fd.append('period', String(stdPeriod.value))
+    if (stdCustomerLabel.value) fd.append('customer_label', stdCustomerLabel.value)
+
+    const { data } = await api.post<import('@/types').StdPreviewResponse>(
+      '/standard-trial-balance-imports/preview', fd,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    stdBatchId.value = data.batch_id
+    stdColumns.value = data.columns
+    stdSampleRows.value = data.sample_rows
+    stdTotalRows.value = data.total_rows
+    if (data.fiscal_year && !stdFiscalYear.value) stdFiscalYear.value = data.fiscal_year
+    if (data.period && !stdPeriod.value) stdPeriod.value = data.period
+
+    // 初始化映射
+    stdInitMappings()
+    activeStep.value = 1
+  } catch (e: any) {
+    stdPreviewError.value = normalizeError(e, '文件解析失败')
+  } finally {
+    stdPreviewing.value = false
+  }
+}
+
+// 步骤 2：字段映射
+interface StdMappingRow {
+  column_id: string
+  header_text: string
+  column_index: number
+  field_name: string
+  split_mode?: string | null
+  sample_value: string
+}
+const stdMappings = ref<StdMappingRow[]>([])
+const stdHierarchyMode = ref('auto')
+
+function stdInitMappings() {
+  const cols = stdColumns.value
+  const rows = stdSampleRows.value
+  const first = rows[0] || {}
+  stdMappings.value = cols.map(c => ({
+    column_id: c.column_id,
+    header_text: c.header_text,
+    column_index: c.column_index,
+    field_name: '',
+    split_mode: null,
+    sample_value: String(first[c.column_id] || ''),
+  }))
+}
+
+const stdEffectiveFiscalYear = computed(() => {
+  if (stdFiscalYear.value) return stdFiscalYear.value
+  const hasYear = stdMappings.value.some(m => m.field_name === 'fiscal_year')
+  return hasYear ? '(从文件中识别)' : null
+})
+const stdEffectivePeriod = computed(() => {
+  if (stdPeriod.value) return stdPeriod.value
+  const hasPer = stdMappings.value.some(m => m.field_name === 'period')
+  return hasPer ? '(从文件中识别)' : null
+})
+
+const stdHasAmountFields = computed(() =>
+  stdMappings.value.some(m => stdIsSingleAmountField(m.field_name) || stdIsDualAmountField(m.field_name))
+)
+
+function stdIsSingleAmountField(fn: string): boolean {
+  return ['opening_amount', 'current_amount', 'ending_amount'].includes(fn)
+}
+function stdIsDualAmountField(fn: string): boolean {
+  return ['opening_debit', 'opening_credit', 'current_debit', 'current_credit', 'ending_debit', 'ending_credit'].includes(fn)
+}
+
+function stdOnFieldChange(idx: number) {
+  const m = stdMappings.value[idx]
+  if (m && stdIsSingleAmountField(m.field_name)) {
+    stdMappings.value[idx].split_mode = 'single_by_direction'
+  } else if (m) {
+    stdMappings.value[idx].split_mode = null
+  }
+}
+
+const stdCanAnalyze = computed(() => {
+  if (!stdBatchId.value) return false
+  if (stdAnalyzing.value) return false
+  const hasField = stdMappings.value.some(m => m.field_name && m.field_name !== '__ignore__')
+  if (!hasField) return false
+  // need at least a fiscal year
+  if (!stdFiscalYear.value && !stdMappings.value.some(m => m.field_name === 'fiscal_year')) return false
+  if (!stdPeriod.value && !stdMappings.value.some(m => m.field_name === 'period')) return false
+  return true
+})
+
+// 步骤 3：分析结果
+const stdAnalyzing = ref(false)
+const stdHierarchy = ref<import('@/types').HierarchyInfo[]>([])
+const stdMappingRecs = ref<import('@/types').MappingRecommendEntry[]>([])
+const stdAmounts = ref<import('@/types').AmountInfo[]>([])
+const stdErrors = ref<import('@/types').BlockingError[]>([])
+const stdWarnings = ref<import('@/types').WarningItem[]>([])
+
+// 用户确认的映射：row_index → candidate
+const stdConfirmedMap = ref<Record<number, import('@/types').MappingCandidate | null>>({})
+
+// 搜索
+const stdSearchQueries = ref<Record<number, string>>({})
+const stdSearchResults = ref<Record<number, any[]>>({})
+
+async function stdGoAnalyze() {
+  stdAnalyzing.value = true
+  try {
+    const fieldMappings: import('@/types').StdFieldMappingEntry[] = []
+    for (const m of stdMappings.value) {
+      if (!m.field_name || m.field_name === '__ignore__') continue
+      const entry: import('@/types').StdFieldMappingEntry = {
+        column_id: m.column_id,
+        field_name: m.field_name,
+      }
+      if (stdIsSingleAmountField(m.field_name)) {
+        entry.period_type = m.field_name === 'opening_amount' ? 'opening' : m.field_name === 'current_amount' ? 'current' : 'ending'
+        entry.split_mode = m.split_mode || 'single_by_direction'
+      } else if (['opening_debit', 'opening_credit'].includes(m.field_name)) {
+        entry.period_type = 'opening'
+        entry.split_mode = 'two_column'
+      } else if (['current_debit', 'current_credit'].includes(m.field_name)) {
+        entry.period_type = 'current'
+        entry.split_mode = 'two_column'
+      } else if (['ending_debit', 'ending_credit'].includes(m.field_name)) {
+        entry.period_type = 'ending'
+        entry.split_mode = 'two_column'
+      }
+      fieldMappings.push(entry)
+    }
+
+    // pair debit/credit columns
+    for (const fm of fieldMappings) {
+      if (fm.split_mode !== 'two_column') continue
+      const pair = fm.field_name?.endsWith('_debit') ? fm.field_name.replace('_debit', '_credit') : fm.field_name?.endsWith('_credit') ? fm.field_name.replace('_credit', '_debit') : ''
+      if (pair) {
+        const other = fieldMappings.find(f => f.field_name === pair && f.period_type === fm.period_type)
+        if (other) {
+          if (fm.field_name?.endsWith('_debit')) { fm.debit_column_id = fm.column_id; fm.credit_column_id = other.column_id }
+          else { fm.credit_column_id = fm.column_id; fm.debit_column_id = other.column_id }
+        }
+      }
+    }
+
+    const req: import('@/types').StdAnalyzeRequest = {
+      field_mappings: fieldMappings,
+      fiscal_year: stdFiscalYear.value || 2024,
+      period: stdPeriod.value || 1,
+      customer_label: stdCustomerLabel.value || null,
+      source_label: null,
+      hierarchy_mode: stdHierarchyMode.value,
+    }
+
+    const { data } = await api.post<import('@/types').StdAnalyzeResponse>(
+      `/standard-trial-balance-imports/${stdBatchId.value}/analyze`, req
+    )
+
+    stdHierarchy.value = data.hierarchy
+    stdMappingRecs.value = data.mapping_recommendations
+    stdAmounts.value = data.amounts
+    stdErrors.value = data.errors
+    stdWarnings.value = data.warnings
+
+    // 自动选中高置信度候选（非警告）
+    stdConfirmedMap.value = {}
+    for (let i = 0; i < data.mapping_recommendations.length; i++) {
+      const rec = data.mapping_recommendations[i]
+      const best = rec.candidates.find(c => !c.warning && c.score >= 0.9)
+      if (best) {
+        stdConfirmedMap.value[i] = best
+      }
+    }
+
+    stdWarningsConfirmed.value = false
+    activeStep.value = 2
+  } catch (e: any) {
+    ElMessage.error(normalizeError(e, '数据分析失败'))
+  } finally {
+    stdAnalyzing.value = false
+  }
+}
+
+// 层级
+const stdFlatHierarchy = computed(() => stdHierarchy.value)
+const stdFlatAmounts = computed(() => stdAmounts.value)
+
+// 动态计算阻止项：基于当前确认映射状态，而非 analyze 的静态错误快照
+const stdBlockingErrors = computed(() => {
+  const errors: Array<{ code: string; message: string; category: string; row_index: number | null }> = []
+
+  // 检查是否有金额列使用"按标准方向拆分"
+  const hasDirectionSplit = stdMappings.value.some(m =>
+    m.split_mode === 'single_by_direction' &&
+    (m.field_name === 'opening_amount' || m.field_name === 'current_amount' || m.field_name === 'ending_amount')
+  )
+
+  // 遍历所有映射推荐，动态检查未映射和方向缺失
+  for (let i = 0; i < stdMappingRecs.value.length; i++) {
+    const rec = stdMappingRecs.value[i]
+    // 跳过没有代码也没有名称的行（无标识行，后端已在 analyze 中忽略）
+    if (!rec.client_account_code && !rec.client_account_name) continue
+
+    const cm = stdConfirmedMap.value[i]
+
+    // 1. 未映射检查：有代码或名称的末级行必须有确认映射
+    if (!cm) {
+      errors.push({
+        row_index: i,
+        code: 'unmapped_account',
+        message: `客户科目「${rec.client_account_code || '?'} ${rec.client_account_name || ''}」未映射到标准科目，请手动选择`,
+        category: 'unmapped_account',
+      })
+      continue // 未映射则无需检查方向
+    }
+
+    // 2. 方向缺失检查：使用"按标准方向拆分"时，标准科目必须有余额方向
+    if (hasDirectionSplit) {
+      const dir = cm.standard_balance_direction
+      if (!dir || dir === '') {
+        errors.push({
+          row_index: i,
+          code: 'no_direction',
+          message: `标准科目「${cm.standard_account_code} ${cm.standard_account_name}」余额方向为空，无法按标准方向拆分金额，请改为显式借/贷方`,
+          category: 'no_direction',
+        })
+      }
+    }
+  }
+
+  // 3. 保留真实数据缺陷（来自 analyze 的 missing_amount / missing_code_and_name）
+  for (const e of stdErrors.value) {
+    if (e.category === 'missing_amount' || e.category === 'missing_code_and_name') {
+      errors.push(e)
+    }
+  }
+
+  return errors
+})
+
+const stdHasWarnings = computed(() => stdWarnings.value.length > 0)
+
+// 警告确认状态（步骤 3 中使用）
+const stdWarningsConfirmed = ref(false)
+
+function levelSourceLabel(s: string): string {
+  const map: Record<string, string> = { code: '代码', indent: '缩进', flat: '平铺', indent_suggested: '缩进推断', auto: '自动' }
+  return map[s] || s
+}
+
+function fmtAmount(v: string | number | null | undefined): string {
+  if (v === null || v === undefined) return '0.00'
+  const n = typeof v === 'string' ? parseFloat(v) : v
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function matchSourceLabel(s: string): string {
+  const map: Record<string, string> = {
+    company_history: '该客户历史',
+    global_history: '全局历史',
+    code_match: '代码匹配',
+    name_similarity: '名称相似',
+    user_selected: '手动选择',
+  }
+  return map[s] || s
+}
+
+function stdSelectedMapping(ri: number): import('@/types').MappingCandidate | null {
+  return stdConfirmedMap.value[ri] || null
+}
+
+function stdSelectCandidate(ri: number, candidate: import('@/types').MappingCandidate) {
+  stdConfirmedMap.value[ri] = candidate
+  // 切换映射后重置警告确认
+  if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
+}
+
+function stdClearMapping(ri: number) {
+  delete stdConfirmedMap.value[ri]
+  stdSearchQueries.value[ri] = ''
+  stdSearchResults.value[ri] = []
+}
+
+// 未映射的末级科目数量
+const stdUnmappedCount = computed(() => {
+  let count = 0
+  for (let i = 0; i < stdMappingRecs.value.length; i++) {
+    const rec = stdMappingRecs.value[i]
+    if (!rec.client_account_code && !rec.client_account_name) continue
+    if (!stdConfirmedMap.value[i]) count++
+  }
+  return count
+})
+
+// 确认的映射摘要（用于步骤 3 展示）
+const stdConfirmedMappingSummary = computed(() => {
+  const summary: Array<{
+    client_account_code: string | null
+    client_account_name: string | null
+    standard_account_code: string
+    standard_account_name: string
+    source: string
+    warning: string | null
+  }> = []
+  for (let i = 0; i < stdMappingRecs.value.length; i++) {
+    const rec = stdMappingRecs.value[i]
+    const cm = stdConfirmedMap.value[i]
+    if (!cm) continue
+    summary.push({
+      client_account_code: rec.client_account_code,
+      client_account_name: rec.client_account_name,
+      standard_account_code: cm.standard_account_code,
+      standard_account_name: cm.standard_account_name,
+      source: cm.source,
+      warning: cm.warning,
+    })
+  }
+  return summary
+})
+
+// 步骤 2 → 步骤 3 的启用条件：全部末级已映射、无阻止项
+const stdCanConfirm = computed(() => {
+  if (stdBlockingErrors.value.length > 0) return false
+  if (stdUnmappedCount.value > 0) return false
+  return true
+})
+
+const stdConfirmHint = computed(() => {
+  if (stdUnmappedCount.value > 0) return `还有 ${stdUnmappedCount.value} 个科目未映射到标准科目`
+  if (stdBlockingErrors.value.length > 0) return `还有 ${stdBlockingErrors.value.length} 条错误需要处理`
+  return ''
+})
+
+// 步骤 3 最终执行启用条件：无阻止项、无未映射、警告已确认（如有）
+const stdCanExecute = computed(() => {
+  if (stdBlockingErrors.value.length > 0) return false
+  if (stdUnmappedCount.value > 0) return false
+  if (stdExecuting.value) return false
+  // 有警告但未确认时，禁止执行
+  if (stdWarnings.value.length > 0 && !stdWarningsConfirmed.value) return false
+  return true
+})
+
+const stdExecuteHint = computed(() => {
+  if (stdBlockingErrors.value.length > 0) return `还有 ${stdBlockingErrors.value.length} 条错误需要处理`
+  if (stdUnmappedCount.value > 0) return `还有 ${stdUnmappedCount.value} 个科目未映射，请返回上一步完成映射`
+  if (stdWarnings.value.length > 0 && !stdWarningsConfirmed.value) return `请先勾选确认以上 ${stdWarnings.value.length} 条警告`
+  return ''
+})
+
+function errorCategoryLabel(cat: string): string {
+  const map: Record<string, string> = {
+    unmapped_account: '未映射',
+    no_direction: '无方向',
+    missing_amount: '缺金额',
+    missing_code_and_name: '缺代码名称',
+  }
+  return map[cat] || cat
+}
+
+function warningCategoryLabel(cat: string): string {
+  const map: Record<string, string> = {
+    amount_mismatch: '金额不一致',
+    negative_amount: '负数金额',
+    disabled_mapping: '停用映射',
+    global_candidate: '全局候选',
+    indent_guess: '缩进推断',
+    parent_amount_mismatch: '父级差异',
+  }
+  return map[cat] || cat
+}
+
+async function stdSearchAccounts(ri: number) {
+  const q = (stdSearchQueries.value[ri] || '').trim()
+  if (q.length < 1) { stdSearchResults.value[ri] = []; return }
+  try {
+    const { data } = await api.get('/standard-accounts', { params: { keyword: q, page_size: 10 } })
+    stdSearchResults.value[ri] = data.items || []
+  } catch { stdSearchResults.value[ri] = [] }
+}
+
+function stdSelectSearchedAccount(ri: number, sa: any) {
+  if (!sa.is_active) {
+    ElMessage.warning('该标准科目已停用，请选择启用的科目')
+    return
+  }
+  const candidate: import('@/types').MappingCandidate = {
+    standard_account_id: sa.id,
+    standard_account_code: sa.account_code,
+    standard_account_name: sa.account_name,
+    score: 1.0,
+    source: 'user_selected',
+    reason: `用户手动选择 → ${sa.account_code} ${sa.account_name}`,
+    warning: null,
+    standard_balance_direction: sa.balance_direction,
+  }
+  stdConfirmedMap.value[ri] = candidate
+  stdSearchQueries.value[ri] = ''
+  stdSearchResults.value[ri] = []
+  if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
+}
+
+function stdGoConfirm() {
+  // 重置警告确认状态
+  stdWarningsConfirmed.value = false
+  activeStep.value = 3
+}
+
+// 步骤 4：执行
+const stdExecuting = ref(false)
+const stdExecuteResult = ref<import('@/types').StdExecuteResponse>({
+  batch_id: '', status: '', entry_count: 0, raw_row_count: 0, mapping_saved_count: 0, mapping_saved: []
+})
+const stdExecuteError = ref('')
+
+async function stdGoExecute() {
+  stdExecuting.value = true
+  stdExecuteError.value = ''
+  activeStep.value = 4
+  progress.value = 0
+  const timer = setInterval(() => { progress.value = Math.min(92, progress.value + Math.floor(Math.random() * 8 + 3)) }, 400)
+
+  try {
+    const confirmedMappings: import('@/types').ConfirmedMapping[] = []
+    for (let i = 0; i < stdMappingRecs.value.length; i++) {
+      const rec = stdMappingRecs.value[i]
+      const cm = stdConfirmedMap.value[i]
+      if (!cm) continue
+      // find the hierarchy entry for this recommendation
+      const hier = stdHierarchy.value.find(h =>
+        (h.client_account_code || '') === (rec.client_account_code || '') &&
+        (h.client_account_name || '') === (rec.client_account_name || '')
+      )
+      confirmedMappings.push({
+        row_index: hier?.row_index ?? i,
+        client_account_code: rec.client_account_code,
+        client_account_name: rec.client_account_name,
+        standard_account_id: cm.standard_account_id,
+        standard_account_code: cm.standard_account_code,
+        standard_account_name: cm.standard_account_name,
+      })
+    }
+
+    const req: import('@/types').StdExecuteRequest = {
+      confirmed_mappings: confirmedMappings,
+      warnings_confirmed: stdWarningsConfirmed.value,
+      save_mapping_experience: true,
+    }
+
+    const { data } = await api.post<import('@/types').StdExecuteResponse>(
+      `/standard-trial-balance-imports/${stdBatchId.value}/execute`, req
+    )
+    stdExecuteResult.value = data
+  } catch (e: any) {
+    stdExecuteError.value = normalizeError(e, '标准化导入失败')
+  } finally {
+    clearInterval(timer)
+    progress.value = 100
+    stdExecuting.value = false
+  }
+}
+
+function stdStepBack() {
+  if (activeStep.value > 0) activeStep.value--
+}
+
+function stdResetImport() {
+  activeStep.value = 0
+  stdFileList.value = []
+  stdUploadRef.value?.clearFiles()
+  stdCustomerLabel.value = ''
+  stdFiscalYear.value = null
+  stdPeriod.value = null
+  stdPreviewError.value = ''
+  stdBatchId.value = null
+  stdColumns.value = []
+  stdSampleRows.value = []
+  stdTotalRows.value = 0
+  stdMappings.value = []
+  stdHierarchyMode.value = 'auto'
+  stdHierarchy.value = []
+  stdMappingRecs.value = []
+  stdAmounts.value = []
+  stdErrors.value = []
+  stdWarnings.value = []
+  stdConfirmedMap.value = {}
+  stdSearchQueries.value = {}
+  stdSearchResults.value = {}
+  stdWarningsConfirmed.value = false
+  stdExecuteResult.value = { batch_id: '', status: '', entry_count: 0, raw_row_count: 0, mapping_saved_count: 0, mapping_saved: [] }
+  stdExecuteError.value = ''
+  progress.value = 0
+}
+
+// When switching to standardized type, clear existing state
+import { watch } from 'vue'
+watch(dataType, (newVal, oldVal) => {
+  if (newVal === 'standardized_trial_balance' && oldVal !== 'standardized_trial_balance') {
+    activeStep.value = 0
+    previewDone.value = false
+  }
+  if (newVal !== 'standardized_trial_balance' && oldVal === 'standardized_trial_balance') {
+    activeStep.value = 0
+    stdResetImport()
+  }
 })
 </script>
 
@@ -1697,6 +2683,172 @@ onMounted(() => {
 .tc-card-right { flex-shrink: 0; margin-left: var(--spacing-2); }
 
 /* ============================================================
+   标准化导入样式 — TASK-045
+   ============================================================ */
+
+.panel-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-4);
+}
+
+.hierarchy-mode-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.period-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-regular);
+}
+
+.std-review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-5);
+}
+
+.std-review-left,
+.std-review-right {
+  min-width: 0;
+}
+
+.warning-block {
+  margin-bottom: var(--spacing-3);
+}
+
+.error-block {
+  margin-bottom: var(--spacing-3);
+}
+
+.blocking-error-item {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  padding: var(--spacing-1) 0;
+  border-bottom: 1px solid var(--border-lighter);
+}
+
+.level-source-tag {
+  font-size: var(--font-size-xs);
+  color: var(--text-placeholder);
+}
+
+.match-row {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3);
+  margin-bottom: var(--spacing-3);
+}
+
+.match-row-header {
+  margin-bottom: var(--spacing-2);
+}
+
+.match-client-label {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.match-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--spacing-2);
+}
+
+.match-candidate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px var(--spacing-2);
+  border: 1px solid var(--border-lighter);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.match-candidate:hover { border-color: var(--color-primary-400); background: var(--color-primary-50); }
+.match-candidate.selected { border-color: var(--color-success); background: rgba(103, 194, 58, 0.06); }
+.match-candidate.warning { border-color: var(--color-warning); }
+
+.mc-left { min-width: 0; }
+.mc-code { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-primary); margin-right: var(--spacing-2); }
+.mc-name { font-size: var(--font-size-sm); color: var(--text-regular); }
+.mc-source { font-size: var(--font-size-xs); color: var(--text-placeholder); margin-left: var(--spacing-2); }
+.mc-warning { font-size: var(--font-size-xs); color: var(--color-warning); display: block; margin-top: 2px; }
+.mc-right { flex-shrink: 0; display: flex; align-items: center; gap: var(--spacing-2); }
+.mc-score { font-size: var(--font-size-xs); color: var(--text-placeholder); }
+
+.match-search {
+  margin-top: var(--spacing-1);
+  position: relative;
+}
+
+.match-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 240px;
+}
+
+.match-search-item {
+  padding: 6px var(--spacing-3);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.match-search-item:hover { background: var(--color-primary-50); }
+.match-search-item.disabled { opacity: 0.5; cursor: not-allowed; }
+
+.unmapped-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+.manual-selected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: var(--spacing-3);
+}
+
+.manual-selected-code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-primary-600);
+  background: rgba(59, 110, 165, 0.06);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.manual-selected-name {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.manual-selected-source {
+  font-size: var(--font-size-xs);
+  color: var(--text-placeholder);
+}
+
+.match-current-selection {
+  margin-top: var(--spacing-1);
+}
+
+/* ============================================================
    响应式
    ============================================================ */
 
@@ -1711,6 +2863,10 @@ onMounted(() => {
 
   .step2-check {
     order: -1;
+  }
+
+  .std-review-grid {
+    grid-template-columns: 1fr;
   }
 }
 
