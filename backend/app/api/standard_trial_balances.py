@@ -1,10 +1,10 @@
-"""标准科目余额表数据查看 API — 批次列表 / 树形视图 / 明细查询"""
+"""标准科目余额表数据查看 API — 批次列表 / 树形视图 / 明细查询 / 删除"""
 
 import uuid
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -22,6 +22,7 @@ from app.services.standard_trial_balance_service import (
     get_batches,
     get_tree,
     get_entries,
+    delete_batch,
 )
 
 router = APIRouter(prefix="/standard-trial-balances", tags=["科目余额表数据查看"])
@@ -118,3 +119,27 @@ async def list_entries(
         items=[TrialBalanceEntryResponse.model_validate(e) for e in entries],
         total=len(entries),
     )
+
+
+# ── 删除批次 ──────────────────────────────────────────
+
+@router.delete("/batches/{batch_id}")
+async def delete_imported_batch(
+    batch_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    删除当前导入批次及关联数据。
+
+    删除范围：
+    - entries（标准化明细）
+    - raw_rows（原始行快照）
+    - batch 本身
+
+    不删除：standard_accounts（标准科目主数据）、client_account_mappings（映射经验）。
+    """
+    result = await delete_batch(db, batch_id=batch_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"批次 {batch_id} 不存在")
+    await db.commit()
+    return result

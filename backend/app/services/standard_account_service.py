@@ -3,6 +3,7 @@
 import uuid
 import logging
 from pathlib import Path
+from collections import defaultdict
 
 import openpyxl
 from sqlalchemy import select, func
@@ -17,6 +18,17 @@ STANDARD_ACCOUNT_HEADERS = ["科目代码", "科目名称", "余额方向", "科
 
 # 科目代码层级推断的分隔符
 CODE_SEPARATORS = ["-", ".", "_"]
+
+
+# ── TASK-072：业务展示层级 override ──────────────────
+# 部分标准科目虽然代码有前缀关系，但业务上是独立一级展示行（利润表独立项目、
+# 用户要求的独立科目）。代码前缀推断会把 141101 挂到 1411、660201 挂到 6602，
+# 但用户要求它们都作为一级节点，不得挂在父级下展示。
+BUSINESS_ROOT_ACCOUNT_CODES = {
+    "141101",  # 包装物：用户要求一级展示，不挂 1411 周转材料
+    "141102",  # 低值易耗品：用户要求一级展示，不挂 1411 周转材料
+    "660201",  # 减：研发费用：利润表独立展示线，不挂 6602 管理费用
+}
 
 
 def _read_excel_headers_and_rows(file_path: str) -> tuple[list[str], list[list]]:
@@ -135,6 +147,57 @@ def parse_standard_accounts_excel(file_path: str) -> tuple[list[dict], list[dict
     return accounts, errors
 
 
+def _apply_business_hierarchy_overrides(accounts: list[dict]) -> None:
+    """修正标准科目业务展示层级。
+
+    不能只靠代码前缀判断父子关系：部分报表展示行虽然代码有前缀关系，
+    但业务上是并列一级项目（如包装物/低值易耗品/研发费用）。这些科目强制
+    提为一级（parent_code=None, level=1）。详见 TASK-072。
+    """
+    for account in accounts:
+        code = account.get("account_code")
+        if code in BUSINESS_ROOT_ACCOUNT_CODES:
+            account["parent_code"] = None
+            account["level"] = 1
+
+    # is_leaf 不能再用「代码前缀」判断（否则 1411 仍会被 141101 前缀判为非末级）。
+    # 改为基于最终 parent_code 关系重算：没有任何科目把当前 code 作为 parent_code，
+    # 才是末级。
+    children_by_parent: dict[str, int] = {}
+    for account in accounts:
+        parent_code = account.get("parent_code")
+        if parent_code:
+            children_by_parent[parent_code] = children_by_parent.get(parent_code, 0) + 1
+
+    for account in accounts:
+        code = account.get("account_code")
+        account["is_leaf"] = children_by_parent.get(code, 0) == 0
+
+
+async def repair_builtin_standard_account_hierarchy(db: AsyncSession) -> dict:
+    """修复内置标准科目的业务展示层级。
+
+    seed_standard_accounts() 在已有数据时会跳过创建，所以这里负责把历史 DB 中
+    错误的 parent_id 修正回来：141101/141102/660201 必须是 parent_id=None、level=1、
+    is_leaf=True 的一级科目。
+    """
+    result = await db.execute(
+        select(StandardAccount).where(
+            StandardAccount.account_code.in_(BUSINESS_ROOT_ACCOUNT_CODES)
+        )
+    )
+    accounts = list(result.scalars().all())
+    changed = 0
+    for account in accounts:
+        if account.parent_id is not None or account.level != 1 or not account.is_leaf:
+            account.parent_id = None
+            account.level = 1
+            account.is_leaf = True
+            changed += 1
+    await db.flush()
+    return {"updated_count": changed}
+
+
 def infer_hierarchy(accounts: list[dict]) -> list[dict]:
     """
     根据科目代码推断层级关系。
@@ -142,7 +205,8 @@ def infer_hierarchy(accounts: list[dict]) -> list[dict]:
     策略：
     1. 按代码长度和分隔符推断 level（顶级=1）
     2. 为每个科目找到最接近的上级科目（代码为当前代码前缀，且比当前短）
-    3. 标记 is_leaf（没有其他科目以当前代码为前缀）
+    3. 应用业务展示层级 override（BUSINESS_ROOT_ACCOUNT_CODES 提为一级）
+    4. 基于 override 后的 parent_code 关系标记 is_leaf（不用代码前缀，避免误判）
 
     返回: 更新了 level, parent_code, is_leaf 的 accounts 列表。
     """
@@ -183,14 +247,8 @@ def infer_hierarchy(accounts: list[dict]) -> list[dict]:
         else:
             a["parent_code"] = None
 
-    # 标记 is_leaf：没有任何其他科目以此代码为前缀
-    for a in accounts:
-        code = a["account_code"]
-        is_parent = any(
-            other.startswith(code) and other != code
-            for other in codes
-        )
-        a["is_leaf"] = not is_parent
+    # 应用业务展示层级 override 并重算 is_leaf
+    _apply_business_hierarchy_overrides(accounts)
 
     return accounts
 
@@ -296,7 +354,13 @@ async def import_standard_accounts(
 
     await db.flush()
 
-    # 7. 补 parent_id（需要在 flush 后获取 ID）
+    # 7. 先清空所有本次 accounts 的 parent_id，再重新分配。
+    #    避免更新已有科目时旧 parent_id 残留（如 141101 之前挂在 1411 下，
+    #    本次导入提为一级后旧 parent_id 不会自动清空）。
+    for a in accounts:
+        code = a["account_code"]
+        code_to_id[code].parent_id = None
+
     for a in accounts:
         code = a["account_code"]
         parent_code = a.get("parent_code")
@@ -423,6 +487,115 @@ def load_seed_accounts_from_resource() -> list[dict]:
     return valid
 
 
+def _compute_level(account: StandardAccount, id_to_account: dict[uuid.UUID, StandardAccount]) -> int:
+    """计算标准科目层级（从当前节点向上遍历到根节点的深度）。"""
+    level = 1
+    current = account
+    seen = set()
+    while current.parent_id is not None:
+        if current.id in seen:
+            break
+        seen.add(current.id)
+        parent = id_to_account.get(current.parent_id)
+        if parent is None:
+            break
+        level += 1
+        current = parent
+    return level
+
+
+def _is_leaf_account(account: StandardAccount, children_map: dict[uuid.UUID | None, list[StandardAccount]]) -> bool:
+    """判断标准科目是否为末级（无子科目）。"""
+    return len(children_map.get(account.id, [])) == 0
+
+
+async def sync_builtin_standard_accounts(db: AsyncSession) -> dict:
+    """把内置标准科目同步进已有 DB。
+
+    - 已存在代码：更新 name/category/direction；
+    - 不存在代码：创建；
+    - 同步后重新推断 parent_id / level / is_leaf；
+    - 应继续应用 BUSINESS_ROOT_ACCOUNT_CODES 展示层级 override；
+    - 不删除用户库里已有但 seed 缺失的科目。
+    """
+    accounts = load_seed_accounts_from_resource()
+    if not accounts:
+        return {"created_count": 0, "updated_count": 0}
+
+    # 查询现有标准科目
+    result = await db.execute(select(StandardAccount))
+    existing_map = {sa.account_code: sa for sa in result.scalars().all()}
+
+    created_count = 0
+    updated_count = 0
+
+    for a in accounts:
+        code = a["account_code"]
+        if code in existing_map:
+            # 更新已有科目（只更新非关键展示属性）
+            sa = existing_map[code]
+            if a["account_name"] and sa.account_name != a["account_name"]:
+                sa.account_name = a["account_name"]
+            if a["balance_direction"] is not None:
+                sa.balance_direction = a["balance_direction"]
+            if a["account_category"] is not None:
+                sa.account_category = a["account_category"]
+            updated_count += 1
+        else:
+            # 新增
+            sa = StandardAccount(
+                account_code=code,
+                account_name=a["account_name"] or "",
+                balance_direction=a.get("balance_direction"),
+                account_category=a.get("account_category"),
+                level=1,
+                is_leaf=True,
+                is_active=True,
+            )
+            db.add(sa)
+            existing_map[code] = sa
+            created_count += 1
+
+    await db.flush()
+
+    # 重新推断层级（所有 seed accounts 包括新旧混合）
+    accounts_with_hierarchy = infer_hierarchy([{
+        "account_code": sa.account_code,
+        "account_name": sa.account_name,
+        "balance_direction": sa.balance_direction,
+        "account_category": sa.account_category,
+    } for sa in existing_map.values()])
+    hierarchy_map = {a["account_code"]: a for a in accounts_with_hierarchy}
+
+    code_to_id = {sa.account_code: sa for sa in existing_map.values()}
+
+    # 清理旧 parent_id 并重新分配
+    for code, sa in existing_map.items():
+        h = hierarchy_map.get(code)
+        if h and h.get("parent_code") and h["parent_code"] in code_to_id:
+            sa.parent_id = code_to_id[h["parent_code"]].id
+        else:
+            sa.parent_id = None
+
+    await db.flush()
+
+    # 重新计算 level 和 is_leaf
+    id_to_account = {sa.id: sa for sa in existing_map.values()}
+    children_map = defaultdict(list)
+    for sa in existing_map.values():
+        if sa.parent_id:
+            children_map[sa.parent_id].append(sa)
+
+    for code, sa in existing_map.items():
+        sa.level = _compute_level(sa, id_to_account)
+        sa.is_leaf = _is_leaf_account(sa, children_map)
+
+    await db.flush()
+
+    logger.info("内置标准科目同步完成：创建 %d 条，更新 %d 条", created_count, updated_count)
+    return {"created_count": created_count, "updated_count": updated_count}
+
+
 async def seed_standard_accounts(db: AsyncSession) -> dict:
     """
     初始化标准科目主数据（仅当库中无数据时执行）。
@@ -438,8 +611,18 @@ async def seed_standard_accounts(db: AsyncSession) -> dict:
     result = await db.execute(select(func.count(StandardAccount.id)))
     count = result.scalar()
     if count and count > 0:
-        logger.info("标准科目表已有 %d 条数据，跳过初始化", count)
-        return {"created_count": 0, "skipped": True}
+        sync = await sync_builtin_standard_accounts(db)
+        repair = await repair_builtin_standard_account_hierarchy(db)
+        logger.info(
+            "标准科目表已有 %d 条数据，同步新增 %d / 更新 %d 条；层级修复 %d 条",
+            count, sync["created_count"], sync["updated_count"], repair["updated_count"],
+        )
+        return {
+            "created_count": sync["created_count"],
+            "updated_count": sync["updated_count"],
+            "skipped": True,
+            "repaired_count": repair["updated_count"],
+        }
 
     # 加载种子数据
     accounts = load_seed_accounts_from_resource()
@@ -488,6 +671,19 @@ async def seed_standard_accounts(db: AsyncSession) -> dict:
         if parent_code and parent_code in code_to_id:
             sa = code_to_id[a["account_code"]]
             sa.parent_id = code_to_id[parent_code].id
+
+    await db.flush()
+
+    # 重新计算 level 和 is_leaf（基于 parent_id，而非 separator count）
+    id_to_account = {sa.id: sa for sa in code_to_id.values()}
+    children_map = defaultdict(list)
+    for sa in code_to_id.values():
+        if sa.parent_id:
+            children_map[sa.parent_id].append(sa)
+
+    for code, sa in code_to_id.items():
+        sa.level = _compute_level(sa, id_to_account)
+        sa.is_leaf = _is_leaf_account(sa, children_map)
 
     await db.flush()
 

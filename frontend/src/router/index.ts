@@ -19,11 +19,6 @@ const router = createRouter({
       component: () => import('@/views/CompaniesView.vue'),
     },
     {
-      path: '/data/templates',
-      name: 'templates',
-      component: () => import('@/views/ImportTemplatesView.vue'),
-    },
-    {
       path: '/data/standard-accounts',
       name: 'standard-accounts',
       component: () => import('@/views/StandardAccountsView.vue'),

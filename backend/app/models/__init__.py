@@ -5,7 +5,6 @@ from app.models.account import Account
 from app.models.trial_balance import TrialBalance
 from app.models.journal_entry import JournalEntry
 from app.models.subsidiary_ledger import SubsidiaryLedger
-from app.models.import_template import ImportTemplate
 from app.models.field_mapping_experience import FieldMappingExperience
 from app.models.standard_account import StandardAccount
 from app.models.client_account_mapping import ClientAccountMapping
@@ -20,7 +19,6 @@ __all__ = [
     "TrialBalance",
     "JournalEntry",
     "SubsidiaryLedger",
-    "ImportTemplate",
     "FieldMappingExperience",
     "StandardAccount",
     "ClientAccountMapping",

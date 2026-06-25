@@ -210,6 +210,7 @@ async def execute(
             batch_id=batch_id,
             file_path=file_path,
             confirmed_mappings=confirmed_mappings,
+            ignored_rows=body.ignored_rows,
             warnings_confirmed=body.warnings_confirmed,
             save_mapping_experience=body.save_mapping_experience,
         )

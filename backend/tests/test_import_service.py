@@ -852,692 +852,6 @@ class TestColumnV2Mapping:
             os.unlink(tmp.name)
 
 
-class TestTemplateMatching:
-    """TASK-022：模板匹配与预览集成"""
-
-    @pytest.mark.asyncio
-    async def test_exact_template_match_scores_100(self, db):
-        """完全一致模板 → 100 分"""
-        from app.services.template_service import create_template
-        from app.services.template_matcher import match_templates
-        from app.services.file_parser import build_columns, parse_file
-
-        # 先创建模板
-        t = await create_template(db, {
-            "name": "精确匹配模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要",
-                "col_004": "科目编码", "col_005": "科目名称",
-                "col_006": "借方金额", "col_007": "贷方金额",
-                "col_008": "会计年度", "col_009": "会计期间",
-            },
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary", "col_004": "account_code",
-                "col_005": "account_name", "col_006": "debit_amount",
-                "col_007": "credit_amount", "col_008": "fiscal_year",
-                "col_009": "period",
-            },
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            candidates = match_templates(tmp.name, "journal", [t])
-            assert len(candidates) == 1
-            # 完全匹配（含必填字段全覆盖）→ ≥ 90 分
-            assert candidates[0]["score"] >= 90, f"score={candidates[0]['score']}"
-            assert "voucher_no" in candidates[0]["matched_fields"]
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_similar_template_gets_medium_score(self, db):
-        """相似表头 → 中等分数 + warnings"""
-        from app.services.template_service import create_template
-        from app.services.template_matcher import match_templates
-
-        t = await create_template(db, {
-            "name": "部分匹配模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "日期",
-                "col_003": "说明", "col_004": "科目",
-            },
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary", "col_004": "account_code",
-            },
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            candidates = match_templates(tmp.name, "journal", [t])
-            assert len(candidates) >= 1
-            # 少量字段匹配 → 分数较低但有 warning
-            assert candidates[0]["score"] <= 50, f"score={candidates[0]['score']}"
-            assert len(candidates[0]["warnings"]) > 0  # 缺必填字段
-            assert any("必填字段" in w for w in candidates[0]["warnings"])
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_missing_required_fields_lowers_score(self, db):
-        """缺必填字段 → 降分"""
-        from app.services.template_service import create_template
-        from app.services.template_matcher import match_templates
-
-        t = await create_template(db, {
-            "name": "缺字段模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {"col_001": "凭证号"},
-            "column_rules": {"col_001": "voucher_no"},  # 只映射一个字段
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            candidates = match_templates(tmp.name, "journal", [t])
-            assert len(candidates) == 1
-            # 大量必填字段缺失 → 分数应较低
-            assert candidates[0]["score"] < 50
-            assert len(candidates[0]["missing_fields"]) > 3
-        finally:
-            os.unlink(tmp.name)
-
-    def test_negative_match_excludes_period_false_positive(self):
-        """本币期间异动 不被误判为 period"""
-        from app.services.column_matcher import auto_match, TYPE_FIELDS
-        headers = [
-            "科目编码", "科目名称",
-            "本币期间异动(借)", "本币期间异动(贷)",
-            "本币本年累计(借)", "本币本年累计(贷)",
-        ]
-        result = auto_match(headers, "trial_balance")
-        # period 不应该被匹配
-        assert "period" not in result["matched"], f"period was matched: {result['matched']}"
-        # fiscal_year 不应该被匹配
-        assert "fiscal_year" not in result["matched"], f"fiscal_year was matched: {result['matched']}"
-
-    def test_negative_match_warns_in_template_matcher(self):
-        """负向匹配在模板评分中产生 warning"""
-        from app.services.template_matcher import _check_negative_patterns
-        from app.services.file_parser import build_columns
-        headers = ["科目编码", "本币期间异动(借)", "本币本年累计(借)"]
-        columns = build_columns(headers)
-        warnings = _check_negative_patterns(columns)
-        assert len(warnings) > 0
-        assert any("期间异动" in w for w in warnings)
-
-    @pytest.mark.asyncio
-    async def test_preview_with_template_id_returns_mapping_v2(self, db):
-        """指定 template_id → preview 返回 applied_mapping_v2"""
-        from app.services.template_service import create_template
-        from app.services.import_service import preview_import
-
-        t = await create_template(db, {
-            "name": "套用模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要",
-            },
-            "column_rules": {
-                "col_001": "voucher_no",
-                "col_002": "voucher_date",
-                "col_003": "summary",
-            },
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            result = await preview_import(
-                tmp.name, "journal",
-                db=db, template_id=str(t.id),
-            )
-            assert "applied_mapping_v2" in result
-            assert result["applied_mapping_v2"]["col_001"] == "voucher_no"
-            assert result["applied_mapping_v2"]["col_002"] == "voucher_date"
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_preview_without_template_id_returns_candidates(self, db):
-        """不指定 template_id → preview 返回 template_candidates"""
-        from app.services.template_service import create_template
-        from app.services.import_service import preview_import
-
-        t = await create_template(db, {
-            "name": "候选模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {"col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要"},
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date", "col_003": "summary",
-                "col_004": "account_code", "col_005": "account_name",
-                "col_006": "debit_amount", "col_007": "credit_amount",
-                "col_008": "fiscal_year", "col_009": "period",
-            },
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            result = await preview_import(tmp.name, "journal", db=db)
-            assert "template_candidates" in result
-            candidates = result["template_candidates"]
-            assert len(candidates) >= 1
-            assert "score" in candidates[0]
-            assert "name" in candidates[0]
-        finally:
-            os.unlink(tmp.name)
-
-
-class TestTemplateMatchSafety:
-    """TASK-026：模板匹配安全校验 — 无关文件不能得高分"""
-
-    @pytest.mark.asyncio
-    async def test_match_templates_rejects_unrelated_same_width_file(self, db):
-        """完全不相关的9列文件 → 不返回候选或分数 < 40"""
-        from app.services.template_service import create_template
-        from app.services.template_matcher import match_templates
-
-        t = await create_template(db, {
-            "name": "序时账模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要",
-                "col_004": "科目编码", "col_005": "科目名称",
-                "col_006": "借方金额", "col_007": "贷方金额",
-                "col_008": "会计年度", "col_009": "会计期间",
-            },
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary", "col_004": "account_code",
-                "col_005": "account_name", "col_006": "debit_amount",
-                "col_007": "credit_amount", "col_008": "fiscal_year",
-                "col_009": "period",
-            },
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "customer,vendor,department,project,amount,note,status,date,number\r\n"
-            "C1,V1,D1,P1,1000,note1,ok,2024-01-01,001"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            candidates = match_templates(tmp.name, "journal", [t])
-            # 要么不返回候选，要么分数 < 40 并带 "表头不匹配" warning
-            if len(candidates) > 0:
-                assert candidates[0]["score"] < 40, f"score={candidates[0]['score']}"
-                assert any(
-                    "表头不匹配" in w for w in candidates[0]["warnings"]
-                ), f"warnings={candidates[0]['warnings']}"
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_test_template_rejects_unrelated_same_width_file(self, db):
-        """不相关文件 test_template → applicable=False"""
-        from app.services.template_service import create_template, test_template as run_test
-
-        t = await create_template(db, {
-            "name": "序时账模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "凭证日期",
-            },
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary",
-            },
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = "xA,xB,xC,xD,xE,xF,xG,xH,xI\r\n1,2,3,4,5,6,7,8,9"
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            result = await run_test(t, tmp.name)
-            # 完全不匹配 → applicable should be False
-            # (column_rules 有3个字段但在不匹配的文件上 hit_fields 可能仍计入了规则中的字段)
-            # 因为 test_template 目前只看规则中的标准字段统计，不看签名。
-            # TASK-026 要求在 test_template 中也检查签名匹配
-            assert result["applicable"] is False or len(result["column_mapping_v2"]) == 0, \
-                f"applicable={result['applicable']}, v2={result['column_mapping_v2']}"
-        finally:
-            os.unlink(tmp.name)
-
-    def test_apply_template_to_columns_rejects_signature_mismatch(self):
-        """签名不匹配 → apply_template_to_columns 抛出 ValueError"""
-        from app.services.template_matcher import apply_template_to_columns
-        from app.services.file_parser import build_columns
-        from app.models.import_template import ImportTemplate
-
-        t = ImportTemplate(
-            name="测试模板",
-            data_type="journal",
-            header_signature={"col_001": "凭证号", "col_002": "凭证日期"},
-            column_rules={"col_001": "voucher_no", "col_002": "voucher_date"},
-        )
-
-        headers = ["customer", "vendor", "amount"]
-        columns = build_columns(headers)
-
-        with pytest.raises(ValueError, match="表头不匹配"):
-            apply_template_to_columns(t, columns)
-
-    @pytest.mark.asyncio
-    async def test_from_sample_duplicate_english_summary_keeps_first(self):
-        """英文重复表头 summary,summary → 第一列保存为 summary，第二列是辅助字段"""
-        from app.services.template_service import from_sample
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "voucher_no,voucher_date,summary,summary,account_code,account_name,"
-            "debit_amount,credit_amount,fiscal_year,period\r\n"
-            "001,2024-01-15,采购原材料,支付货款,1002,银行存款,10000,0,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            draft = await from_sample(tmp.name, "journal")
-            rules = draft["column_rules"]
-            # 第一个 summary 列 (col_003) 应保存为 summary
-            assert rules.get("col_003") == "summary", f"col_003 = {rules.get('col_003')}"
-            # 第二个 summary 列 (col_004) 不应是 summary
-            assert rules.get("col_004") != "summary", f"col_004 should not be summary: {rules.get('col_004')}"
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_preview_with_template_id_needs_signature_match(self, db):
-        """指定 template_id 预览 → 签名不匹配时返回错误，不是静默套用"""
-        from app.services.template_service import create_template
-        from app.services.import_service import preview_import
-
-        t = await create_template(db, {
-            "name": "序时账模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要",
-            },
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary",
-            },
-        })
-
-        # 不相关的文件
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = "xA,xB,xC\r\n1,2,3"
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            with pytest.raises(ValueError, match="表头不匹配"):
-                await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
-        finally:
-            os.unlink(tmp.name)
-
-
-class TestTemplateConfigEffective:
-    """TASK-027：parse_config 和 default_values 生效"""
-
-    def test_parse_file_with_config_header_row(self):
-        """header_row=1, data_start_row=2 → 跳过第一行标题，解析第二行表头"""
-        from app.services.file_parser import parse_file_with_config
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "审计数据导出 2024,\r\n"
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            config = {"header_row": 1, "data_start_row": 2}
-            headers, rows = parse_file_with_config(tmp.name, config)
-            assert headers[0] == "凭证号"
-            assert len(rows) == 1
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_test_template_uses_parse_config(self, db):
-        """模板 parse_config header_row=1 → test_template 识别第二行表头"""
-        from app.services.template_service import create_template, test_template as run_test
-
-        t = await create_template(db, {
-            "name": "跳过首行模板",
-            "data_type": "journal",
-            "is_active": True,
-            "parse_config": {"header_row": 1, "data_start_row": 2},
-            "header_signature": {"col_001": "凭证号", "col_002": "凭证日期"},
-            "column_rules": {"col_001": "voucher_no", "col_002": "voucher_date"},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "标题行,多余的\r\n"
-            "凭证号,凭证日期\r\n"
-            "001,2024-01-15"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            result = await run_test(t, tmp.name)
-            assert result["applicable"] is True
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_preview_with_template_id_uses_parse_config(self, db):
-        """指定模板预览 → 返回列来自 parse_config 指定的表头行"""
-        from app.services.template_service import create_template
-        from app.services.import_service import preview_import
-
-        t = await create_template(db, {
-            "name": "预览跳过首行",
-            "data_type": "journal",
-            "is_active": True,
-            "parse_config": {"header_row": 1, "data_start_row": 2},
-            "header_signature": {"col_001": "凭证号", "col_002": "凭证日期"},
-            "column_rules": {"col_001": "voucher_no", "col_002": "voucher_date"},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "标题行,多余的\r\n"
-            "凭证号,凭证日期\r\n"
-            "001,2024-01-15"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            result = await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
-            # 表头应为 "凭证号"，不是 "标题行"
-            assert result["headers"][0] == "凭证号"
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_import_uses_template_default_fiscal_year_period(self, db, sample_company_id):
-        """文件无年度/期间列 → 模板 default_values 补齐 → 导入成功"""
-        from app.services.template_service import create_template
-
-        t = await create_template(db, {
-            "name": "默认值模板",
-            "data_type": "journal",
-            "is_active": True,
-            "default_values": {"fiscal_year": 2024, "period": 12},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        # 不含 fiscal_year 和 period 列
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            mapping = {
-                "凭证号": "voucher_no", "凭证日期": "voucher_date",
-                "摘要": "summary", "科目编码": "account_code",
-                "科目名称": "account_name", "借方金额": "debit_amount",
-                "贷方金额": "credit_amount",
-            }
-            result = await import_data(
-                db=db, company_id=sample_company_id,
-                file_path=tmp.name, data_type="journal",
-                column_mapping=mapping,
-                template_default_values=t.default_values,
-            )
-            assert result["success"] == 1
-            stmt = select(JournalEntry).where(JournalEntry.company_id == sample_company_id)
-            res = await db.execute(stmt)
-            rows = res.scalars().all()
-            assert len(rows) == 1
-            assert rows[0].fiscal_year == 2024
-            assert rows[0].period == 12
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_manual_params_override_template_defaults(self, db, sample_company_id):
-        """用户手动年度/期间 → 优先于模板默认值"""
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额\r\n"
-            "001,2024-01-15,采购,1002,银行存款,0,10000"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            mapping = {
-                "凭证号": "voucher_no", "凭证日期": "voucher_date",
-                "摘要": "summary", "科目编码": "account_code",
-                "科目名称": "account_name", "借方金额": "debit_amount",
-                "贷方金额": "credit_amount",
-            }
-            result = await import_data(
-                db=db, company_id=sample_company_id,
-                file_path=tmp.name, data_type="journal",
-                column_mapping=mapping,
-                fiscal_year=2025, period=1,  # 用户手动
-                template_default_values={"fiscal_year": 2024, "period": 12},  # 模板默认
-            )
-            assert result["success"] == 1
-            stmt = select(JournalEntry).where(JournalEntry.company_id == sample_company_id)
-            res = await db.execute(stmt)
-            rows = res.scalars().all()
-            assert len(rows) == 1
-            assert rows[0].fiscal_year == 2025  # 用户值优先
-            assert rows[0].period == 1
-        finally:
-            os.unlink(tmp.name)
-
-
-class TestTemplateExecuteEndToEnd:
-    """TASK-029：套用模板后最终导入链路验证"""
-
-    @pytest.mark.asyncio
-    async def test_import_with_template_id_and_parse_config(self, db, sample_company_id):
-        """文件第1行标题/第2行表头/无年度期间 → 模板 parse_config + defaults → 导入成功"""
-        from app.services.template_service import create_template
-
-        t = await create_template(db, {
-            "name": "端到端模板",
-            "data_type": "journal",
-            "is_active": True,
-            "parse_config": {"header_row": 1, "data_start_row": 2},
-            "header_signature": {
-                "col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要",
-                "col_004": "科目编码", "col_005": "科目名称",
-                "col_006": "借方金额", "col_007": "贷方金额",
-            },
-            "column_rules": {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary", "col_004": "account_code",
-                "col_005": "account_name", "col_006": "debit_amount",
-                "col_007": "credit_amount",
-            },
-            "default_values": {"fiscal_year": 2024, "period": 3},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = (
-            "审计数据导出,2024年3月\r\n"
-            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额\r\n"
-            "001,2024-03-15,采购,1002,银行存款,0,10000"
-        )
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            mapping_v2 = {
-                "col_001": "voucher_no", "col_002": "voucher_date",
-                "col_003": "summary", "col_004": "account_code",
-                "col_005": "account_name", "col_006": "debit_amount",
-                "col_007": "credit_amount",
-            }
-            result = await import_data(
-                db=db, company_id=sample_company_id,
-                file_path=tmp.name, data_type="journal",
-                column_mapping_v2=mapping_v2,
-                parse_config=t.parse_config or None,
-                template_default_values=t.default_values or None,
-            )
-            assert result["success"] == 1
-            assert result["errors"] == []
-
-            stmt = select(JournalEntry).where(JournalEntry.company_id == sample_company_id)
-            res = await db.execute(stmt)
-            rows = res.scalars().all()
-            assert len(rows) == 1
-            assert rows[0].fiscal_year == 2024
-            assert rows[0].period == 3
-            assert rows[0].voucher_no == "001"
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_preview_silently_ignores_nonexistent_template(self, db):
-        """不存在的 template_id → preview 不抛异常，静默回退到自动匹配"""
-        fake_id = str(uuid.uuid4())
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n001,2024-01-15,x,1002,x,0,10000,2024,1"
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            from app.services.import_service import preview_import
-            result = await preview_import(tmp.name, "journal", db=db, template_id=fake_id)
-            # 不应抛异常，且 applied_mapping_v2 不存在
-            assert "applied_mapping_v2" not in result
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_import_rejects_inactive_template(self, db, sample_company_id):
-        """停用模板 → ValueError"""
-        from app.services.template_service import create_template
-
-        t = await create_template(db, {
-            "name": "停用模板",
-            "data_type": "journal",
-            "is_active": False,
-            "header_signature": {"col_001": "凭证号"},
-            "column_rules": {"col_001": "voucher_no"},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n001,2024-01-15,x,1002,x,0,10000,2024,1"
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            from app.services.import_service import preview_import
-            with pytest.raises(ValueError, match="已停用"):
-                await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_import_rejects_data_type_mismatch(self, db, sample_company_id):
-        """模板 data_type 与导入类型不一致 → ValueError"""
-        from app.services.template_service import create_template
-
-        t = await create_template(db, {
-            "name": "余额表模板",
-            "data_type": "trial_balance",
-            "is_active": True,
-            "header_signature": {"col_001": "科目编码"},
-            "column_rules": {"col_001": "account_code"},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
-        )
-        csv_content = "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n001,2024-01-15,x,1002,x,0,10000,2024,1"
-        tmp.write(csv_content)
-        tmp.close()
-        try:
-            from app.services.import_service import preview_import
-            with pytest.raises(ValueError, match="不一致"):
-                await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
-        finally:
-            os.unlink(tmp.name)
-
-
 class TestMappingExperienceRecommend:
     """TASK-032：字段映射经验推荐"""
 
@@ -1838,75 +1152,114 @@ class TestExperienceIsolation:
         assert col.get("confidence", 0) >= 1.0
 
 
-class TestTemplateSuggestions:
-    """TASK-037：模板套用来源补齐"""
+class TestPreviewWithoutTemplateId:
+    """TASK-061 回归：preview_import 不再接受 template_id，journal/subsidiary 导入正常"""
 
     @pytest.mark.asyncio
-    async def test_preview_with_template_returns_template_suggestions(self, db):
-        """指定 template_id 预览 → mapping_suggestions_v2 包含模板列"""
-        from app.services.template_service import create_template
+    async def test_preview_journal_without_template_id_returns_success(self):
+        """journal 预览无 template_id → 成功返回 headers + matched + suggestions"""
         from app.services.import_service import preview_import
 
-        t = await create_template(db, {
-            "name": "来源测试模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {"col_001": "凭证号", "col_002": "凭证日期", "col_003": "摘要"},
-            "column_rules": {"col_001": "voucher_no", "col_002": "voucher_date", "col_003": "summary"},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
-        tmp.write("凭证号,凭证日期,摘要\r\n001,2024-01-15,采购")
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
+            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
+        )
+        tmp.write(csv_content)
         tmp.close()
         try:
-            result = await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
-            suggestions = result.get("mapping_suggestions_v2", {})
-            assert "col_001" in suggestions
-            assert suggestions["col_001"]["source"] == "template"
-            assert suggestions["col_001"]["confidence"] == 1.0
-            assert suggestions["col_001"]["target_field"] == "voucher_no"
-            assert "col_002" in suggestions
-            assert "col_003" in suggestions
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_preview_template_without_company_id_still_returns_template_suggestions(self, db):
-        """未传 company_id 但指定 template_id → 仍返回模板建议"""
-        from app.services.template_service import create_template
-        from app.services.import_service import preview_import
-
-        t = await create_template(db, {
-            "name": "无公司模板",
-            "data_type": "journal",
-            "is_active": True,
-            "header_signature": {"col_001": "凭证号"},
-            "column_rules": {"col_001": "voucher_no"},
-        })
-
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
-        tmp.write("凭证号\r\n001")
-        tmp.close()
-        try:
-            result = await preview_import(tmp.name, "journal", db=db, template_id=str(t.id))
-            suggestions = result.get("mapping_suggestions_v2", {})
-            assert len(suggestions) > 0
-            assert suggestions["col_001"]["source"] == "template"
-        finally:
-            os.unlink(tmp.name)
-
-    @pytest.mark.asyncio
-    async def test_no_template_no_db_still_gets_keyword_fallback(self):
-        """未指定模板 + 无 db → 关键词兜底仍工作"""
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="")
-        tmp.write("凭证号,凭证日期,摘要\r\n001,2024-01-15,采购")
-        tmp.close()
-        try:
-            from app.services.import_service import preview_import
             result = await preview_import(tmp.name, "journal")
+            assert result["data_type"] == "journal"
+            assert len(result["headers"]) == 9
+            assert "headers" in result
+            assert "columns" in result
+            assert "matched" in result
+            assert "unmatched" in result
+            assert "missing" in result
+            # 不得返回模板字段
+            assert "template_candidates" not in result
             assert "applied_mapping_v2" not in result
+            assert "template_default_values" not in result
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_preview_subsidiary_without_template_id_returns_success(self):
+        """subsidiary 预览无 template_id → 成功返回"""
+        from app.services.import_service import preview_import
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,附件数,会计年度,会计期间\r\n"
+            "001,2024-01-15,采购,1002,银行存款,0,10000,3,2024,1"
+        )
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            result = await preview_import(tmp.name, "subsidiary")
+            assert result["data_type"] == "subsidiary"
+            assert len(result["headers"]) == 10
+            assert "template_candidates" not in result
+            assert "applied_mapping_v2" not in result
+            assert "template_default_values" not in result
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_preview_journal_with_company_id_returns_experience_suggestions(self, db):
+        """传 company_id → 仍返回 mapping_suggestions_v2"""
+        from app.services.import_service import preview_import
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
+            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
+        )
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            result = await preview_import(
+                tmp.name, "journal",
+                db=db,
+                company_id="a0000000-0000-0000-0000-000000000001",
+            )
+            assert result["data_type"] == "journal"
+            # 经验推荐应存在（空或有关键词兜底）
             suggestions = result.get("mapping_suggestions_v2", {})
-            for v in suggestions.values():
-                assert v["source"] == "keyword_match"
+            assert isinstance(suggestions, dict)
+            # 不得返回模板字段
+            assert "template_candidates" not in result
+            assert "applied_mapping_v2" not in result
+            assert "template_default_values" not in result
+        finally:
+            os.unlink(tmp.name)
+
+    @pytest.mark.asyncio
+    async def test_preview_keyword_fallback_works_without_template(self):
+        """无 template + 无 db → 关键词兜底仍生成 keyword_match 建议"""
+        from app.services.import_service import preview_import
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8", newline=""
+        )
+        csv_content = (
+            "凭证号,凭证日期,摘要,科目编码,科目名称,借方金额,贷方金额,会计年度,会计期间\r\n"
+            "001,2024-01-15,采购,1002,银行存款,0,10000,2024,1"
+        )
+        tmp.write(csv_content)
+        tmp.close()
+        try:
+            result = await preview_import(tmp.name, "journal")
+            suggestions = result.get("mapping_suggestions_v2", {})
+            # 至少关键字匹配兜底
+            sources = {v.get("source") for v in suggestions.values()}
+            assert "keyword_match" in sources or len(sources) == 0
+            assert "template" not in sources
         finally:
             os.unlink(tmp.name)

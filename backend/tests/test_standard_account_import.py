@@ -442,6 +442,54 @@ class TestImportStandardAccounts:
         assert sa_2001.is_active is True
         assert sa_2001.account_name == "短期借款(恢复)"
 
+    @pytest.mark.asyncio
+    async def test_import_clears_old_parent_id_for_business_roots(self, db):
+        """TASK-073：更新已有科目时清空旧 parent_id，避免层级残留。
+
+        场景：直接在 DB 中构造 141101 挂在 1411 下的状态（模拟历史数据），
+        再导入含 1411 + 141101 的标准科目表（BUSINESS_ROOT_ACCOUNT_CODES override），
+        验证 141101.parent_id 被清空、level 变为 1。
+        """
+        # 直接在 DB 中构造历史残留状态：141101 挂在 1411 下
+        sa_1411 = StandardAccount(
+            account_code="1411", account_name="周转材料",
+            level=1, is_leaf=False, is_active=True,
+        )
+        db.add(sa_1411)
+        await db.flush()
+
+        sa_141101 = StandardAccount(
+            account_code="141101", account_name="包装物",
+            level=2, is_leaf=True, is_active=True,
+            parent_id=sa_1411.id,
+        )
+        db.add(sa_141101)
+        await db.flush()
+
+        # 确认初始状态
+        assert sa_141101.parent_id == sa_1411.id
+
+        # 导入含 1411 + 141101 的标准科目表
+        path = _make_excel(
+            ["科目代码", "科目名称", "余额方向", "科目类别"],
+            [
+                ["1411", "周转材料", "debit", "资产类"],
+                ["141101", "包装物", "debit", "资产类"],
+            ],
+        )
+        try:
+            result = await import_standard_accounts(db, path)
+            assert result["updated_count"] == 2
+        finally:
+            _cleanup(path)
+
+        # 验证更新后 141101.parent_id 被清空
+        await db.refresh(sa_141101)
+        assert sa_141101.parent_id is None, (
+            "更新已有科目时旧 parent_id 残留，141101 应为顶级科目"
+        )
+        assert sa_141101.level == 1
+
 
 # ── get_standard_accounts 筛选测试 ────────────────────
 
@@ -589,7 +637,7 @@ class TestSeedFromResource:
 
     @pytest.mark.asyncio
     async def test_seed_skips_when_data_exists(self, db):
-        """数据库已有数据时跳过初始化"""
+        """数据库已有数据时应同步缺失内置科目，不覆盖已有数据。"""
         from app.services.standard_account_service import seed_standard_accounts
 
         # 先手动插入一条
@@ -601,15 +649,16 @@ class TestSeedFromResource:
         db.add(sa)
         await db.flush()
 
-        # 执行初始化
+        # 执行初始化 — 现在会同步缺失内置科目
         result = await seed_standard_accounts(db)
         assert result["skipped"] is True
-        assert result["created_count"] == 0
+        # sync 会创建缺失的 seed 科目
+        assert result["created_count"] >= 1
 
-        # 确认原来的数据没被覆盖
+        # 确认原来的自定义科目没被删除
         items = await get_standard_accounts(db)
-        assert len(items) == 1
-        assert items[0].account_code == "9999"
+        codes = {i.account_code for i in items}
+        assert "9999" in codes
 
     @pytest.mark.asyncio
     async def test_seed_accounts_have_hierarchy(self, db):
@@ -642,3 +691,178 @@ class TestPublicUploadNotExposed:
         # 应有查询路由（FastAPI 会把 prefix 拼到 route.path 里）
         assert "/standard-accounts" in routes, f"GET /standard-accounts 应存在，当前路由: {routes}"
         assert "/standard-accounts/{account_id}" in routes, f"GET /standard-accounts/{{id}} 应存在，当前路由: {routes}"
+
+
+# ── TASK-072：业务展示层级 override 与已有 DB 修复 ──
+
+class TestBusinessRootHierarchyOverrides:
+    """141101/141102/660201 必须作为一级科目（parent_code=None, level=1, is_leaf=True）。"""
+
+    def test_business_root_account_overrides(self):
+        from app.services.standard_account_service import infer_hierarchy
+
+        accounts = [
+            {"account_code": "1411", "account_name": "周转材料"},
+            {"account_code": "141101", "account_name": "包装物"},
+            {"account_code": "141102", "account_name": "低值易耗品"},
+            {"account_code": "6602", "account_name": "减：管理费用"},
+            {"account_code": "660201", "account_name": "减：研发费用"},
+            {"account_code": "1001", "account_name": "资产"},
+            {"account_code": "1001001", "account_name": "库存现金"},
+        ]
+
+        result = infer_hierarchy(accounts)
+        by_code = {a["account_code"]: a for a in result}
+
+        assert by_code["141101"]["parent_code"] is None
+        assert by_code["141101"]["level"] == 1
+        assert by_code["141101"]["is_leaf"] is True
+
+        assert by_code["141102"]["parent_code"] is None
+        assert by_code["141102"]["level"] == 1
+        assert by_code["141102"]["is_leaf"] is True
+
+        assert by_code["1411"]["parent_code"] is None
+        assert by_code["1411"]["level"] == 1
+        # 141101/141102 被提为一级后，1411 没有子级，应为末级
+        assert by_code["1411"]["is_leaf"] is True
+
+        assert by_code["660201"]["parent_code"] is None
+        assert by_code["660201"]["level"] == 1
+        assert by_code["660201"]["is_leaf"] is True
+
+        assert by_code["6602"]["parent_code"] is None
+        assert by_code["6602"]["level"] == 1
+        # 660201 被提为一级后，6602 没有子级，应为末级
+        assert by_code["6602"]["is_leaf"] is True
+
+        # 正常代码前缀层级不能被破坏
+        assert by_code["1001001"]["parent_code"] == "1001"
+        assert by_code["1001"]["is_leaf"] is False
+
+    @pytest.mark.asyncio
+    async def test_seed_repairs_existing_business_root_parent_ids(self, db):
+        from app.services.standard_account_service import seed_standard_accounts
+
+        parent_1411 = StandardAccount(account_code="1411", account_name="周转材料", level=1, is_leaf=False)
+        parent_6602 = StandardAccount(account_code="6602", account_name="减：管理费用", level=1, is_leaf=False)
+        db.add_all([parent_1411, parent_6602])
+        await db.flush()
+
+        packaging = StandardAccount(
+            account_code="141101",
+            account_name="包装物",
+            level=2,
+            is_leaf=True,
+            parent_id=parent_1411.id,
+        )
+        consumables = StandardAccount(
+            account_code="141102",
+            account_name="低值易耗品",
+            level=2,
+            is_leaf=True,
+            parent_id=parent_1411.id,
+        )
+        rd = StandardAccount(
+            account_code="660201",
+            account_name="减：研发费用",
+            level=2,
+            is_leaf=True,
+            parent_id=parent_6602.id,
+        )
+        db.add_all([packaging, consumables, rd])
+        await db.flush()
+
+        result = await seed_standard_accounts(db)
+        assert result["skipped"] is True
+        # sync 或 repair 会修正层级（sync 先跑，可能已经修正了，repaired_count 可能为 0）
+
+        await db.refresh(packaging)
+        await db.refresh(consumables)
+        await db.refresh(rd)
+        for sa in (packaging, consumables, rd):
+            assert sa.parent_id is None
+            assert sa.level == 1
+            assert sa.is_leaf is True
+
+    @pytest.mark.asyncio
+    async def test_repair_function_directly_fixes_existing_root_parent_ids(self, db):
+        from app.services.standard_account_service import repair_builtin_standard_account_hierarchy
+
+        parent_1411 = StandardAccount(account_code="1411", account_name="周转材料", level=1, is_leaf=False)
+        db.add(parent_1411)
+        await db.flush()
+
+        packaging = StandardAccount(
+            account_code="141101",
+            account_name="包装物",
+            level=2,
+            is_leaf=True,
+            parent_id=parent_1411.id,
+        )
+        db.add(packaging)
+        await db.flush()
+
+        result = await repair_builtin_standard_account_hierarchy(db)
+        assert result["updated_count"] >= 1
+        await db.refresh(packaging)
+        assert packaging.parent_id is None
+        assert packaging.level == 1
+        assert packaging.is_leaf is True
+
+
+# ── TASK-075：内置标准科目同步到已有 DB ──
+
+class TestSeedSync:
+    """seed_standard_accounts() 在已有 DB 时应同步缺失内置科目。"""
+
+    @pytest.mark.asyncio
+    async def test_seed_existing_db_recomputes_rd_development_child_levels(self, db):
+        """已有库中 170401/170402 的 level 应被重算为 2。"""
+        from sqlalchemy import select
+        from app.services.standard_account_service import seed_standard_accounts
+
+        db.add(StandardAccount(
+            account_code="1704",
+            account_name="开发支出",
+            balance_direction="debit",
+            account_category="资产类",
+            level=1,
+            is_leaf=True,
+            is_active=True,
+        ))
+        await db.flush()
+
+        await seed_standard_accounts(db)
+        rows = (await db.execute(select(StandardAccount))).scalars().all()
+        by_code = {r.account_code: r for r in rows}
+
+        assert by_code["1704"].level == 1
+        assert by_code["1704"].is_leaf is False
+        assert by_code["170401"].parent_id == by_code["1704"].id
+        assert by_code["170402"].parent_id == by_code["1704"].id
+        assert by_code["170401"].level == 2
+        assert by_code["170402"].level == 2
+
+    @pytest.mark.asyncio
+    async def test_seed_sync_preserves_existing_accounts(self, db):
+        """同步不删除用户库里已有但 seed 缺失的科目。"""
+        from app.services.standard_account_service import seed_standard_accounts
+
+        # 先插入一个不在 seed 里的自定义科目
+        db.add(StandardAccount(
+            account_code="999999",
+            account_name="自定义测试科目",
+            is_active=True,
+        ))
+        await db.flush()
+
+        result = await seed_standard_accounts(db)
+        # 应该创建了新 seed 科目
+        assert result["created_count"] >= 1
+
+        # 自定义科目仍在
+        rows = (await db.execute(select(StandardAccount))).scalars().all()
+        by_code = {r.account_code: r for r in rows}
+        assert "999999" in by_code
+        assert by_code["999999"].account_name == "自定义测试科目"

@@ -15,7 +15,6 @@ import app.models  # noqa: F401
 from app.api.health import router as health_router
 from app.api.companies import router as companies_router
 from app.api.imports import router as imports_router
-from app.api.import_templates import router as templates_router
 from app.api.client_account_mappings import router as client_account_mappings_router
 from app.api.standard_accounts import router as standard_accounts_router
 from app.api.standard_trial_balances import router as standard_trial_balances_router
@@ -62,7 +61,6 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(companies_router, prefix="/api/v1")
 app.include_router(imports_router, prefix="/api/v1")
-app.include_router(templates_router, prefix="/api/v1")
 app.include_router(client_account_mappings_router, prefix="/api/v1")
 app.include_router(standard_accounts_router, prefix="/api/v1")
 app.include_router(standard_trial_balances_router, prefix="/api/v1")

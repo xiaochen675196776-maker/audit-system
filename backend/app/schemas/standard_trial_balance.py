@@ -1,6 +1,7 @@
 """标准科目与标准科目余额表 Schema — 创建/更新/响应"""
 
 import uuid
+from typing import Literal
 from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
@@ -266,7 +267,7 @@ class ClientAccountMappingCandidate(BaseModel):
     standard_account_name: str
     standard_balance_direction: str | None = None
     score: float
-    source: str  # company_history / global_history / code_match / name_similarity
+    source: str  # company_history / global_history / code_match / name_exact / name_similarity / code_prefix_parent / code_category_anchor / name_anchor
     reason: str
     warning: str | None = None
 
@@ -296,8 +297,12 @@ class ClientAccountMappingRecommendRequest(BaseModel):
 
 class MappingRecommendEntry(BaseModel):
     """单个客户科目的推荐结果"""
+    row_index: int | None = Field(None, ge=0, description="原始数据行序号")
     client_account_code: str | None
     client_account_name: str | None
+    is_leaf: bool | None = Field(None, description="是否为末级客户科目行")
+    is_summary: bool | None = Field(None, description="是否为汇总父级行")
+    participates_in_entry: bool | None = Field(None, description="是否参与生成标准余额表条目")
     candidates: list[ClientAccountMappingCandidate]
 
 
@@ -377,15 +382,27 @@ class BatchListResponse(BaseModel):
 # ── 数据查看: 树形视图 ──────────────────────────────
 
 class TreeNodeResponse(BaseModel):
-    """树形节点响应 — 递归结构"""
+    """树形节点响应 — 递归结构，包含标准科目节点与客户明细节点"""
+    # 节点标识与类型
+    node_id: str
+    node_type: Literal["account", "client_group", "entry"] = "account"
+
     # 标准科目信息
     standard_account_id: uuid.UUID
     account_code: str
     account_name: str
-    account_category: str | None
-    balance_direction: str | None
-    level: int | None
-    is_leaf: bool
+    account_category: str | None = None
+    balance_direction: str | None = None
+    level: int | None = None
+    is_leaf: bool = False
+
+    # 客户明细节点专属（account 节点为 None）
+    entry_id: uuid.UUID | None = None
+    client_account_code: str | None = None
+    client_account_name: str | None = None
+    # entry 节点的标准科目快照（account 节点为 None），用于前端展示「标准：141101 包装物」
+    standard_account_code: str | None = None
+    standard_account_name: str | None = None
 
     # 汇总金额（六列标准借贷）
     opening_debit: Decimal = Decimal("0")
@@ -396,9 +413,9 @@ class TreeNodeResponse(BaseModel):
     ending_credit: Decimal = Decimal("0")
 
     # 子树
-    children: list["TreeNodeResponse"] = []
-    entry_count: int = Field(0, description="底层条目数")
-    has_children: bool = Field(False, description="是否有下级科目")
+    children: list["TreeNodeResponse"] = Field(default_factory=list)
+    entry_count: int = 0
+    has_children: bool = False
 
 
 class TreeResponse(BaseModel):
@@ -553,8 +570,19 @@ class ConfirmedMapping(BaseModel):
 class ExecuteRequest(BaseModel):
     """执行导入请求"""
     confirmed_mappings: list[ConfirmedMapping] = Field(..., min_length=0, description="确认的科目映射列表")
+    ignored_rows: list[int] = Field(default_factory=list, description="用户忽略的原始行序号列表")
     warnings_confirmed: bool = Field(False, description="是否确认所有警告，确认后继续")
     save_mapping_experience: bool = Field(True, description="是否保存映射经验")
+
+    @field_validator("ignored_rows")
+    @classmethod
+    def check_ignored_rows(cls, v: list[int]) -> list[int]:
+        invalid = [row_index for row_index in v if row_index < 0]
+        if invalid:
+            raise ValueError("ignored_rows 只能包含非负行序号")
+        if len(set(v)) != len(v):
+            raise ValueError("ignored_rows 不能包含重复行序号")
+        return v
 
 
 class MappingSavedInfo(BaseModel):

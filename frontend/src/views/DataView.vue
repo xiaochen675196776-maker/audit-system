@@ -72,6 +72,20 @@
           <span class="node-count" v-if="totalNodes > 0">
             共 {{ totalNodes }} 个节点
           </span>
+          <el-popconfirm
+            v-if="selectedBatchId"
+            title="确认删除当前导入批次？删除后该批次的科目余额表数据不可在查询页查看。"
+            confirm-button-text="删除"
+            cancel-button-text="取消"
+            confirm-button-type="danger"
+            @confirm="deleteSelectedBatch"
+          >
+            <template #reference>
+              <el-button type="danger" plain :loading="deleteLoading">
+                删除当前导入数据
+              </el-button>
+            </template>
+          </el-popconfirm>
         </div>
       </div>
 
@@ -85,23 +99,62 @@
       <!-- 树形表格 -->
       <div v-else-if="treeData.length > 0" class="tree-table-wrap">
         <el-table
+          class="trial-balance-tree-table"
           :data="treeData"
-          row-key="standard_account_id"
+          row-key="node_id"
           :tree-props="{ children: 'children', hasChildren: 'has_children' }"
           :default-expand-all="false"
           border
           stripe
           v-loading="treeLoading"
           size="small"
+          :fit="false"
           style="width: 100%"
           :max-height="tableMaxHeight"
         >
-          <el-table-column prop="account_code" label="科目代码" width="140" fixed />
-          <el-table-column prop="account_name" label="科目名称" min-width="180">
+          <el-table-column
+            prop="account_code"
+            label="科目代码"
+            width="150"
+            fixed="left"
+          />
+          <el-table-column
+            prop="account_name"
+            label="科目名称 / 客户明细"
+            width="360"
+            fixed="left"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
-              <span :style="{ paddingLeft: (row.level || 1) > 1 ? '0' : '0' }">
-                {{ row.account_name }}
+              <template v-if="row.node_type === 'entry'">
+                <span class="name-inline entry-row-text" :title="customerTitle(row)">
+                  <el-tag size="small" type="info" effect="plain">客户</el-tag>
+                  <span class="single-line-text">{{ clientLabel(row) }}</span>
+                </span>
+              </template>
+              <template v-else-if="row.node_type === 'client_group'">
+                <span class="name-inline entry-row-text" :title="customerTitle(row)">
+                  <el-tag size="small" type="warning" effect="plain">客户层级</el-tag>
+                  <span class="single-line-text">{{ clientLabel(row) }}</span>
+                </span>
+              </template>
+              <template v-else>
+                <span class="single-line-text" :title="`${row.account_code || ''} ${row.account_name || ''}`">
+                  {{ row.account_name }}
+                </span>
+              </template>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="标准科目"
+            width="280"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <span v-if="row.node_type === 'entry'" class="standard-inline" :title="standardTitle(row)">
+                {{ standardLabel(row) }}
               </span>
+              <span v-else class="muted">-</span>
             </template>
           </el-table-column>
           <el-table-column prop="balance_direction" label="方向" width="70" align="center">
@@ -113,62 +166,69 @@
           </el-table-column>
           <el-table-column label="期初借方余额" width="150" align="right">
             <template #default="{ row }">
-              <span :class="{ 'zero-amount': !hasAmount(row.opening_debit) }">
+              <span
+                class="amount-cell"
+                :class="{ 'zero-amount': !hasAmount(row.opening_debit) }"
+              >
                 {{ formatAmount(row.opening_debit) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="期初贷方余额" width="150" align="right">
             <template #default="{ row }">
-              <span :class="{ 'zero-amount': !hasAmount(row.opening_credit) }">
+              <span
+                class="amount-cell"
+                :class="{ 'zero-amount': !hasAmount(row.opening_credit) }"
+              >
                 {{ formatAmount(row.opening_credit) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="本期借方发生额" width="150" align="right">
             <template #default="{ row }">
-              <span :class="{ 'zero-amount': !hasAmount(row.current_debit) }">
+              <span
+                class="amount-cell"
+                :class="{ 'zero-amount': !hasAmount(row.current_debit) }"
+              >
                 {{ formatAmount(row.current_debit) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="本期贷方发生额" width="150" align="right">
             <template #default="{ row }">
-              <span :class="{ 'zero-amount': !hasAmount(row.current_credit) }">
+              <span
+                class="amount-cell"
+                :class="{ 'zero-amount': !hasAmount(row.current_credit) }"
+              >
                 {{ formatAmount(row.current_credit) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="期末借方余额" width="150" align="right">
             <template #default="{ row }">
-              <span :class="{ 'zero-amount': !hasAmount(row.ending_debit) }">
+              <span
+                class="amount-cell"
+                :class="{ 'zero-amount': !hasAmount(row.ending_debit) }"
+              >
                 {{ formatAmount(row.ending_debit) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="期末贷方余额" width="150" align="right">
             <template #default="{ row }">
-              <span :class="{ 'zero-amount': !hasAmount(row.ending_credit) }">
+              <span
+                class="amount-cell"
+                :class="{ 'zero-amount': !hasAmount(row.ending_credit) }"
+              >
                 {{ formatAmount(row.ending_credit) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="条目数" width="80" align="center">
             <template #default="{ row }">
-              {{ row.entry_count || '-' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="100" align="center" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.entry_count > 0"
-                size="small"
-                text
-                type="primary"
-                @click="openDetail(row)"
-              >
-                查看明细
-              </el-button>
+              <span v-if="row.node_type === 'account'">{{ row.entry_count || '-' }}</span>
+              <span v-else-if="row.node_type === 'client_group'">{{ row.entry_count || '-' }}</span>
+              <span v-else class="entry-count-dot">明细</span>
             </template>
           </el-table-column>
         </el-table>
@@ -200,79 +260,25 @@
       </div>
     </div>
 
-    <!-- 明细对话框 -->
-    <el-dialog
-      v-model="detailVisible"
-      :title="detailTitle"
-      width="900px"
-      destroy-on-close
-    >
-      <div v-loading="detailLoading">
-        <div v-if="detailEntries.length === 0 && !detailLoading" class="empty-state small">
-          <p>该科目下暂无明细条目</p>
-        </div>
-        <el-table
-          v-else
-          :data="detailEntries"
-          border
-          stripe
-          size="small"
-          max-height="400"
-        >
-          <el-table-column prop="client_account_code" label="客户科目代码" width="140" />
-          <el-table-column prop="client_account_name" label="客户科目名称" min-width="160" />
-          <el-table-column label="期初借" width="120" align="right">
-            <template #default="{ row }">
-              {{ formatAmount(row.opening_debit) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="期初贷" width="120" align="right">
-            <template #default="{ row }">
-              {{ formatAmount(row.opening_credit) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="本期借" width="120" align="right">
-            <template #default="{ row }">
-              {{ formatAmount(row.current_debit) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="本期贷" width="120" align="right">
-            <template #default="{ row }">
-              {{ formatAmount(row.current_credit) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="期末借" width="120" align="right">
-            <template #default="{ row }">
-              {{ formatAmount(row.ending_debit) }}
-            </template>
-          </el-table-column>
-          <el-table-column label="期末贷" width="120" align="right">
-            <template #default="{ row }">
-              {{ formatAmount(row.ending_credit) }}
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </el-dialog>
-  </div>
+    </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   DataAnalysis,
   FolderOpened,
   Clock,
   Grid,
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import api from '@/api'
+import { normalizeError } from '@/utils/error'
 import type {
   ImportBatchItem,
   ImportBatchListResponse,
   TreeNode,
   TreeResponse,
-  TrialBalanceEntry,
-  TrialBalanceEntryListResponse,
 } from '@/types'
 
 // ===== 页签 =====
@@ -287,18 +293,12 @@ const selectedBatchId = ref<string | null>(null)
 const filterFiscalYear = ref<number | null>(null)
 const filterPeriod = ref<number | null>(null)
 const onlyWithAmounts = ref(false)
+const deleteLoading = ref(false)
 
 // ===== 树 =====
 const treeData = ref<TreeNode[]>([])
 const treeLoading = ref(false)
 const totalNodes = ref(0)
-
-// ===== 明细对话框 =====
-const detailVisible = ref(false)
-const detailTitle = ref('')
-const detailLoading = ref(false)
-const detailEntries = ref<TrialBalanceEntry[]>([])
-const detailAccountId = ref<string | null>(null)
 
 // ===== 表格高度 =====
 const tableMaxHeight = computed(() => window.innerHeight - 380)
@@ -322,6 +322,29 @@ function batchLabel(b: ImportBatchItem): string {
   if (b.period) parts.push(`${b.period}月`)
   if (b.entry_count !== undefined) parts.push(`${b.entry_count}条`)
   return parts.join(' · ')
+}
+
+function clientLabel(row: TreeNode): string {
+  if (row.node_type === 'client_group') {
+    return `${row.client_account_code || row.account_code || ''} ${row.client_account_name || row.account_name || ''}`.trim()
+  }
+  const code = row.client_account_code || ''
+  const name = row.client_account_name || ''
+  return `${code} ${name}`.trim()
+}
+
+function standardLabel(row: TreeNode): string {
+  const code = row.standard_account_code || row.account_code || ''
+  const name = row.standard_account_name || row.account_name || ''
+  return `${code} ${name}`.trim()
+}
+
+function customerTitle(row: TreeNode): string {
+  return `客户：${clientLabel(row)}\n标准：${standardLabel(row)}`
+}
+
+function standardTitle(row: TreeNode): string {
+  return `标准科目：${standardLabel(row)}`
 }
 
 function hasAmount(val: string | number | null | undefined): boolean {
@@ -381,27 +404,25 @@ async function fetchTree() {
   }
 }
 
-async function fetchEntries(accountId: string) {
+async function deleteSelectedBatch() {
   if (!selectedBatchId.value) return
-  detailLoading.value = true
+  deleteLoading.value = true
   try {
-    const params: Record<string, any> = {
-      batch_id: selectedBatchId.value,
+    await api.delete(`/standard-trial-balances/batches/${selectedBatchId.value}`)
+    ElMessage.success('已删除当前导入数据')
+    selectedBatchId.value = null
+    treeData.value = []
+    totalNodes.value = 0
+    await fetchBatches()
+    if (batches.value.length > 0) {
+      selectedBatchId.value = batches.value[0].id
+      await fetchTree()
     }
-    if (filterFiscalYear.value) params.fiscal_year = filterFiscalYear.value
-    if (filterPeriod.value) params.period = filterPeriod.value
-
-    const res = await api.get<TrialBalanceEntryListResponse>('/standard-trial-balances/entries', {
-      params,
-    })
-    // 筛选当前科目的条目
-    const all = res.data.items || []
-    detailEntries.value = all.filter(e => e.standard_account_id === accountId)
   } catch (e) {
-    console.error('获取明细失败', e)
-    detailEntries.value = []
+    console.error('删除导入数据失败', e)
+    ElMessage.error(normalizeError(e, '删除导入数据失败'))
   } finally {
-    detailLoading.value = false
+    deleteLoading.value = false
   }
 }
 
@@ -413,16 +434,6 @@ function onBatchChange() {
 
 function onFilterChange() {
   fetchTree()
-}
-
-function openDetail(row: TreeNode) {
-  detailAccountId.value = row.standard_account_id
-  detailTitle.value = `${row.account_code} ${row.account_name} · 客户原始科目明细`
-  detailVisible.value = true
-  detailEntries.value = []
-  nextTick(() => {
-    fetchEntries(row.standard_account_id)
-  })
 }
 
 onMounted(() => {
@@ -557,10 +568,69 @@ onMounted(() => {
 
 /* 树形表格 */
 .tree-table-wrap {
+  width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+.trial-balance-tree-table {
+  width: 100%;
+}
+
+/* 不要给 .el-table__inner-wrapper 设 min-width，否则滚动容器被撑出可视区域，
+   导致横向滚动条不可用。列宽由各 el-table-column width 属性决定，让 Element Plus
+   自己在 100% 宽度的 el-scrollbar__wrap 内产生横向滚动。 */
+.trial-balance-tree-table :deep(.el-scrollbar__wrap) {
+  overflow-x: auto !important;
+}
+
+/* 冻结列单元格内容防止撑坏 */
+.trial-balance-tree-table :deep(.el-table__fixed .cell) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 标准科目列 / 冻结列统一单行 */
+.name-inline,
+.standard-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.single-line-text {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.entry-row-text {
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-placeholder);
+}
+
+.entry-count-dot {
+  color: var(--text-placeholder);
+  font-size: var(--font-size-xs);
+}
+
+/* 金额单元格 —— 大金额不省略，强制单行 */
+.amount-cell {
+  display: inline-block;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .tab-content {

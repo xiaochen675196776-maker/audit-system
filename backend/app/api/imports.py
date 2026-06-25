@@ -61,22 +61,25 @@ def _format_execute_error(e: Exception) -> dict:
 @router.post("/preview")
 async def preview(
     file: UploadFile = File(...),
-    data_type: str = Form(..., description="数据类型: trial_balance / journal / subsidiary"),
-    template_id: str | None = Form(None, description="指定模板 ID，返回套用后的 column_mapping_v2 草稿"),
+    data_type: str = Form(..., description="数据类型: journal / subsidiary"),
     company_id: str | None = Form(None, description="被审计单位ID，用于查询历史字段映射经验"),
     db: AsyncSession = Depends(get_db),
 ):
     """
     预览导入：上传文件 → 返回表头识别结果和自动匹配。
 
-    返回 matched（已匹配）、unmatched（未匹配）、missing（缺少的必填字段）、
-    template_candidates（模板候选列表）、applied_mapping_v2（指定模板时）。
+    返回 matched（已匹配）、unmatched（未匹配）、missing（缺少的必填字段）。
     """
-    # 校验数据类型
-    if data_type not in ("trial_balance", "journal", "subsidiary"):
+    # 校验数据类型 —— 科目余额表必须走标准化导入流程
+    if data_type == "trial_balance":
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的数据类型: {data_type}（可选: trial_balance / journal / subsidiary）",
+            detail="科目余额表请使用标准化导入流程，请前往数据导入页面选择「科目余额表」类型",
+        )
+    if data_type not in ("journal", "subsidiary"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的数据类型: {data_type}（可选: journal / subsidiary）",
         )
 
     # 校验文件扩展名
@@ -95,7 +98,7 @@ async def preview(
 
         result = await preview_import(
             str(temp_path), data_type,
-            db=db, template_id=template_id, company_id=company_id,
+            db=db, company_id=company_id,
         )
         return result
     except ValueError as e:
@@ -116,7 +119,6 @@ async def execute(
     data_type: str = Form(..., description="数据类型: trial_balance / journal / subsidiary"),
     column_mapping: str | None = Form(None, description="JSON格式列映射 v1: {\"原始表头\": \"标准字段\"}"),
     column_mapping_v2: str | None = Form(None, description="JSON格式列映射 v2: {\"col_001\": \"标准字段\", ...}"),
-    template_id: str | None = Form(None, description="模板 ID，用于应用 parse_config 和默认值"),
     fiscal_year: int | None = Form(None, description="会计年度（文件中无此列时手动指定）"),
     period: int | None = Form(None, description="会计期间（文件中无此列时手动指定）"),
     remember_mapping: bool = Form(True, description="是否保存本次用户确认的字段映射经验"),
@@ -129,8 +131,10 @@ async def execute(
     若同时传了 column_mapping 和 column_mapping_v2，优先使用 v2。
     若不传任何映射则使用自动匹配。
     """
-    # 校验数据类型
-    if data_type not in ("trial_balance", "journal", "subsidiary"):
+    # 校验数据类型 —— 科目余额表必须走标准化导入流程
+    if data_type == "trial_balance":
+        raise HTTPException(400, detail="科目余额表请使用标准化导入流程，请前往数据导入页面选择「科目余额表」类型")
+    if data_type not in ("journal", "subsidiary"):
         raise HTTPException(400, detail=f"不支持的数据类型: {data_type}")
 
     # 校验公司
@@ -168,28 +172,6 @@ async def execute(
             except json.JSONDecodeError:
                 raise HTTPException(400, detail="column_mapping JSON 格式无效，请检查是否为合法 JSON 对象")
 
-        # 加载模板配置（含校验）
-        parse_config = None
-        template_default_values = None
-        if template_id:
-            from app.services.template_service import get_template
-            try:
-                tid = uuid.UUID(template_id)
-            except ValueError:
-                raise HTTPException(400, detail="template_id 格式无效")
-            tmpl = await get_template(db, tid)
-            if tmpl is None:
-                raise HTTPException(400, detail=f"模板不存在（ID: {template_id}），请检查模板是否已被删除")
-            if not tmpl.is_active:
-                raise HTTPException(400, detail=f"模板「{tmpl.name}」已停用，请启用后再导入")
-            if tmpl.data_type != data_type:
-                raise HTTPException(
-                    400,
-                    detail=f"模板数据类型（{tmpl.data_type}）与本次导入类型（{data_type}）不一致",
-                )
-            parse_config = tmpl.parse_config or None
-            template_default_values = tmpl.default_values or None
-
         # 解析 user mapping confirmations
         import json
         mapping_conf = None
@@ -208,8 +190,6 @@ async def execute(
             column_mapping_v2=mapping_v2,
             fiscal_year=fiscal_year,
             period=period,
-            parse_config=parse_config,
-            template_default_values=template_default_values,
             remember_mapping=remember_mapping,
             mapping_confirmations=mapping_conf,
         )

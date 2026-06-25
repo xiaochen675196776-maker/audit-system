@@ -387,15 +387,15 @@ def validate_parent_amounts(
     校验父级金额与子级末级汇总是否一致。
 
     对每个标记为 is_summary=True 的父级行：
-    - 收集所有 parent_key 指向该行的子级行。
-    - 将子级六列金额汇总。
-    - 与父级对应金额列比较，差异 > 0.01 生成 warning。
+    - 递归收集全部后代末级（包括孙级及更深层）。
+    - 本期借贷发生额按借方/贷方分别比较。
+    - 期初/期末余额按借贷净额（借方 - 贷方）比较，避免借贷双列分别比较的误报。
 
     返回全局 warnings 列表。
     """
     warnings: list[str] = []
 
-    # 构建 row_index → result 映射
+    # 构建索引
     row_map: dict[int, TransformResult] = {r.row_index: r for r in rows}
     hier_map: dict[int, dict] = {}
     for h in hierarchy:
@@ -407,66 +407,85 @@ def validate_parent_amounts(
         pk = h.get("parent_key")
         if pk is not None:
             parent_row = None
-
-            # 先按科目代码查找父级（代码层级策略）
             for r in rows:
                 if r.client_account_code and r.client_account_code.strip() == pk:
                     parent_row = r.row_index
                     break
-
-            # 如果没找到，再尝试按 row_index 解析（缩进策略用数字字符串）
             if parent_row is None:
                 try:
                     parent_row = int(pk)
                 except (ValueError, TypeError):
                     parent_row = None
-
             if parent_row is not None:
                 parent_to_children[parent_row].append(h["row_index"])
+
+    # 递归收集全部后代末级
+    def _collect_descendant_leaf_indices(parent_idx: int) -> list[int]:
+        leaf_indices: list[int] = []
+        stack = list(parent_to_children.get(parent_idx, []))
+        while stack:
+            idx = stack.pop(0)
+            h = hier_map.get(idx, {})
+            if h.get("is_leaf", True):
+                leaf_indices.append(idx)
+            else:
+                stack.extend(parent_to_children.get(idx, []))
+        return leaf_indices
+
+    def _signed_balance(debit: Decimal, credit: Decimal) -> Decimal:
+        return debit - credit
 
     # 校验每个父级
     for parent_row_idx, child_indices in parent_to_children.items():
         if not child_indices:
             continue
-
         parent_row = row_map.get(parent_row_idx)
         if not parent_row:
             continue
 
-        # 汇总子级（只看 is_leaf=True 的末级）
-        children = [row_map[ci] for ci in child_indices if ci in row_map]
-        leaf_children = [c for c in children if hier_map.get(c.row_index, {}).get("is_leaf", True)]
+        # 递归收集全部后代末级
+        all_leaf_indices = _collect_descendant_leaf_indices(parent_row_idx)
+        leaf_children = [row_map[idx] for idx in all_leaf_indices if idx in row_map]
 
         if not leaf_children:
-            # 所有子级都是非末级（子级本身又是父级），跳过
             continue
 
-        # 汇总
-        sum_opening_debit = sum((c.opening_debit for c in leaf_children), Decimal("0"))
-        sum_opening_credit = sum((c.opening_credit for c in leaf_children), Decimal("0"))
+        eps = Decimal("0.01")
+
+        # ── 期初/期末按借贷净额比较 ──
+        parent_opening_net = _signed_balance(parent_row.opening_debit, parent_row.opening_credit)
+        child_opening_net = sum((_signed_balance(c.opening_debit, c.opening_credit) for c in leaf_children), Decimal("0"))
+        diff_opening = abs(parent_opening_net - child_opening_net)
+        if diff_opening > eps:
+            warnings.append(
+                f"行 {parent_row_idx}「{parent_row.client_account_name or parent_row.client_account_code or '未知'}」"
+                f"父级期初净额 {parent_opening_net} 与全部后代末级净额汇总 {child_opening_net} 不一致（差 {diff_opening}）"
+            )
+
+        parent_ending_net = _signed_balance(parent_row.ending_debit, parent_row.ending_credit)
+        child_ending_net = sum((_signed_balance(c.ending_debit, c.ending_credit) for c in leaf_children), Decimal("0"))
+        diff_ending = abs(parent_ending_net - child_ending_net)
+        if diff_ending > eps:
+            warnings.append(
+                f"行 {parent_row_idx}「{parent_row.client_account_name or parent_row.client_account_code or '未知'}」"
+                f"父级期末净额 {parent_ending_net} 与全部后代末级净额汇总 {child_ending_net} 不一致（差 {diff_ending}）"
+            )
+
+        # ── 本期发生额仍按借方/贷方分别比较 ──
         sum_current_debit = sum((c.current_debit for c in leaf_children), Decimal("0"))
         sum_current_credit = sum((c.current_credit for c in leaf_children), Decimal("0"))
-        sum_ending_debit = sum((c.ending_debit for c in leaf_children), Decimal("0"))
-        sum_ending_credit = sum((c.ending_credit for c in leaf_children), Decimal("0"))
-
-        # 比较（容差 0.01）
-        eps = Decimal("0.01")
-        fields = [
-            ("期初借方", parent_row.opening_debit, sum_opening_debit),
-            ("期初贷方", parent_row.opening_credit, sum_opening_credit),
-            ("本期借方发生额", parent_row.current_debit, sum_current_debit),
-            ("本期贷方发生额", parent_row.current_credit, sum_current_credit),
-            ("期末借方", parent_row.ending_debit, sum_ending_debit),
-            ("期末贷方", parent_row.ending_credit, sum_ending_credit),
-        ]
-
-        for label, parent_amt, child_sum in fields:
-            diff = abs(parent_amt - child_sum)
-            if diff > eps:
-                warnings.append(
-                    f"行 {parent_row_idx}「{parent_row.client_account_name or parent_row.client_account_code or '未知'}」"
-                    f"父级{label} {parent_amt} 与子级末级汇总 {child_sum} 不一致（差 {diff}）"
-                )
+        diff_cd = abs(parent_row.current_debit - sum_current_debit)
+        diff_cc = abs(parent_row.current_credit - sum_current_credit)
+        if diff_cd > eps:
+            warnings.append(
+                f"行 {parent_row_idx}「{parent_row.client_account_name or parent_row.client_account_code or '未知'}」"
+                f"父级本期借方发生额 {parent_row.current_debit} 与全部后代末级汇总 {sum_current_debit} 不一致（差 {diff_cd}）"
+            )
+        if diff_cc > eps:
+            warnings.append(
+                f"行 {parent_row_idx}「{parent_row.client_account_name or parent_row.client_account_code or '未知'}」"
+                f"父级本期贷方发生额 {parent_row.current_credit} 与全部后代末级汇总 {sum_current_credit} 不一致（差 {diff_cc}）"
+            )
 
     return warnings
 

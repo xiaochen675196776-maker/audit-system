@@ -5,13 +5,16 @@ import pytest
 from decimal import Decimal
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from app.models.standard_account import StandardAccount
 from app.models.standard_trial_balance_import_batch import StandardTrialBalanceImportBatch
 from app.models.standard_trial_balance_entry import StandardTrialBalanceEntry
+from app.models.standard_trial_balance_raw_row import StandardTrialBalanceRawRow
 from app.services.standard_trial_balance_service import (
     get_batches,
     get_tree,
     get_entries,
+    delete_batch,
 )
 
 
@@ -163,14 +166,20 @@ class TestTreeView:
         )
 
         nodes, total = await get_tree(db, batch_id=batch.id)
-        assert total == 1
+        assert total == 2  # 1 标准科目节点 + 1 客户明细节点
         assert len(nodes) == 1
         assert nodes[0]["account_code"] == "1001"
         assert nodes[0]["opening_debit"] == Decimal("10000")
         assert nodes[0]["current_debit"] == Decimal("5000")
         assert nodes[0]["ending_debit"] == Decimal("15000")
         assert nodes[0]["entry_count"] == 1
-        assert nodes[0]["has_children"] is False
+        # 叶子科目有客户明细节点，应可展开
+        assert nodes[0]["has_children"] is True
+        # 客户明细节点拼在 children 中
+        entry_node = nodes[0]["children"][0]
+        assert entry_node["node_type"] == "entry"
+        assert entry_node["has_children"] is False
+        assert entry_node["children"] == []
 
     @pytest.mark.asyncio
     async def test_parent_aggregates_children(self, db):
@@ -212,7 +221,7 @@ class TestTreeView:
         )
 
         nodes, total = await get_tree(db, batch_id=batch.id)
-        assert total == 3
+        assert total == 6  # 3 标准科目 + 3 客户明细
         assert len(nodes) == 1  # 只有一个根节点
 
         parent_node = nodes[0]
@@ -255,7 +264,7 @@ class TestTreeView:
         )
 
         nodes, total = await get_tree(db, batch_id=batch.id)
-        assert total == 3
+        assert total == 4  # 3 标准科目 + 1 客户明细
 
         root = nodes[0]  # 资产
         assert root["account_code"] == "1"
@@ -286,7 +295,7 @@ class TestTreeView:
         # sa_without 没有条目
 
         nodes, total = await get_tree(db, batch_id=batch.id, only_with_amounts=True)
-        assert total == 1
+        assert total == 2  # 1 标准科目 + 1 客户明细
         assert len(nodes) == 1
         assert nodes[0]["account_code"] == "1001"
 
@@ -309,7 +318,7 @@ class TestTreeView:
         # child_without 无条目 → 应该被隐藏
 
         nodes, total = await get_tree(db, batch_id=batch.id, only_with_amounts=True)
-        assert total == 2  # 父级 + 有金额子级
+        assert total == 3  # 父级 + 有金额子级 + 客户明细
         assert len(nodes) == 1
         parent_node = nodes[0]
         assert parent_node["account_code"] == "1001"
@@ -328,11 +337,12 @@ class TestTreeView:
 
         # 只查 batch1
         nodes, total = await get_tree(db, batch_id=batch1.id)
-        assert total == 1
+        assert total == 2  # 1 标准科目 + 1 客户明细
         assert nodes[0]["opening_debit"] == Decimal("100")
 
         # 只查 batch2
         nodes, total = await get_tree(db, batch_id=batch2.id)
+        assert total == 2
         assert nodes[0]["opening_debit"] == Decimal("200")
 
     @pytest.mark.asyncio
@@ -359,6 +369,44 @@ class TestTreeView:
         # 2025 年
         nodes, total = await get_tree(db, fiscal_year=2025)
         assert nodes[0]["opening_debit"] == Decimal("300")
+
+    @pytest.mark.asyncio
+    async def test_tree_includes_entry_children_under_standard_account(self, db):
+        """标准科目节点下应拼接客户原始明细节点"""
+        parent = await _create_account(db, "1411", "周转材料", level=1, is_leaf=False)
+        child = await _create_account(
+            db, "141101", "包装物", level=2, is_leaf=True, parent_id=parent.id
+        )
+        batch = await _create_batch(db)
+        await _create_entry(
+            db,
+            batch.id,
+            child,
+            client_account_code="C1411",
+            client_account_name="包装物",
+            opening_debit=Decimal("100"),
+            ending_debit=Decimal("100"),
+        )
+
+        nodes, total = await get_tree(db, batch_id=batch.id)
+        assert len(nodes) == 1
+        parent_node = nodes[0]
+        child_node = parent_node["children"][0]
+
+        assert parent_node["node_type"] == "account"
+        assert parent_node["node_id"] == f"account:{parent.id}"
+        assert child_node["node_type"] == "account"
+        assert child_node["account_code"] == "141101"
+        assert child_node["entry_count"] == 1
+
+        entry_node = child_node["children"][0]
+        assert entry_node["node_type"] == "entry"
+        assert entry_node["node_id"] == f"entry:{entry_node['entry_id']}"
+        assert entry_node["client_account_code"] == "C1411"
+        assert entry_node["client_account_name"] == "包装物"
+        assert entry_node["opening_debit"] == Decimal("100")
+        assert entry_node["has_children"] is False
+        assert entry_node["children"] == []
 
     @pytest.mark.asyncio
     async def test_six_column_aggregation(self, db):
@@ -515,3 +563,479 @@ class TestEntryList:
         assert e.standard_account_name_snapshot == "库存现金"
         assert e.standard_account_category_snapshot == "asset"
         assert e.standard_balance_direction_snapshot == "debit"
+
+
+# ── TASK-071：包装物/低值易耗品挂在子级节点下 ───────────
+
+def _find_node_by_code(nodes: list[dict], code: str) -> dict | None:
+    """在树中按 account_code 查找 account 节点（标准科目节点）。"""
+    for n in nodes:
+        if n.get("node_type") == "account" and n.get("account_code") == code:
+            return n
+        found = _find_node_by_code(n.get("children", []), code)
+        if found is not None:
+            return found
+    return None
+
+
+class TestPackagingConsumablesTreePlacement:
+    """TASK-071：查询树中，包装物/低值易耗品客户明细必须挂在 141101/141102 节点下，
+    不得直接挂在 1411 下。并且 entry 节点应回带标准科目快照代码/名称。
+    """
+
+    @pytest.mark.asyncio
+    async def test_tree_places_packaging_entries_under_child_nodes_not_parent(self, db):
+        parent = await _create_account(db, "1411", "周转材料", level=1, is_leaf=False)
+        packaging = await _create_account(
+            db, "141101", "包装物", level=2, is_leaf=True, parent_id=parent.id
+        )
+        consumables = await _create_account(
+            db, "141102", "低值易耗品", level=2, is_leaf=True, parent_id=parent.id
+        )
+        batch = await _create_batch(db)
+
+        # 直接挂 141101（包装物_纸箱）、141102（低值易耗品_工具）的条目
+        await _create_entry(
+            db, batch.id, packaging,
+            client_account_code="1411", client_account_name="包装物_纸箱",
+            ending_debit=Decimal("300"),
+        )
+        await _create_entry(
+            db, batch.id, consumables,
+            client_account_code="1411", client_account_name="低值易耗品_工具",
+            ending_debit=Decimal("400"),
+        )
+
+        nodes, total = await get_tree(db, batch_id=batch.id)
+
+        root_1411 = _find_node_by_code(nodes, "1411")
+        node_141101 = _find_node_by_code(nodes, "141101")
+        node_141102 = _find_node_by_code(nodes, "141102")
+        assert root_1411 is not None, "应存在 1411 节点"
+        assert node_141101 is not None, "应存在 141101 节点"
+        assert node_141102 is not None, "应存在 141102 节点"
+
+        # 客户明细挂在子级节点下
+        packaging_entry_children = [
+            child for child in node_141101["children"]
+            if child["node_type"] == "entry" and child["client_account_name"] == "包装物_纸箱"
+        ]
+        consumables_entry_children = [
+            child for child in node_141102["children"]
+            if child["node_type"] == "entry" and child["client_account_name"] == "低值易耗品_工具"
+        ]
+        assert packaging_entry_children, "包装物_纸箱 应挂在 141101 下"
+        assert consumables_entry_children, "低值易耗品_工具 应挂在 141102 下"
+
+        # 不得直接挂在 1411 下
+        direct_entries_under_1411 = [
+            child for child in root_1411["children"]
+            if child["node_type"] == "entry"
+            and child["client_account_name"] in {"包装物_纸箱", "低值易耗品_工具"}
+        ]
+        assert not direct_entries_under_1411, (
+            f"包装物/低值易耗品不得直接挂在 1411 下: {direct_entries_under_1411}"
+        )
+
+        # entry 节点应携带标准科目快照代码/名称，便于前端展示「标准：141101 包装物」
+        pkg_entry = packaging_entry_children[0]
+        assert pkg_entry.get("standard_account_code") == "141101"
+        assert pkg_entry.get("standard_account_name") == "包装物"
+
+
+# ── TASK-072 Task4：包装物/低值易耗品/研发费用为一级节点 ──
+
+class TestPackagingConsumablesResearchRootNodes:
+    """141101/141102/660201 必须作为查询树顶层节点展示，不得挂在父级下。"""
+
+    @pytest.mark.asyncio
+    async def test_packaging_consumables_are_root_nodes_not_under_turnover_materials(self, db):
+        turnover = await _create_account(db, "1411", "周转材料", level=1, is_leaf=True)
+        packaging = await _create_account(db, "141101", "包装物", level=1, is_leaf=True)
+        consumables = await _create_account(db, "141102", "低值易耗品", level=1, is_leaf=True)
+        batch = await _create_batch(db)
+
+        await _create_entry(
+            db, batch.id, packaging,
+            client_account_code="1411", client_account_name="包装物_纸箱",
+            ending_debit=Decimal("100"),
+        )
+        await _create_entry(
+            db, batch.id, consumables,
+            client_account_code="1411", client_account_name="低值易耗品_工具",
+            ending_debit=Decimal("200"),
+        )
+
+        nodes, total = await get_tree(db, batch_id=batch.id, only_with_amounts=True)
+        root_codes = [node["account_code"] for node in nodes]
+        assert "141101" in root_codes, f"141101 应为顶层节点，实际: {root_codes}"
+        assert "141102" in root_codes, f"141102 应为顶层节点，实际: {root_codes}"
+
+        # 包装物/低值易耗品的 entry 必须挂在自己的根节点下
+        packaging_node = next(n for n in nodes if n["account_code"] == "141101")
+        consumables_node = next(n for n in nodes if n["account_code"] == "141102")
+        assert any(
+            child["node_type"] == "entry" and child["client_account_name"] == "包装物_纸箱"
+            for child in packaging_node["children"]
+        )
+        assert any(
+            child["node_type"] == "entry" and child["client_account_name"] == "低值易耗品_工具"
+            for child in consumables_node["children"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_management_and_research_are_root_nodes(self, db):
+        mgmt = await _create_account(db, "6602", "减：管理费用", level=1, is_leaf=True)
+        rd = await _create_account(db, "660201", "减：研发费用", level=1, is_leaf=True)
+        batch = await _create_batch(db)
+        await _create_entry(db, batch.id, mgmt, client_account_code="6602",
+                            client_account_name="管理费用", current_debit=Decimal("10"))
+        await _create_entry(db, batch.id, rd, client_account_code="6604",
+                            client_account_name="研发费用", current_debit=Decimal("20"))
+
+        nodes, _ = await get_tree(db, batch_id=batch.id, only_with_amounts=True)
+        root_codes = [node["account_code"] for node in nodes]
+        assert "6602" in root_codes, f"6602 应为顶层节点，实际: {root_codes}"
+        assert "660201" in root_codes, f"660201 应为顶层节点，实际: {root_codes}"
+
+        mgmt_node = next(n for n in nodes if n["account_code"] == "6602")
+        assert not any(
+            child["account_code"] == "660201" for child in mgmt_node.get("children", [])
+        ), "660201 不应挂在 6602 下"
+
+
+# ── TASK-072 Task6：删除批次 ──
+
+class TestDeleteBatch:
+    """delete_batch 删除 entries/raw_rows/batch，但不删 standard_accounts。"""
+
+    @pytest.mark.asyncio
+    async def test_delete_batch_removes_entries_and_raw_rows_but_keeps_standard_accounts(self, db):
+        sa = await _create_account(db, "1001", "库存现金", level=1, is_leaf=True)
+        batch = await _create_batch(db, file_name="delete_me.xlsx")
+        raw = StandardTrialBalanceRawRow(
+            batch_id=batch.id,
+            row_index=0,
+            raw_values={"科目代码": "1001"},
+            client_account_code="1001",
+            client_account_name="库存现金",
+            is_leaf=True,
+            mapping_status="mapped",
+        )
+        db.add(raw)
+        await db.flush()
+        await _create_entry(db, batch.id, sa, raw_row_id=raw.id, ending_debit=Decimal("1"))
+
+        result = await delete_batch(db, batch.id)
+        assert result["deleted_entries"] == 1
+        assert result["deleted_raw_rows"] == 1
+        assert result["deleted_batches"] == 1
+
+        assert await db.get(StandardTrialBalanceImportBatch, batch.id) is None
+        assert await db.get(StandardTrialBalanceRawRow, raw.id) is None
+
+        entries = await db.execute(
+            select(StandardTrialBalanceEntry).where(StandardTrialBalanceEntry.batch_id == batch.id)
+        )
+        assert entries.scalars().all() == []
+        # standard_accounts 不应被删除
+        assert await db.get(StandardAccount, sa.id) is not None
+
+    @pytest.mark.asyncio
+    async def test_delete_batch_returns_none_for_nonexistent(self, db):
+        result = await delete_batch(db, uuid.uuid4())
+        assert result is None
+
+
+# ── TASK-076：客户层级合成测试 ──
+
+class TestClientGroupSynthesis:
+    """测试从客户科目代码和名称合成 client_group 节点。"""
+
+    @pytest.mark.asyncio
+    async def test_tree_synthesizes_client_groups_from_leaf_name_when_raw_parent_missing(self, db):
+        """无 raw parent 时，按名称合成应交税费层级。"""
+        std = await _create_account(db, "2221", "应交税费", level=1, is_leaf=True)
+        batch = await _create_batch(db, file_name="tax.xlsx")
+
+        raw = StandardTrialBalanceRawRow(
+            batch_id=batch.id,
+            row_index=0,
+            raw_values={},
+            client_account_code="2221010101",
+            client_account_name="应交税费_应交增值税_进项税额_货物进项税",
+            detected_level=4,
+            is_leaf=True,
+            mapped_standard_account_id=std.id,
+            mapping_status="mapped",
+        )
+        db.add(raw)
+        await db.flush()
+
+        await _create_entry(
+            db,
+            batch.id,
+            std,
+            raw_row_id=raw.id,
+            client_account_code="2221010101",
+            client_account_name="应交税费_应交增值税_进项税额_货物进项税",
+            ending_credit=Decimal("100.00"),
+        )
+
+        nodes, _ = await get_tree(db, batch_id=batch.id)
+        std_node = _find_node_by_code(nodes, "2221")
+        assert std_node is not None, "应存在 2221 标准科目节点"
+
+        # 查找 client_group 子节点
+        client_groups = [
+            child for child in std_node["children"]
+            if child.get("node_type") == "client_group"
+        ]
+        assert len(client_groups) > 0, "2221 下应有 client_group 节点"
+
+        # 查找 222101 客户层级
+        group_222101 = None
+        for cg in client_groups:
+            if cg.get("account_code") == "222101":
+                group_222101 = cg
+                break
+        assert group_222101 is not None, "应存在 222101 客户层级"
+
+        # 查找 22210101 客户层级
+        group_22210101 = None
+        for child in group_222101.get("children", []):
+            if child.get("node_type") == "client_group" and child.get("account_code") == "22210101":
+                group_22210101 = child
+                break
+        assert group_22210101 is not None, "应存在 22210101 客户层级"
+
+        # 查找 entry 节点
+        entry = None
+        for child in group_22210101.get("children", []):
+            if child.get("node_type") == "entry" and child.get("account_code") == "2221010101":
+                entry = child
+                break
+        assert entry is not None, "应存在 2221010101 entry 节点"
+
+        assert group_222101["account_name"] == "应交增值税"
+        assert group_22210101["account_name"] == "进项税额"
+        assert entry["account_name"] == "货物进项税"
+        assert group_222101["entry_count"] == 1
+        assert group_222101["ending_credit"] == Decimal("100.00")
+
+    @pytest.mark.asyncio
+    async def test_tree_synthesizes_rd_expensed_client_groups_under_170402(self, db):
+        """研发支出费用化合成客户层级。"""
+        dev = await _create_account(db, "1704", "开发支出", level=1, is_leaf=False)
+        exp = await _create_account(db, "170402", "研发支出-费用化支出", level=2, is_leaf=True, parent_id=dev.id)
+        batch = await _create_batch(db, file_name="rd.xlsx")
+
+        raw = StandardTrialBalanceRawRow(
+            batch_id=batch.id,
+            row_index=0,
+            raw_values={},
+            client_account_code="5301010101",
+            client_account_name="研发支出_费用化支出_人工_工资及奖金",
+            detected_level=4,
+            is_leaf=True,
+            mapped_standard_account_id=exp.id,
+            mapping_status="mapped",
+        )
+        db.add(raw)
+        await db.flush()
+
+        await _create_entry(
+            db,
+            batch.id,
+            exp,
+            raw_row_id=raw.id,
+            client_account_code="5301010101",
+            client_account_name="研发支出_费用化支出_人工_工资及奖金",
+            current_debit=Decimal("200.00"),
+        )
+
+        nodes, _ = await get_tree(db, batch_id=batch.id)
+
+        # Debug: 打印树结构
+        import json
+        def print_tree(nodes, indent=0):
+            for n in nodes:
+                print("  " * indent + f"{n['node_type']}: {n.get('account_code', '')} {n.get('account_name', '')[:20]}")
+                if n.get('children'):
+                    print_tree(n['children'], indent+1)
+
+        print("\n=== Tree Structure ===")
+        print_tree(nodes)
+        print("=====================\n")
+
+        # 查找 170402 标准科目节点
+        node_170402 = _find_node_by_code(nodes, "170402")
+        assert node_170402 is not None, "应存在 170402 标准科目节点"
+
+        # 查找 530101 客户层级
+        group_530101 = None
+        for child in node_170402["children"]:
+            if child.get("node_type") == "client_group" and child.get("account_code") == "530101":
+                group_530101 = child
+                break
+        assert group_530101 is not None, "应存在 530101 客户层级"
+
+        # 查找 53010101 客户层级
+        group_53010101 = None
+        for child in group_530101.get("children", []):
+            if child.get("node_type") == "client_group" and child.get("account_code") == "53010101":
+                group_53010101 = child
+                break
+        assert group_53010101 is not None, "应存在 53010101 客户层级"
+
+        # 查找 entry 节点
+        entry = None
+        for child in group_53010101.get("children", []):
+            if child.get("node_type") == "entry" and child.get("account_code") == "5301010101":
+                entry = child
+                break
+        assert entry is not None, "应存在 5301010101 entry 节点"
+
+        assert group_530101["account_name"] == "研发支出_费用化支出"
+        assert group_53010101["account_name"] == "人工"
+        assert entry["account_name"] == "工资及奖金"
+        assert group_530101["current_debit"] == Decimal("200.00")
+
+
+# ── TASK-077：合成客户层级去重测试 ──
+
+def _recursive_entry_nodes(node: dict) -> int:
+    """递归统计一棵子树下 entry 节点的数量（不去重，用于与 entry_count 对比）。"""
+    count = 0
+    for child in node.get("children", []):
+        if child.get("node_type") == "entry":
+            count += 1
+        else:
+            count += _recursive_entry_nodes(child)
+    return count
+
+
+def _collect_node_ids(node: dict, acc: list) -> None:
+    nid = node.get("node_id")
+    if nid is not None:
+        acc.append(nid)
+    for child in node.get("children", []):
+        _collect_node_ids(child, acc)
+
+
+class TestClientGroupDedup:
+    """TASK-077：同一标准科目下共享合成父级的多条客户明细，client_group 不得重复挂载，
+    递归 entry 节点数必须等于标准科目 entry_count，整棵树不允许重复 node_id。
+    """
+
+    @pytest.mark.asyncio
+    async def test_170402_shared_synth_parent_no_dup(self, db):
+        dev = await _create_account(db, "1704", "开发支出", level=1, is_leaf=False)
+        exp = await _create_account(db, "170402", "研发支出-费用化支出",
+                                    level=2, is_leaf=True, parent_id=dev.id)
+        batch = await _create_batch(db, file_name="rd_multi.xlsx")
+
+        rows = [
+            ("5301010101", "研发支出_费用化支出_人工_工资及奖金", Decimal("100.00")),
+            ("5301010102", "研发支出_费用化支出_人工_福利费", Decimal("50.00")),
+            ("5301010201", "研发支出_费用化支出_直接投入_材料", Decimal("200.00")),
+        ]
+        for idx, (code, name, amt) in enumerate(rows):
+            raw = StandardTrialBalanceRawRow(
+                batch_id=batch.id, row_index=idx, raw_values={},
+                client_account_code=code, client_account_name=name,
+                detected_level=4, is_leaf=True,
+                mapped_standard_account_id=exp.id, mapping_status="mapped",
+            )
+            db.add(raw)
+            await db.flush()
+            await _create_entry(db, batch.id, exp,
+                                raw_row_id=raw.id,
+                                client_account_code=code,
+                                client_account_name=name,
+                                current_debit=amt)
+
+        nodes, _ = await get_tree(db, batch_id=batch.id)
+        node_170402 = _find_node_by_code(nodes, "170402")
+        assert node_170402 is not None, "应存在 170402 标准科目节点"
+
+        assert node_170402["entry_count"] == 3, \
+            f"170402 entry_count 应为 3，实际: {node_170402['entry_count']}"
+        assert _recursive_entry_nodes(node_170402) == 3, \
+            f"170402 递归 entry 节点应为 3，实际: {_recursive_entry_nodes(node_170402)}"
+
+        # 530101 / 53010101 中间层各只出现一次
+        def _has_client_group(node, code):
+            for child in node.get("children", []):
+                if child.get("node_type") == "client_group" and child.get("account_code") == code:
+                    return True
+            return False
+        assert _has_client_group(node_170402, "530101"), "170402 下应存在 530101 客户层级"
+        # 53010101 在 530101 下只出现一次
+        group_530101 = next(c for c in node_170402["children"]
+                            if c.get("node_type") == "client_group"
+                            and c.get("account_code") == "530101")
+        g53010101_count = sum(
+            1 for c in group_530101["children"]
+            if c.get("node_type") == "client_group" and c.get("account_code") == "53010101"
+        )
+        assert g53010101_count == 1, f"53010101 层级应只出现一次，实际: {g53010101_count}"
+
+        # 整棵树不允许重复 node_id
+        all_ids: list = []
+        for root in nodes:
+            _collect_node_ids(root, all_ids)
+        assert len(all_ids) == len(set(all_ids)), \
+            f"整棵树存在重复 node_id，重复项: {[i for i in all_ids if all_ids.count(i) > 1]}"
+
+    @pytest.mark.asyncio
+    async def test_2221_shared_synth_parent_no_dup(self, db):
+        std = await _create_account(db, "2221", "应交税费", level=1, is_leaf=True)
+        batch = await _create_batch(db, file_name="tax_multi.xlsx")
+
+        rows = [
+            ("2221010101", "应交税费_应交增值税_进项税额_货物进项税", Decimal("60.00")),
+            ("2221010102", "应交税费_应交增值税_进项税额_固定资产进项税", Decimal("40.00")),
+        ]
+        for idx, (code, name, amt) in enumerate(rows):
+            raw = StandardTrialBalanceRawRow(
+                batch_id=batch.id, row_index=idx, raw_values={},
+                client_account_code=code, client_account_name=name,
+                detected_level=4, is_leaf=True,
+                mapped_standard_account_id=std.id, mapping_status="mapped",
+            )
+            db.add(raw)
+            await db.flush()
+            await _create_entry(db, batch.id, std,
+                                raw_row_id=raw.id,
+                                client_account_code=code,
+                                client_account_name=name,
+                                ending_credit=amt)
+
+        nodes, _ = await get_tree(db, batch_id=batch.id)
+        node_2221 = _find_node_by_code(nodes, "2221")
+        assert node_2221 is not None
+        assert node_2221["entry_count"] == 2, \
+            f"2221 entry_count 应为 2，实际: {node_2221['entry_count']}"
+        assert _recursive_entry_nodes(node_2221) == 2, \
+            f"2221 递归 entry 节点应为 2，实际: {_recursive_entry_nodes(node_2221)}"
+
+        # 222101 / 22210101 链路各只出现一次
+        group_222101_count = sum(
+            1 for c in node_2221["children"]
+            if c.get("node_type") == "client_group" and c.get("account_code") == "222101"
+        )
+        assert group_222101_count == 1, f"222101 层级应只出现一次，实际: {group_222101_count}"
+        group_222101 = next(c for c in node_2221["children"]
+                            if c.get("node_type") == "client_group"
+                            and c.get("account_code") == "222101")
+        group_22210101_count = sum(
+            1 for c in group_222101["children"]
+            if c.get("node_type") == "client_group" and c.get("account_code") == "22210101"
+        )
+        assert group_22210101_count == 1, f"22210101 层级应只出现一次，实际: {group_22210101_count}"
+
+        all_ids: list = []
+        for root in nodes:
+            _collect_node_ids(root, all_ids)
+        assert len(all_ids) == len(set(all_ids)), "整棵树存在重复 node_id"

@@ -1,6 +1,7 @@
 """文件解析器 — 支持 Excel (.xlsx/.xls) 和 CSV 文件"""
 
 import csv
+import re
 import pandas as pd
 from pathlib import Path
 
@@ -142,6 +143,190 @@ def _parse_excel_pandas(file_path: str) -> tuple[list[str], list[list]]:
     return headers, data_rows
 
 
+# ── TASK-078：多行复合表头识别 ──────────────────────────
+# 科目余额表常见多行表头：
+#   row 0: 科目类别 | 科目编码 | 科目名称 | 币种 | 期初余额 | 本期发生 | ...
+#   row 1:                                 借方    贷方
+#   row 2:                                 数量    金额
+#   row 3+: 数据
+# 本组工具用于：识别表头说明行、计算 data_start_row、合并出可读列名。
+
+
+# 命中即判定为「表头单元格」的关键词（按出现字符串）。
+_HEADER_KEYWORDS = (
+    "科目", "余额", "金额", "借方", "贷方", "发生", "累计",
+    "期初", "期末", "年初", "年末", "数量", "币种", "公司",
+    "核算项目", "年", "级次",
+)
+
+# 强信号：出现以下关键词的行可认定为主表头行（携带「科目xx」列名 + 期间大类）。
+_HEADER_ANCHOR_KEYWORDS = (
+    "科目编码", "科目代码", "科目编号", "科目号", "科目名称",
+    "科目名", "科目全称", "科目类别",
+)
+
+# 明显数据片段：纯数字、长客户名称特征、"茂名市" 等公司名后缀。行只要含其中一项，
+# 即视为数据行（而非表头子行）。
+_DATA_COMPANY_SUFFIX_MARKERS = ("公司", "工厂", "银行", "支行", "营业部", "基金", "信托")
+
+
+def _row_has_header_anchor(row: list) -> bool:
+    """该行是否含科目编码/科目名称等列名（主表头行判定）。"""
+    for cell in row:
+        if cell is None:
+            continue
+        s = str(cell).strip()
+        if not s or s == "None":
+            continue
+        if any(k in s for k in _HEADER_ANCHOR_KEYWORDS):
+            return True
+    return False
+
+
+def _header_cell_score(cell) -> int:
+    """单元格内容是否像表头文本，返回分数（0/4/5）。"""
+    if cell is None:
+        return 0
+    s = str(cell).strip()
+    if not s or s == "None":
+        return 0
+    # 含「科目xx」的列名最强信号
+    if any(k in s for k in _HEADER_ANCHOR_KEYWORDS):
+        return 5
+    if any(k in s for k in _HEADER_KEYWORDS):
+        return 4
+    return 0
+
+
+def _row_total_header_score(row: list) -> int:
+    """整行表头分：所有单元格 _header_cell_score 之和。"""
+    return sum(_header_cell_score(c) for c in row)
+
+
+def _row_is_data(row: list) -> bool:
+    """判断一行是否像数据行（含科目代码数字、辅助明细方括号、或公司名后缀）。"""
+    for cell in row:
+        s = "" if cell is None else str(cell).strip()
+        if not s or s == "None":
+            continue
+        # 全/半角空白开头 + 长公司名 → 辅助核算数据行
+        if s.startswith(("\u3000", " ")) and ("[" in s or any(m in s for m in _DATA_COMPANY_SUFFIX_MARKERS)):
+            return True
+        # 开头带方括号 [辅助编码]
+        if s.startswith("["):
+            return True
+        # 纯科目代码（数字 / 带分隔符的小数点代码）
+        if re.fullmatch(r"\d+(?:[.\-]?\d+)*", s):
+            return True
+        # 开头是全角空白 + 数字（广西的" 1002001"）
+        if (
+            s.startswith("\u3000")
+            and re.fullmatch(r"\u3000+\d+(?:[.\-]?\d+)*", s)
+        ):
+            return True
+    return False
+
+
+def detect_header_area(rows: list[list], max_scan: int = 15) -> tuple[int, int, list[int]]:
+    """识别表头区域。
+
+    返回 (main_header_row, data_start_row, header_rows)：
+      - main_header_row: 主表头行（最优含「科目编码/科目名称」锚点的行）
+      - data_start_row: 第一个数据行
+      - header_rows: 主表头及紧接其后的表头说明子行（如借/贷、数量/金额）
+    """
+    scan_end = min(max_scan, len(rows))
+
+    # 主表头行优先选取含「科目编码/科目名称」锚点的行（再按分值最高的）
+    anchor_idxs = [i for i in range(scan_end) if _row_has_header_anchor(rows[i])]
+    if anchor_idxs:
+        main = max(anchor_idxs, key=lambda i: _row_total_header_score(rows[i]))
+    else:
+        # 无锚点：按总分最大的行
+        main = max(range(scan_end), key=lambda i: _row_total_header_score(rows[i]))
+
+    header_rows = [main]
+    j = main + 1
+    while j < len(rows):
+        row = rows[j]
+        if all(c is None or str(c).strip() == "" for c in row):
+            j += 1
+            continue
+        if _row_is_data(row):
+            break
+        header_rows.append(j)
+        j += 1
+    data_start_row = j
+    return main, data_start_row, header_rows
+
+
+def _clean_for_header(value) -> str:
+    """表头单元格清洗：None→''，去 BOM/零宽/空白。"""
+    if value is None:
+        return ""
+    s = str(value).replace("\ufeff", "").replace("\u200b", "").strip()
+    if s == "None":
+        return ""
+    return s
+
+
+def merge_multirow_headers(all_rows: list[list], header_rows: list[int]) -> list[str]:
+    """把多行表头合并成单行可读列名。
+
+    规则：
+    - 主表头行（header_rows[0]）空白单元格用左侧最近非空值回填（处理跨列合并标题，
+      如 "期初余额" 跨 4 列）。
+    - 子表头行（借/贷、数量/金额）按列追加去重；同时每个子行也做左回填，
+      保证 "借方" 子标签覆盖相邻的 "数量/金额" 单元格。
+    - 例：广西 col idx6 → "期初余额_借方_金额"；金蝶 col idx8 → "期初余额_借方"。
+    """
+    if not header_rows or not all_rows:
+        return ["" for _ in (all_rows[0] if all_rows else [])]
+    ncols = max((len(all_rows[i]) for i in header_rows), default=0)
+
+    def _left_fill(row: list) -> list[str]:
+        out: list[str] = []
+        fillval = ""
+        for j in range(ncols):
+            v = _clean_for_header(row[j]) if j < len(row) else ""
+            # 下一区块需重置：遇到表头大类关键字（如「期初余额」「本期发生」）
+            # 出现在另一行同列时不切；这里仅做单行内左回填即可。
+            if v:
+                fillval = v
+            out.append(fillval)
+        return out
+
+    def _left_fill_main(row: list) -> list[str]:
+        """主行回填：在大类关键字切换时重置。
+
+        例：主文「期初余额」跨 4 列应回填为 4 个「期初余额」；
+        到了「本期发生」列自然替换。
+        """
+        out: list[str] = []
+        fillval = ""
+        for j in range(ncols):
+            v = _clean_for_header(row[j]) if j < len(row) else ""
+            if v:
+                fillval = v
+            out.append(fillval)
+        return out
+
+    filled_main = _left_fill_main(all_rows[header_rows[0]])
+    filled_children = [_left_fill(all_rows[ri]) for ri in header_rows[1:]]
+
+    merged: list[str] = []
+    for j in range(ncols):
+        parts: list[str] = []
+        if filled_main[j]:
+            parts.append(filled_main[j])
+        for fc in filled_children:
+            v = fc[j] if j < len(fc) else ""
+            if v and v not in parts:
+                parts.append(v)
+        merged.append("_".join(parts))
+    return merged
+
+
 def _detect_header_row(rows: list[list], max_scan: int = 5) -> int:
     """
     自动检测表头行：扫描前 N 行，找到第一个所有单元格都非空的行。
@@ -186,6 +371,58 @@ def parse_file_info(file_path: str) -> dict:
         "row_count": len(rows),
         "preview_rows": rows[:5],
     }
+
+
+# ── TASK-078：科目余额表标准化导入专用解析 ────────────────
+
+
+def parse_trial_balance_import(file_path: str) -> dict:
+    """读取科目余额表原始行，识别多行表头区域，返回合并后的可读列名 + 数据起始行。
+
+    返回：
+        {
+            "all_rows": list[list],          # 工作表全部行
+            "merged_headers": list[str],     # 合并后可读列名
+            "header_rows": list[int],        # 表头说明行（工作表行索引）
+            "data_start_row": int,           # 第一个数据行（工作表行索引）
+        }
+    """
+    ext = Path(file_path).suffix.lower()
+    if ext in (".xlsx", ".xls"):
+        _, all_rows = _parse_excel_all_rows(file_path)
+    elif ext == ".csv":
+        _, all_rows = _parse_csv_all_rows(file_path, "auto")
+    else:
+        raise ValueError(f"不支持的文件格式: {ext}")
+
+    if len(all_rows) < 2:
+        raise ValueError("Excel 文件至少需要表头行 + 一行数据")
+
+    main, data_start, header_rows = detect_header_area(all_rows)
+    merged = merge_multirow_headers(all_rows, header_rows)
+    return {
+        "all_rows": all_rows,
+        "merged_headers": merged,
+        "header_rows": header_rows,
+        "data_start_row": data_start,
+    }
+
+
+def slice_data_rows(
+    all_rows: list[list],
+    data_start_row: int,
+) -> list[list]:
+    """从工作表行集合切片出数据行（与解析逻辑一致的清洗：空 None→''，跳过全空行）。
+
+    返回行的顺序保持，索引即 data row 的 0 起序号。
+    """
+    section = all_rows[max(data_start_row, 0):]
+    out: list[list] = []
+    for row in section:
+        if all(c is None or str(c).strip() == "" for c in row):
+            continue
+        out.append(["" if c is None else c for c in row])
+    return out
 
 
 def parse_file_with_config(
@@ -272,14 +509,31 @@ def _parse_csv_all_rows(file_path: str, encoding: str = "auto") -> tuple[list[st
 
 
 def _parse_excel_all_rows(file_path: str) -> tuple[list[str], list[list]]:
-    """解析 Excel 返回全部行"""
+    """解析 Excel 返回全部行。
+
+    read_only 模式对部分缺失默认样式的金蝶导出（Sheet1.max_row 异常返回 1）
+    会失败，故优先用非 read_only 的 data_only 加载，异常时回退 read_only。
+    """
     from openpyxl import load_workbook
-    wb = load_workbook(file_path, read_only=True, data_only=True)
-    ws = wb.active
-    all_rows = []
-    for row in ws.iter_rows(values_only=True):
-        all_rows.append(list(row))
-    wb.close()
+
+    all_rows: list[list] = []
+    try:
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(values_only=True):
+            all_rows.append(list(row))
+        wb.close()
+    except Exception:
+        all_rows = []
+
+    if len(all_rows) < 2:
+        # 回退：用非 read_only data_only 模式重新读
+        all_rows = []
+        wb = load_workbook(file_path, data_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(values_only=True):
+            all_rows.append(list(row))
+        wb.close()
 
     if len(all_rows) < 2:
         raise ValueError("Excel 文件至少需要表头行 + 一行数据")

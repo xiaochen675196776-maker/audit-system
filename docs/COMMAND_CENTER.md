@@ -113,6 +113,10 @@
 | `docs/tasks/TASK-057-desktop-acceptance.md` | REVIEW_NEEDED | 最后执行 | 桌面端整体验收（TASK-058 已修复 5 个启动阻塞项，待复验） |
 | `docs/tasks/TASK-058-desktop-startup-blockers.md` | DONE | 当前优先，阻塞修复 | 修复 TASK-057 验收中 5 个启动阻塞项 |
 | `docs/tasks/TASK-059-desktop-python-stdout-encoding.md` | DONE | 当前优先 | 修复桌面端 Python stdout 编码乱码（中文 Windows GBK） |
+| `docs/tasks/TASK-060-standardized-trial-balance-entry-flow.md` | DONE | 当前最高优先级，不可并行 | 修复科目余额表入口误走旧三步导入，强制进入标准科目匹配 |
+| `docs/tasks/TASK-061-remove-import-template-module.md` | DONE | 依赖 TASK-060，不可并行 | 删除导入模板功能、前端入口和后端运行时代码 |
+| `docs/tasks/TASK-062-import-flow-and-template-removal-acceptance.md` | DONE | 最后执行 | TASK-060/061 总体验收，覆盖桌面端和浏览器导入流程 |
+| `docs/tasks/TASK-063-standardized-match-row-ui-and-ignore.md` | DONE | 自动化与浏览器流程复验通过 | 层级与科目匹配改为行级确认表，修复匹配机制并支持忽略行 |
 
 ## 科目余额表标准化导入验收结论
 
@@ -201,6 +205,8 @@
 
 ## 导入模板库分派
 
+> **⚠️ 导入模板功能已由 TASK-061 于 2026-06-23 全量下线。** 以下为历史记录，保留供参考。
+>
 - 分派日期：2026-06-22
 - 目标：把导入能力升级为“全局导入模板库 + 稳定列 ID 映射 + 模板自动推荐 + 用户确认套用”。
 - 范围：

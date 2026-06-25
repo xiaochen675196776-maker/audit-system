@@ -14,6 +14,7 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.client_account_mapping import ClientAccountMapping
 from app.models.standard_account import StandardAccount
 from app.models.standard_trial_balance_import_batch import StandardTrialBalanceImportBatch
 from app.models.standard_trial_balance_entry import StandardTrialBalanceEntry
@@ -318,6 +319,19 @@ class TestParentAmountMismatch:
             assert hierarchy_by_code["1001"]["is_leaf"] is False
             assert hierarchy_by_code["1001001"]["is_leaf"] is True
 
+            recommendations_by_code = {
+                r["client_account_code"]: r
+                for r in analyze["mapping_recommendations"]
+            }
+            assert recommendations_by_code["1001"]["row_index"] == hierarchy_by_code["1001"]["row_index"]
+            assert recommendations_by_code["1001"]["is_leaf"] is False
+            assert recommendations_by_code["1001"]["is_summary"] is True
+            assert recommendations_by_code["1001"]["participates_in_entry"] is False
+            assert recommendations_by_code["1001001"]["row_index"] == hierarchy_by_code["1001001"]["row_index"]
+            assert recommendations_by_code["1001001"]["is_leaf"] is True
+            assert recommendations_by_code["1001001"]["is_summary"] is False
+            assert recommendations_by_code["1001001"]["participates_in_entry"] is True
+
             # 确认所有映射（包括父级，虽然父级不写条目）
             confirmed = []
             for code in ["1001", "1001001", "1001002"]:
@@ -347,6 +361,168 @@ class TestParentAmountMismatch:
             assert execute["status"] == "executed"
             # 只写叶子行（2 行），父级不入库
             assert execute["entry_count"] == 2
+
+        finally:
+            os.unlink(file_path)
+
+
+# ── 测试：用户忽略参与入库的末级客户科目行 ─────────────────────
+
+class TestIgnoredRows:
+    """ignored_rows 允许跳过指定末级客户科目行"""
+
+    @pytest.mark.asyncio
+    async def test_ignored_unmapped_leaf_succeeds_without_entry_or_experience(self, db):
+        """ignored_rows 中的未映射末级行不生成 entry，raw row 保留为 ignored，且不保存经验"""
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "1001", "name": "库存现金", "direction": "debit"},
+        ])
+
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期末借方", "期末贷方"],
+            rows=[
+                ["1001", "库存现金", "10000", "0"],
+                ["9999", "待忽略科目", "50000", "0"],
+            ],
+        )
+
+        try:
+            preview = await preview_standard_import(
+                db, file_path, "ignored.xlsx", fiscal_year=2024, period=1,
+                customer_label="忽略测试公司",
+            )
+            batch_id = uuid.UUID(preview["batch_id"])
+
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "ending_debit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "ending_credit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+            ]
+
+            analyze = await analyze_standard_import(
+                db, batch_id, file_path,
+                field_mappings=field_mappings,
+                fiscal_year=2024, period=1,
+                customer_label="忽略测试公司",
+            )
+            ignored_rec = next(
+                r for r in analyze["mapping_recommendations"]
+                if r["client_account_code"] == "9999"
+            )
+            assert ignored_rec["row_index"] == 1
+            assert ignored_rec["participates_in_entry"] is True
+
+            confirmed = [{
+                "row_index": 0,
+                "client_account_code": "1001",
+                "client_account_name": "库存现金",
+                "standard_account_id": sa_map["1001"],
+                "standard_account_code": "1001",
+                "standard_account_name": "库存现金",
+            }]
+
+            execute = await execute_standard_import(
+                db, batch_id, file_path,
+                confirmed_mappings=confirmed,
+                ignored_rows=[1],
+                warnings_confirmed=True,
+                save_mapping_experience=True,
+            )
+
+            assert execute["status"] == "executed"
+            assert execute["raw_row_count"] == 2
+            assert execute["entry_count"] == 1
+            assert execute["mapping_saved_count"] == 1
+
+            entries_result = await db.execute(
+                select(StandardTrialBalanceEntry).where(
+                    StandardTrialBalanceEntry.batch_id == batch_id
+                )
+            )
+            entries = entries_result.scalars().all()
+            assert len(entries) == 1
+            assert entries[0].client_account_code == "1001"
+
+            raw_result = await db.execute(
+                select(StandardTrialBalanceRawRow).where(
+                    StandardTrialBalanceRawRow.batch_id == batch_id
+                )
+            )
+            raw_by_index = {r.row_index: r for r in raw_result.scalars().all()}
+            assert set(raw_by_index) == {0, 1}
+            assert raw_by_index[1].mapping_status == "ignored"
+            assert raw_by_index[1].mapped_standard_account_id is None
+
+            mapping_result = await db.execute(
+                select(ClientAccountMapping).where(
+                    ClientAccountMapping.client_account_code == "9999",
+                    ClientAccountMapping.customer_label == "忽略测试公司",
+                    ClientAccountMapping.is_active == True,
+                )
+            )
+            assert mapping_result.scalars().all() == []
+
+        finally:
+            os.unlink(file_path)
+
+    @pytest.mark.asyncio
+    async def test_unignored_unmapped_leaf_still_blocks_execute(self, db):
+        """未忽略的未映射末级行仍阻止 execute"""
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "1001", "name": "库存现金", "direction": "debit"},
+        ])
+
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期末借方", "期末贷方"],
+            rows=[
+                ["1001", "库存现金", "10000", "0"],
+                ["9998", "未映射科目", "50000", "0"],
+            ],
+        )
+
+        try:
+            preview = await preview_standard_import(
+                db, file_path, "unignored.xlsx", fiscal_year=2024, period=1,
+            )
+            batch_id = uuid.UUID(preview["batch_id"])
+
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "ending_debit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "ending_credit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+            ]
+
+            await analyze_standard_import(
+                db, batch_id, file_path,
+                field_mappings=field_mappings,
+                fiscal_year=2024, period=1,
+            )
+
+            confirmed = [{
+                "row_index": 0,
+                "client_account_code": "1001",
+                "client_account_name": "库存现金",
+                "standard_account_id": sa_map["1001"],
+                "standard_account_code": "1001",
+                "standard_account_name": "库存现金",
+            }]
+
+            with pytest.raises(ValueError, match="未映射"):
+                await execute_standard_import(
+                    db, batch_id, file_path,
+                    confirmed_mappings=confirmed,
+                    warnings_confirmed=True,
+                )
 
         finally:
             os.unlink(file_path)
@@ -762,5 +938,298 @@ class TestMissingCodeAndName:
             # 原始行有 2 条
             assert execute["raw_row_count"] == 2
 
+        finally:
+            os.unlink(file_path)
+
+
+# ── 测试：包装物/低值易耗品真实入库子级 ──────────────
+
+class TestPackagingConsumablesExecuteToChild:
+    """TASK-071：包装物/低值易耗品必须实际入库到 141101/141102，不得入库 1411"""
+
+    @pytest.mark.asyncio
+    async def test_packaging_consumables_execute_to_child_standard_accounts(self, db):
+        """客户 1411 包装物/低值易耗品（含/不含明细后缀）真实入库标准科目应为 141101/141102"""
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "1411", "name": "周转材料", "direction": "debit",
+             "category": "asset", "level": 1, "is_leaf": False},
+            {"code": "141101", "name": "包装物", "direction": "debit",
+             "category": "asset", "level": 2, "is_leaf": True},
+            {"code": "141102", "name": "低值易耗品", "direction": "debit",
+             "category": "asset", "level": 2, "is_leaf": True},
+        ])
+
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期末借方", "期末贷方"],
+            rows=[
+                ["1411", "包装物", "100", "0"],
+                ["1411", "低值易耗品", "200", "0"],
+                ["1411", "包装物_纸箱", "300", "0"],
+                ["1411", "低值易耗品_工具", "400", "0"],
+                ["1411", "周转材料", "500", "0"],
+            ],
+        )
+
+        try:
+            preview = await preview_standard_import(
+                db, file_path, "test.xlsx", fiscal_year=2024, period=1,
+                customer_label="TASK071公司",
+            )
+            batch_id = uuid.UUID(preview["batch_id"])
+
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "ending_debit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "ending_credit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+            ]
+
+            analyze = await analyze_standard_import(
+                db, batch_id, file_path,
+                field_mappings=field_mappings, fiscal_year=2024, period=1,
+                customer_label="TASK071公司",
+            )
+
+            # 取每个客户科目首个安全（warning None 且 score>=0.9）候选作为确认目标
+            confirmed_mappings = []
+            name_to_row = {h["client_account_name"]: h["row_index"]
+                           for h in analyze["hierarchy"] if h["client_account_name"]}
+            for rec in analyze["mapping_recommendations"]:
+                cands = rec.get("candidates", [])
+                picked = None
+                for c in cands:
+                    if c.get("warning") is None and float(c.get("score", 0)) >= 0.9:
+                        picked = c
+                        break
+                if picked is None and cands:
+                    picked = cands[0]
+                if picked is None:
+                    continue
+                row_index = name_to_row.get(rec.get("client_account_name"))
+                confirmed_mappings.append({
+                    "row_index": row_index,
+                    "client_account_code": rec.get("client_account_code"),
+                    "client_account_name": rec.get("client_account_name"),
+                    "standard_account_id": uuid.UUID(picked["standard_account_id"]),
+                    "standard_account_code": picked["standard_account_code"],
+                    "standard_account_name": picked["standard_account_name"],
+                })
+
+            execute = await execute_standard_import(
+                db, batch_id, file_path,
+                confirmed_mappings=confirmed_mappings,
+                warnings_confirmed=True,
+            )
+            assert execute["status"] == "executed"
+            assert execute["entry_count"] == 5
+
+            entries_result = await db.execute(
+                select(StandardTrialBalanceEntry).where(
+                    StandardTrialBalanceEntry.batch_id == batch_id
+                )
+            )
+            rows = entries_result.scalars().all()
+            by_client_name = {e.client_account_name: e for e in rows}
+            assert by_client_name["包装物"].standard_account_code_snapshot == "141101"
+            assert by_client_name["低值易耗品"].standard_account_code_snapshot == "141102"
+            assert by_client_name["包装物_纸箱"].standard_account_code_snapshot == "141101"
+            assert by_client_name["低值易耗品_工具"].standard_account_code_snapshot == "141102"
+            assert by_client_name["周转材料"].standard_account_code_snapshot == "1411"
+        finally:
+            os.unlink(file_path)
+
+
+class TestParentAmountValidationFix:
+    """TASK-067：递归后代末级 + 借贷净额比较"""
+
+    @pytest.mark.asyncio
+    async def test_multi_level_parent_recursive_leaf_no_false_warning(self, db):
+        """多层父级：应递归汇总孙级末级，不应误报"""
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "5001", "name": "生产成本"},
+        ])
+        # 四级：5001(父) → 500101(子/父) → 50010101/50010102(孙/末级)
+        rows = [
+            ["5001", "生产成本", "0", "0", "100", "100", "0", "0"],
+            ["500101", "生产成本_基本生产成本", "0", "0", "100", "100", "0", "0"],
+            ["50010101", "生产成本_基本生产成本_直接材料", "0", "0", "40", "40", "0", "0"],
+            ["50010102", "生产成本_基本生产成本_直接人工", "0", "0", "60", "60", "0", "0"],
+        ]
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期初借方", "期初贷方", "本期借方", "本期贷方", "期末借方", "期末贷方"],
+            rows=rows,
+        )
+        try:
+            preview = await preview_standard_import(db, file_path, "test.xlsx", fiscal_year=2024, period=1)
+            batch_id = uuid.UUID(preview["batch_id"])
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "opening_debit", "period_type": "opening", "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "opening_credit", "period_type": "opening", "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_4", "field_name": "current_debit", "period_type": "current", "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_5", "field_name": "current_credit", "period_type": "current", "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_6", "field_name": "ending_debit", "period_type": "ending", "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+                {"column_id": "col_7", "field_name": "ending_credit", "period_type": "ending", "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+            ]
+            analyze = await analyze_standard_import(db, batch_id, file_path,
+                field_mappings=field_mappings, fiscal_year=2024, period=1)
+            mismatch = [w for w in analyze["warnings"] if w["category"] == "parent_amount_mismatch"]
+            assert len(mismatch) == 0, f"不应有 parent_amount_mismatch，实际: {mismatch}"
+        finally:
+            os.unlink(file_path)
+
+    @pytest.mark.asyncio
+    async def test_balance_net_comparison_no_false_warning(self, db):
+        """应交税费：子级借贷混合，应按净额比较不误报"""
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "2221", "name": "应交税费"},
+        ])
+        rows = [
+            ["2221", "应交税费", "300", "0", "100", "100", "200", "0"],
+            ["222101", "应交税费_应交增值税", "1000", "700", "60", "60", "900", "700"],
+            ["222102", "应交税费_企业所得税", "0", "0", "40", "40", "0", "0"],
+        ]
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期初借方", "期初贷方", "本期借方", "本期贷方", "期末借方", "期末贷方"],
+            rows=rows,
+        )
+        try:
+            preview = await preview_standard_import(db, file_path, "test.xlsx", fiscal_year=2024, period=1)
+            batch_id = uuid.UUID(preview["batch_id"])
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "opening_debit", "period_type": "opening", "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "opening_credit", "period_type": "opening", "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_4", "field_name": "current_debit", "period_type": "current", "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_5", "field_name": "current_credit", "period_type": "current", "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_6", "field_name": "ending_debit", "period_type": "ending", "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+                {"column_id": "col_7", "field_name": "ending_credit", "period_type": "ending", "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+            ]
+            analyze = await analyze_standard_import(db, batch_id, file_path,
+                field_mappings=field_mappings, fiscal_year=2024, period=1)
+            mismatch = [w for w in analyze["warnings"] if w["category"] == "parent_amount_mismatch"]
+            assert len(mismatch) == 0, f"净额比较不应误报，实际: {mismatch}"
+        finally:
+            os.unlink(file_path)
+
+    @pytest.mark.asyncio
+    async def test_real_difference_still_warns(self, db):
+        """真实父子差异仍应报 parent_amount_mismatch"""
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "1001", "name": "库存现金"},
+        ])
+        rows = [
+            ["1001", "库存现金", "100", "0", "0", "0", "100", "0"],
+            ["100101", "库存现金_人民币", "90", "0", "0", "0", "90", "0"],
+        ]
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期初借方", "期初贷方", "本期借方", "本期贷方", "期末借方", "期末贷方"],
+            rows=rows,
+        )
+        try:
+            preview = await preview_standard_import(db, file_path, "test.xlsx", fiscal_year=2024, period=1)
+            batch_id = uuid.UUID(preview["batch_id"])
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "opening_debit", "period_type": "opening", "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "opening_credit", "period_type": "opening", "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_4", "field_name": "current_debit", "period_type": "current", "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_5", "field_name": "current_credit", "period_type": "current", "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_6", "field_name": "ending_debit", "period_type": "ending", "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+                {"column_id": "col_7", "field_name": "ending_credit", "period_type": "ending", "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+            ]
+            analyze = await analyze_standard_import(db, batch_id, file_path,
+                field_mappings=field_mappings, fiscal_year=2024, period=1)
+            mismatch = [w for w in analyze["warnings"] if w["category"] == "parent_amount_mismatch"]
+            assert len(mismatch) >= 1, f"真实差异应报 warning，实际: {mismatch}"
+        finally:
+            os.unlink(file_path)
+
+
+# ── TASK-077：候选排序防止自动确认命错减值准备 ───────────
+
+class TestConstructionCandidateOrderingAutoConfirm:
+    """模拟真实自动确认：直接取 candidates[0]，禁止再命错到 160402 减值准备。
+
+    覆盖 TASK-077 真实根因：列表里有正确候选 160401 但曾排第二，取首项会错导入。
+    """
+
+    @pytest.mark.asyncio
+    async def test_auto_confirm_picks_safe_original_not_impairment(self, db):
+        sa_map = await _seed_standard_accounts(db, [
+            {"code": "160401", "name": "在建工程-原值", "direction": "debit", "category": "asset", "level": 1},
+            {"code": "160402", "name": "减：在建工程-减值准备", "direction": "credit", "category": "asset", "level": 1},
+        ])
+
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期初借方", "期初贷方", "本期借方", "本期贷方", "期末借方", "期末贷方"],
+            rows=[
+                ["160402", "在建工程_生产线", "0", "0", "100", "0", "100", "0"],
+            ],
+        )
+        try:
+            preview = await preview_standard_import(db, file_path, "test.xlsx",
+                                                    fiscal_year=2025, period=12)
+            batch_id = uuid.UUID(preview["batch_id"])
+            assert preview["total_rows"] == 1
+
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "opening_debit", "period_type": "opening",
+                 "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "opening_credit", "period_type": "opening",
+                 "split_mode": "two_column", "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_4", "field_name": "current_debit", "period_type": "current",
+                 "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_5", "field_name": "current_credit", "period_type": "current",
+                 "split_mode": "two_column", "debit_column_id": "col_4", "credit_column_id": "col_5"},
+                {"column_id": "col_6", "field_name": "ending_debit", "period_type": "ending",
+                 "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+                {"column_id": "col_7", "field_name": "ending_credit", "period_type": "ending",
+                 "split_mode": "two_column", "debit_column_id": "col_6", "credit_column_id": "col_7"},
+            ]
+            analyze = await analyze_standard_import(db, batch_id, file_path,
+                                                    field_mappings=field_mappings,
+                                                    fiscal_year=2025, period=12)
+            rec = analyze["mapping_recommendations"][0]
+            cands = rec["candidates"]
+            # 硬断言首项为安全候选 160401
+            assert cands[0]["standard_account_code"] == "160401", \
+                f"cands[0] 应为 160401，实际: {[(c['standard_account_code'], c['warning']) for c in cands]}"
+            assert cands[0]["warning"] is None
+            assert float(cands[0]["score"]) >= 0.9
+
+            # 模拟真实自动确认：直接取 candidates[0]
+            confirmed_mappings = [{
+                "row_index": rec["row_index"],
+                "client_account_code": rec.get("client_account_code"),
+                "client_account_name": rec.get("client_account_name"),
+                "standard_account_id": uuid.UUID(cands[0]["standard_account_id"]),
+                "standard_account_code": cands[0]["standard_account_code"],
+                "standard_account_name": cands[0]["standard_account_name"],
+            }]
+            execute = await execute_standard_import(db, batch_id, file_path,
+                                                    confirmed_mappings=confirmed_mappings,
+                                                    warnings_confirmed=True)
+            assert execute["status"] == "executed"
+            assert execute["entry_count"] == 1
+
+            entries_result = await db.execute(
+                select(StandardTrialBalanceEntry).where(
+                    StandardTrialBalanceEntry.batch_id == batch_id
+                )
+            )
+            entry = entries_result.scalars().one()
+            assert entry.client_account_code == "160402"
+            assert entry.standard_account_code_snapshot == "160401", \
+                f"160402 应入库到 160401，实际快照: {entry.standard_account_code_snapshot}"
         finally:
             os.unlink(file_path)

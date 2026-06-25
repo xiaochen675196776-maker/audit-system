@@ -8,13 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.file_parser import parse_file, parse_file_info, build_columns
 from app.services.column_matcher import auto_match, apply_mapping, map_row, map_row_by_column_ids, TYPE_FIELDS
 from app.services.validator import validate_rows
-from app.services.template_matcher import match_templates, apply_template_to_columns
-from app.services.template_service import get_templates
 
 from app.models.trial_balance import TrialBalance
 from app.models.journal_entry import JournalEntry
 from app.models.subsidiary_ledger import SubsidiaryLedger
-from app.models.import_template import ImportTemplate
 
 # 数据类型 → ORM 模型
 MODEL_MAP = {
@@ -28,7 +25,6 @@ async def preview_import(
     file_path: str,
     data_type: str,
     db: AsyncSession | None = None,
-    template_id: str | None = None,
     company_id: str | None = None,
 ) -> dict:
     """
@@ -36,22 +32,7 @@ async def preview_import(
     """
     from app.services.file_parser import parse_file_with_config
 
-    # 先看是否有模板（用于 parse_config）
-    template = None
-    if db is not None and template_id is not None:
-        from uuid import UUID
-        t_list = await get_templates(db)
-        t_list = [x for x in t_list if str(x.id) == template_id]
-        if t_list:
-            template = t_list[0]
-            if template.data_type != data_type:
-                raise ValueError(f"模板数据类型（{template.data_type}）与本次导入类型（{data_type}）不一致")
-            if not template.is_active:
-                raise ValueError("指定的模板已停用")
-
-    # 使用模板 parse_config 解析文件
-    parse_config = template.parse_config if template else None
-    headers, rows = parse_file_with_config(file_path, parse_config)
+    headers, rows = parse_file_with_config(file_path, None)
     columns = build_columns(headers, rows[:5])
     match_result = auto_match(headers, data_type)
 
@@ -67,30 +48,7 @@ async def preview_import(
         "data_type": data_type,
     }
 
-    # 模板匹配
-    if db is not None:
-        if template is not None:
-            mapping_v2 = apply_template_to_columns(template, columns)
-            result["applied_mapping_v2"] = mapping_v2
-            result["applied_template_name"] = template.name
-            if template.default_values:
-                result["template_default_values"] = template.default_values
-            # 模板建议必须进 mapping_suggestions_v2 (TASK-037)
-            result["mapping_suggestions_v2"] = {
-                col_id: {
-                    "target_field": field,
-                    "source": "template",
-                    "confidence": 1.0,
-                }
-                for col_id, field in mapping_v2.items()
-            }
-        else:
-            templates = await get_templates(db, data_type=data_type, is_active=True)
-            if templates:
-                candidates = match_templates(file_path, data_type, templates)
-                result["template_candidates"] = candidates
-
-    # 字段映射经验推荐 — 补充非模板列的推荐，不覆盖已有模板建议
+    # 字段映射经验推荐
     if db is not None and company_id:
         from uuid import UUID as _UUID
         try:
@@ -101,7 +59,7 @@ async def preview_import(
         experience_suggestions = await recommend_from_experience(
             db, cid, data_type, columns,
         )
-        # 合并：模板建议优先，经验补充剩余列
+        # 合并经验推荐
         existing = result.get("mapping_suggestions_v2", {})
         for col_id, sugg in experience_suggestions.items():
             if col_id not in existing:
@@ -128,31 +86,17 @@ async def import_data(
     column_mapping_v2: dict[str, str] | None = None,
     fiscal_year: int | None = None,
     period: int | None = None,
-    parse_config: dict | None = None,
-    template_default_values: dict | None = None,
     remember_mapping: bool = True,
     mapping_confirmations: dict | None = None,
 ) -> dict:
     """
     完整导入流程。
-
-    parse_config: 模板解析配置，用于指定表头行/数据起始行
-    template_default_values: 模板默认值 {fiscal_year, period}，优先级低于用户手动传参
     """
     from app.services.file_parser import parse_file_with_config
 
-    # 1. 解析（使用 parse_config）
-    headers, raw_rows = parse_file_with_config(file_path, parse_config)
+    # 1. 解析
+    headers, raw_rows = parse_file_with_config(file_path, None)
     columns = build_columns(headers, raw_rows[:3])
-
-    # 合并默认值：模板 < 用户手动
-    effective_fiscal_year = fiscal_year
-    effective_period = period
-    if template_default_values:
-        if effective_fiscal_year is None:
-            effective_fiscal_year = template_default_values.get("fiscal_year")
-        if effective_period is None:
-            effective_period = template_default_values.get("period")
 
     known_fields = set(TYPE_FIELDS.get(data_type, []))
     known_fields.add("company_id")
@@ -160,10 +104,10 @@ async def import_data(
     def _enrich_row(mapped: dict) -> dict:
         """给一行映射数据补充 company_id / fiscal_year / period / extra_fields"""
         mapped["company_id"] = company_id
-        if effective_fiscal_year is not None and "fiscal_year" not in mapped:
-            mapped["fiscal_year"] = effective_fiscal_year
-        if effective_period is not None and "period" not in mapped:
-            mapped["period"] = effective_period
+        if fiscal_year is not None and "fiscal_year" not in mapped:
+            mapped["fiscal_year"] = fiscal_year
+        if period is not None and "period" not in mapped:
+            mapped["period"] = period
 
         # 分离非标准字段 → extra_fields JSON
         extra = {}

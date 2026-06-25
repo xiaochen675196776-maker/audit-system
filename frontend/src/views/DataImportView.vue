@@ -30,9 +30,24 @@
             <div class="step1-layout">
               <div class="step1-form">
                 <el-form label-width="90px" label-position="top" class="config-form">
-                  <el-form-item label="客户标识">
-                    <el-input v-model="stdCustomerLabel" placeholder="被审计单位名称" clearable />
-                  </el-form-item>
+                <el-form-item label="客户标识">
+                  <el-select
+                    v-model="stdCustomerLabel"
+                    placeholder="选择已有被审计单位，或直接输入名称"
+                    filterable
+                    allow-create
+                    default-first-option
+                    clearable
+                    class="form-full"
+                  >
+                    <el-option
+                      v-for="c in companies"
+                      :key="c.id"
+                      :label="c.code ? `${c.name}（${c.code}）` : c.name"
+                      :value="c.name"
+                    />
+                  </el-select>
+                </el-form-item>
                   <el-row :gutter="12">
                     <el-col :span="12">
                       <el-form-item label="会计年度">
@@ -119,9 +134,9 @@
                   </template>
                 </el-table-column>
                 <el-table-column label="金额模式" width="180" v-if="stdHasAmountFields">
-                  <template #default="{ row }">
+                  <template #default="{ row, $index }">
                     <template v-if="stdIsSingleAmountField(row.field_name)">
-                      <el-select v-model="stdMappings[stdMappings.indexOf(row)].split_mode" placeholder="选择拆分方式" size="small" style="width:160px">
+                      <el-select v-model="stdMappings[$index].split_mode" placeholder="选择拆分方式" size="small" style="width:160px">
                         <el-option label="按标准方向拆分" value="single_by_direction" />
                         <el-option label="全部记入借方" value="single_as_debit" />
                         <el-option label="全部记入贷方" value="single_as_credit" />
@@ -166,149 +181,198 @@
           </div>
 
           <div v-else-if="activeStep === 2" key="std-step3" class="step-content">
-            <div class="std-review-grid">
-              <!-- 左侧：层级树 -->
-              <div class="std-review-left">
-                <h3 class="panel-title">科目层级确认</h3>
-                <div v-if="stdHasWarnings" class="warning-block">
-                  <el-alert type="warning" :closable="false" show-icon>
-                    <template #title>
-                      共 {{ stdWarnings.length }} 条警告需确认
-                    </template>
-                  </el-alert>
+            <div class="std-match-review">
+              <div class="std-match-header">
+                <div>
+                  <h3 class="panel-title">层级与科目匹配</h3>
+                  <p class="panel-desc">按客户科目余额表原始行顺序确认层级、金额和标准科目。父级行不入库，忽略行不导入。</p>
                 </div>
-                <el-table :data="stdFlatHierarchy" stripe size="small" max-height="400" row-key="row_index">
-                  <el-table-column label="#" width="50" align="center">
+                <div class="std-match-header-actions">
+                  <el-button size="small" @click="stdStepBack">上一步：字段映射</el-button>
+                  <el-radio-group v-model="stdRowFilter" size="small" class="std-row-filter">
+                    <el-radio-button value="all">全部 {{ stdReviewRows.length }}</el-radio-button>
+                    <el-radio-button value="unmapped">未匹配 {{ stdUnmappedCount }}</el-radio-button>
+                    <el-radio-button value="matched">已匹配 {{ stdMatchedCount }}</el-radio-button>
+                    <el-radio-button value="ignored">已忽略 {{ stdIgnoredRowIndexes.length }}</el-radio-button>
+                    <el-radio-button value="warning">有警告 {{ stdWarningRowCount }}</el-radio-button>
+                  </el-radio-group>
+                </div>
+              </div>
+
+              <div v-if="stdHasWarnings || stdBlockingErrors.length > 0" class="std-table-alerts">
+                <el-alert v-if="stdHasWarnings" type="warning" :closable="false" show-icon>
+                  <template #title>共 {{ stdWarnings.length }} 条警告需确认，可用“有警告”筛选定位到相关行。</template>
+                </el-alert>
+                <el-alert v-if="stdBlockingErrors.length > 0" type="error" :closable="false" show-icon>
+                  <template #title>存在 {{ stdBlockingErrors.length }} 条阻止入库的错误</template>
+                </el-alert>
+              </div>
+
+              <div class="std-match-table-wrap">
+                <el-table
+                  :data="stdFilteredReviewRows"
+                  stripe
+                  size="small"
+                  max-height="560"
+                  row-key="row_index"
+                  :row-class-name="stdReviewRowClassName"
+                  scrollbar-always-on
+                  class="std-match-table"
+                >
+                  <el-table-column label="行号" width="64" align="center" fixed="left">
                     <template #default="{ row }">{{ row.row_index + 1 }}</template>
                   </el-table-column>
-                  <el-table-column prop="client_account_code" label="科目代码" width="120" />
-                  <el-table-column prop="client_account_name" label="科目名称" min-width="140" />
-                  <el-table-column label="层级" width="70" align="center">
+                  <el-table-column label="客户科目代码" width="130" fixed="left">
                     <template #default="{ row }">
-                      <el-tag v-if="row.is_summary" size="small" type="warning">父级</el-tag>
-                      <el-tag v-else-if="row.is_leaf" size="small" type="success">末级</el-tag>
-                      <span v-else>-</span>
+                      <code class="std-client-code">{{ row.client_account_code || '—' }}</code>
                     </template>
                   </el-table-column>
-                  <el-table-column label="来源" width="80">
+                  <el-table-column label="客户科目名称" width="180" fixed="left">
+                    <template #default="{ row }">{{ row.client_account_name || '—' }}</template>
+                  </el-table-column>
+                  <el-table-column label="层级" width="120">
                     <template #default="{ row }">
-                      <span class="level-source-tag">{{ levelSourceLabel(row.level_source) }}</span>
+                      <div class="std-level-cell">
+                        <div class="std-level-tags">
+                          <el-tag v-if="row.is_summary" size="small" type="warning">父级</el-tag>
+                          <el-tag v-else-if="row.is_leaf" size="small" type="success">末级</el-tag>
+                          <el-tag v-else size="small" type="info">普通行</el-tag>
+                          <span>L{{ row.level ?? '—' }}</span>
+                        </div>
+                        <div v-if="row.parent_key" class="std-parent-key">父级：{{ row.parent_key }}</div>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="期初借方" width="140" align="right" class-name="std-amount-col">
+                    <template #default="{ row }">{{ fmtAmount(row.amount?.opening_debit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="期初贷方" width="140" align="right" class-name="std-amount-col">
+                    <template #default="{ row }">{{ fmtAmount(row.amount?.opening_credit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="本期借方" width="140" align="right" class-name="std-amount-col">
+                    <template #default="{ row }">{{ fmtAmount(row.amount?.current_debit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="本期贷方" width="140" align="right" class-name="std-amount-col">
+                    <template #default="{ row }">{{ fmtAmount(row.amount?.current_credit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="期末借方" width="140" align="right" class-name="std-amount-col">
+                    <template #default="{ row }">{{ fmtAmount(row.amount?.ending_debit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="期末贷方" width="140" align="right" class-name="std-amount-col">
+                    <template #default="{ row }">{{ fmtAmount(row.amount?.ending_credit) }}</template>
+                  </el-table-column>
+                  <el-table-column label="匹配状态" width="110" align="center">
+                    <template #default="{ row }">
+                      <el-tag size="small" :type="stdRowStatus(row).type">{{ stdRowStatus(row).label }}</el-tag>
+                      <div v-if="stdRowWarningMessages(row).length" class="std-row-warning-count">
+                        {{ stdRowWarningMessages(row).length }} 条警告
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="当前标准科目" width="260">
+                    <template #default="{ row }">
+                      <div v-if="stdIsIgnored(row.row_index)" class="std-current-account ignored">已忽略，不导入</div>
+                      <div v-else-if="!stdRowParticipates(row)" class="std-current-account muted">父级不入库</div>
+                      <div v-else-if="stdSelectedMapping(row.row_index)" class="std-current-account">
+                        <div>
+                          <code>{{ stdSelectedMapping(row.row_index)!.standard_account_code }}</code>
+                          <span>{{ stdSelectedMapping(row.row_index)!.standard_account_name }}</span>
+                        </div>
+                        <div class="std-current-meta">
+                          {{ matchSourceLabel(stdSelectedMapping(row.row_index)!.source) }} · 置信度 {{ stdConfidenceText(stdSelectedMapping(row.row_index)!.score) }}
+                        </div>
+                        <div v-if="stdSelectedMapping(row.row_index)!.warning" class="std-current-warning">
+                          {{ stdSelectedMapping(row.row_index)!.warning }}
+                        </div>
+                      </div>
+                      <div v-else class="std-current-account unmapped">
+                        未匹配
+                        <span v-if="row.rec?.candidates.length">，有 {{ row.rec.candidates.length }} 个推荐候选</span>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="匹配操作" width="110" align="center">
+                    <template #default="{ row }">
+                      <template v-if="stdIsIgnored(row.row_index)">
+                        <span class="std-action-muted">—</span>
+                      </template>
+                      <template v-else-if="stdRowParticipates(row)">
+                        <el-popover placement="left-start" trigger="click" width="360">
+                          <template #reference>
+                            <el-button size="small" type="primary" plain>
+                              {{ stdSelectedMapping(row.row_index) ? '更换' : '选择' }}
+                            </el-button>
+                          </template>
+                          <div class="std-account-picker">
+                            <div class="std-picker-title">推荐候选</div>
+                            <div v-if="row.rec?.candidates.length" class="std-candidate-list">
+                              <button
+                                v-for="c in row.rec.candidates.slice(0, 6)"
+                                :key="c.standard_account_id"
+                                type="button"
+                                class="std-candidate-option"
+                                :class="{
+                                  selected: stdSelectedMapping(row.row_index)?.standard_account_id === c.standard_account_id,
+                                  warning: !!c.warning
+                                }"
+                                @click="stdSelectCandidate(row.row_index, c)"
+                              >
+                                <span>
+                                  <code>{{ c.standard_account_code }}</code>
+                                  {{ c.standard_account_name }}
+                                </span>
+                                <span class="std-candidate-meta">
+                                  {{ matchSourceLabel(c.source) }} · {{ stdConfidenceText(c.score) }}
+                                </span>
+                                <span v-if="c.warning" class="std-candidate-warning">{{ c.warning }}</span>
+                              </button>
+                            </div>
+                            <div v-else class="std-picker-empty">暂无推荐候选，请搜索标准科目。</div>
+                            <div class="std-picker-search">
+                              <el-input
+                                v-model="stdSearchQueries[row.row_index]"
+                                size="small"
+                                placeholder="搜索标准科目代码或名称"
+                                clearable
+                                @input="stdSearchAccounts(row.row_index)"
+                              />
+                              <div v-if="stdSearchResults[row.row_index]?.length" class="std-search-result-list">
+                                <button
+                                  v-for="sr in stdSearchResults[row.row_index].slice(0, 8)"
+                                  :key="sr.id"
+                                  type="button"
+                                  class="std-search-result-item"
+                                  :class="{ disabled: !sr.is_active }"
+                                  @click="stdSelectSearchedAccount(row.row_index, sr)"
+                                >
+                                  <span>{{ sr.account_code }} {{ sr.account_name }}</span>
+                                  <el-tag v-if="!sr.is_active" size="small" type="danger">停用</el-tag>
+                                </button>
+                              </div>
+                            </div>
+                            <el-button v-if="stdSelectedMapping(row.row_index)" size="small" type="danger" text @click="stdClearMapping(row.row_index)">
+                              清除当前匹配
+                            </el-button>
+                          </div>
+                        </el-popover>
+                      </template>
+                      <span v-else class="std-action-muted">无需操作</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="忽略" width="90" align="center">
+                    <template #default="{ row }">
+                      <template v-if="stdIsIgnored(row.row_index)">
+                        <el-button size="small" @click="stdCancelIgnoreRow(row.row_index)">取消忽略</el-button>
+                      </template>
+                      <template v-else-if="stdRowParticipates(row)">
+                        <el-button size="small" type="warning" plain @click="stdIgnoreRow(row.row_index)">忽略</el-button>
+                      </template>
+                      <span v-else class="std-action-muted">—</span>
                     </template>
                   </el-table-column>
                 </el-table>
-
-                <!-- 金额预览 -->
-                <h4 class="sub-title" style="margin-top:16px">金额明细预览</h4>
-                <el-table :data="stdFlatAmounts" stripe size="small" max-height="300">
-                  <el-table-column label="#" width="50" align="center">
-                    <template #default="{ row }">{{ row.row_index + 1 }}</template>
-                  </el-table-column>
-                  <el-table-column label="期初借" width="110" align="right">
-                    <template #default="{ row }">{{ fmtAmount(row.opening_debit) }}</template>
-                  </el-table-column>
-                  <el-table-column label="期初贷" width="110" align="right">
-                    <template #default="{ row }">{{ fmtAmount(row.opening_credit) }}</template>
-                  </el-table-column>
-                  <el-table-column label="本期借" width="110" align="right">
-                    <template #default="{ row }">{{ fmtAmount(row.current_debit) }}</template>
-                  </el-table-column>
-                  <el-table-column label="本期贷" width="110" align="right">
-                    <template #default="{ row }">{{ fmtAmount(row.current_credit) }}</template>
-                  </el-table-column>
-                  <el-table-column label="期末借" width="110" align="right">
-                    <template #default="{ row }">{{ fmtAmount(row.ending_debit) }}</template>
-                  </el-table-column>
-                  <el-table-column label="期末贷" width="110" align="right">
-                    <template #default="{ row }">{{ fmtAmount(row.ending_credit) }}</template>
-                  </el-table-column>
-                </el-table>
               </div>
-
-              <!-- 右侧：科目匹配 -->
-              <div class="std-review-right">
-                <h3 class="panel-title">科目匹配</h3>
-                <p class="panel-desc">为每个客户科目确认对应的标准科目</p>
-
-                <div v-if="stdBlockingErrors.length > 0" class="error-block">
-                  <el-alert type="error" :closable="false" show-icon>
-                    <template #title>
-                      存在 {{ stdBlockingErrors.length }} 条阻止入库的错误
-                    </template>
-                  </el-alert>
-                  <div v-for="e in stdBlockingErrors" :key="e.message" class="blocking-error-item">
-                    {{ e.message }}
-                  </div>
-                </div>
-
-                <div v-for="(rec, ri) in stdMappingRecs" :key="ri" class="match-row">
-                  <div class="match-row-header">
-                    <span class="match-client-label">
-                      {{ rec.client_account_code || '?' }} {{ rec.client_account_name || '(无名称)' }}
-                    </span>
-                    <!-- 手动映射后显示已选标准科目 -->
-                    <span v-if="stdSelectedMapping(ri) && !rec.candidates.some(c => c.standard_account_id === stdSelectedMapping(ri)!.standard_account_id)" class="manual-selected-badge">
-                      <el-tag type="success" size="small">已选</el-tag>
-                      <code class="manual-selected-code">{{ stdSelectedMapping(ri)!.standard_account_code }}</code>
-                      <span class="manual-selected-name">{{ stdSelectedMapping(ri)!.standard_account_name }}</span>
-                      <span class="manual-selected-source">（手动选择）</span>
-                    </span>
-                  </div>
-                  <!-- 候选列表 -->
-                  <div v-if="rec.candidates.length > 0" class="match-candidates">
-                    <div
-                      v-for="(c, ci) in rec.candidates.slice(0, 4)"
-                      :key="ci"
-                      class="match-candidate"
-                      :class="{
-                        selected: stdSelectedMapping(ri)?.standard_account_id === c.standard_account_id,
-                        warning: !!c.warning
-                      }"
-                      @click="stdSelectCandidate(ri, c)"
-                    >
-                      <div class="mc-left">
-                        <span class="mc-code">{{ c.standard_account_code }}</span>
-                        <span class="mc-name">{{ c.standard_account_name }}</span>
-                        <span class="mc-source">{{ matchSourceLabel(c.source) }}</span>
-                        <span v-if="c.warning" class="mc-warning">{{ c.warning }}</span>
-                      </div>
-                      <div class="mc-right">
-                        <el-tag v-if="stdSelectedMapping(ri)?.standard_account_id === c.standard_account_id" type="success" size="small">已选</el-tag>
-                        <span v-else class="mc-score">{{ Math.round(c.score * 100) }}%</span>
-                      </div>
-                    </div>
-                  </div>
-                  <!-- 手动搜索 -->
-                  <div class="match-search">
-                    <el-input
-                      v-model="stdSearchQueries[ri]"
-                      size="small"
-                      placeholder="搜索标准科目..."
-                      clearable
-                      @input="stdSearchAccounts(ri)"
-                      style="width:200px"
-                    />
-                    <div v-if="stdSearchResults[ri]?.length" class="match-search-results">
-                      <div
-                        v-for="sr in stdSearchResults[ri].slice(0, 5)"
-                        :key="sr.id"
-                        class="match-search-item"
-                        :class="{ disabled: !sr.is_active }"
-                        @click="stdSelectSearchedAccount(ri, sr)"
-                      >
-                        <span>{{ sr.account_code }} {{ sr.account_name }}</span>
-                        <el-tag v-if="!sr.is_active" size="small" type="danger">停用</el-tag>
-                      </div>
-                    </div>
-                    <!-- 已手动选择时显示当前选择 + 清除按钮 -->
-                    <div v-if="stdSelectedMapping(ri) && !stdSearchResults[ri]?.length && !stdSearchQueries[ri]" class="match-current-selection">
-                      <el-tag type="success" size="small" closable @close="stdClearMapping(ri)">
-                        {{ stdSelectedMapping(ri)!.standard_account_code }} {{ stdSelectedMapping(ri)!.standard_account_name }}
-                      </el-tag>
-                    </div>
-                  </div>
-                  <span v-if="!rec.candidates.length && !stdSelectedMapping(ri)" class="unmapped-hint">未匹配，请搜索标准科目</span>
-                </div>
-              </div>
+              <div v-if="stdFilteredReviewRows.length === 0" class="std-empty-filter">当前筛选下没有行。</div>
             </div>
 
             <div class="step-footer">
@@ -475,8 +539,7 @@
 
                 <el-form-item label="数据类型">
                   <el-select v-model="dataType" placeholder="选择数据类型" class="form-full">
-                    <el-option label="科目余额表" value="trial_balance" />
-                    <el-option label="科目余额表标准化导入" value="standardized_trial_balance" />
+                    <el-option label="科目余额表" value="standardized_trial_balance" />
                     <el-option label="序时账" value="journal" />
                     <el-option label="辅助明细账" value="subsidiary" />
                   </el-select>
@@ -766,38 +829,6 @@
               </div>
             </div>
 
-            <!-- 模板候选（TASK-024） -->
-            <div v-if="templateCandidates.length > 0" class="template-candidates">
-              <div class="tc-header">
-                <span class="tc-title">推荐模板</span>
-                <el-button size="small" text @click="cancelTemplateApply()">
-                  {{ selectedTemplateId ? '取消套用' : '' }}
-                </el-button>
-              </div>
-              <div
-                v-for="tc in templateCandidates.slice(0, 3)"
-                :key="tc.template_id"
-                class="tc-card"
-                :class="{ selected: selectedTemplateId === tc.template_id }"
-                @click="applyTemplateCandidate(tc)"
-              >
-                <div class="tc-card-left">
-                  <div class="tc-name">{{ tc.name }}</div>
-                  <div class="tc-score">
-                    匹配 {{ tc.score }} 分 ·
-                    命中 {{ tc.matched_fields.length }} 字段 ·
-                    缺 {{ tc.missing_fields.length }} 字段
-                  </div>
-                  <div v-if="tc.warnings.length" class="tc-warnings">
-                    <span v-for="w in tc.warnings.slice(0,2)" :key="w">{{ w }}</span>
-                  </div>
-                </div>
-                <div class="tc-card-right">
-                  <el-tag v-if="selectedTemplateId === tc.template_id" type="success" size="small">已套用</el-tag>
-                  <el-tag v-else size="small">点击套用</el-tag>
-                </div>
-              </div>
-            </div>
           </div>
 
           <!-- 操作按钮 -->
@@ -960,7 +991,7 @@ const steps = computed(() => {
 // ===== 步骤状态 =====
 const activeStep = ref(0)
 const selectedCompanyId = ref<string | null>(null)
-const dataType = ref('trial_balance')
+const dataType = ref('standardized_trial_balance')
 const fileList = ref<UploadFile[]>([])
 const uploadRef = ref<UploadInstance>()
 
@@ -982,20 +1013,7 @@ const previewing = ref(false)
 const previewDone = ref(false)
 const previewError = ref('')
 
-// 模板候选（TASK-024）
-interface TemplateCandidate {
-  template_id: string
-  name: string
-  score: number
-  matched_fields: string[]
-  missing_fields: string[]
-  warnings: string[]
-  source_label: string | null
-}
-const templateCandidates = ref<TemplateCandidate[]>([])
-const selectedTemplateId = ref<string | null>(null)
 const columnsInfo = ref<any[]>([])
-const templateDefaultValues = ref<Record<string, any> | null>(null)
 const rememberMapping = ref(true)
 
 // 字段选项（value 必须与后端 TYPE_FIELDS / KEYWORD_MAP 完全一致）
@@ -1091,13 +1109,6 @@ const mappingValid = computed(() => {
   )
   if (manualFiscalYear.value) mappedKeys.add('fiscal_year')
   if (manualPeriod.value) mappedKeys.add('period')
-  // 模板默认值也能补齐年度/期间（仅当模板仍被选中时）
-  if (selectedTemplateId.value && templateDefaultValues.value?.fiscal_year && !mappedKeys.has('fiscal_year')) {
-    mappedKeys.add('fiscal_year')
-  }
-  if (selectedTemplateId.value && templateDefaultValues.value?.period && !mappedKeys.has('period')) {
-    mappedKeys.add('period')
-  }
   return missingFields.value.every((f) => mappedKeys.has(f))
 })
 
@@ -1132,7 +1143,6 @@ function extractError(e: any, defaultMsg: string): string {
 // 推荐来源中文标签
 function sourceLabel(s: string | undefined): string {
   const map: Record<string, string> = {
-    template: '导入模板',
     company_experience: '该客户历史确认',
     global_experience: '通用历史经验',
     keyword_match: '系统字段识别',
@@ -1240,11 +1250,7 @@ async function goPreview() {
       }
     })
 
-    // 模板候选 + 列信息（TASK-024）
-    templateCandidates.value = data.template_candidates || []
     columnsInfo.value = data.columns || []
-    selectedTemplateId.value = null
-    templateDefaultValues.value = null
 
     mappings.value = newMappings
     const manualFields: string[] = []
@@ -1311,9 +1317,6 @@ async function goExecute() {
     if (Object.keys(columnMappingV2).length > 0) {
       formData.append('column_mapping_v2', JSON.stringify(columnMappingV2))
     }
-    if (selectedTemplateId.value) {
-      formData.append('template_id', selectedTemplateId.value)
-    }
     formData.append('remember_mapping', String(rememberMapping.value))
 
     // mapping_confirmations (TASK-034)
@@ -1366,68 +1369,9 @@ function goBackToMapping() {
   activeStep.value = 1
 }
 
-// 套用模板候选（TASK-024）
-async function applyTemplateCandidate(tc: TemplateCandidate) {
-  selectedTemplateId.value = tc.template_id
-  try {
-    const formData = new FormData()
-    formData.append('file', fileList.value[0]!.raw as File)
-    formData.append('data_type', dataType.value)
-    formData.append('template_id', tc.template_id)
-
-    const { data } = await api.post('/imports/preview', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-
-    if (data.applied_mapping_v2) {
-      const v2 = data.applied_mapping_v2 as Record<string, string>
-      // 更新映射表：col_id → index → mapping row
-      const colIdToIndex: Record<string, number> = {}
-      for (const c of columnsInfo.value) {
-        colIdToIndex[c.column_id] = c.index
-      }
-      for (const [colId, fieldKey] of Object.entries(v2)) {
-        const idx = colIdToIndex[colId]
-        if (idx !== undefined && idx < mappings.value.length) {
-          mappings.value[idx].field_key = fieldKey
-          mappings.value[idx].status = fieldKey ? 'matched' : 'unmatched'
-          // 模板来源元数据 (TASK-037)
-          mappings.value[idx].suggestion_source = 'template'
-          mappings.value[idx].suggestion_confidence = 1.0
-          mappings.value[idx].original_field_key = fieldKey
-        }
-      }
-      // 捕获模板默认值
-      templateDefaultValues.value = data.template_default_values || null
-      ElMessage.success(`已套用模板：${tc.name}`)
-    }
-  } catch (e: any) {
-    ElMessage.error(normalizeError(e, '模板套用失败'))
-    selectedTemplateId.value = null
-    templateDefaultValues.value = null
-  }
-}
-
-// 取消套用模板（清理模板相关状态）
-function cancelTemplateApply() {
-  // 清除模板来源标记 (TASK-037)
-  if (selectedTemplateId.value) {
-    for (const m of mappings.value) {
-      if (m.suggestion_source === 'template') {
-        m.suggestion_source = undefined
-        m.suggestion_confidence = undefined
-        m.original_field_key = null  // 取消后不再以模板为基准 (TASK-038)
-      }
-    }
-  }
-  selectedTemplateId.value = null
-  templateDefaultValues.value = null
-}
-
 function resetImport() {
   activeStep.value = 0
   selectedCompanyId.value = null
-  dataType.value = 'trial_balance'
   manualFiscalYear.value = null
   manualPeriod.value = null
   auxFields.value = Array.from({ length: 6 }, () => ({ name: '' }))
@@ -1442,10 +1386,7 @@ function resetImport() {
   previewing.value = false
   executing.value = false
   progress.value = 0
-  templateCandidates.value = []
-  selectedTemplateId.value = null
   columnsInfo.value = []
-  templateDefaultValues.value = null
   result.value = { success_count: 0, fail_count: 0, failures: [] }
 }
 
@@ -1525,18 +1466,91 @@ interface StdMappingRow {
 const stdMappings = ref<StdMappingRow[]>([])
 const stdHierarchyMode = ref('auto')
 
+// 字段映射自动识别：中文表头别名 → 标准字段名
+// 命中后自动映射，用户仍可在下拉中手动修改。每个字段只分配给第一个命中的列。
+const STD_HEADER_ALIASES: Record<string, string[]> = {
+  account_code: ['科目编号', '科目代码', '科目编码', '编码', '代码', '科目号'],
+  account_name: ['科目名称', '科目全称', '科目', '说明', '名称'],
+  opening_debit: [
+    '期初借方', '期初借', '本币期初借', '本币期初(借)', '本币期初借方',
+    '期初借方余额', '年初借方余额', '年初借方',
+    '期初余额_借方', '期初余额_借方_金额', '期初余额借方', '期初余额借方金额',
+  ],
+  opening_credit: [
+    '期初贷方', '期初贷', '本币期初贷', '本币期初(贷)', '本币期初贷方',
+    '期初贷方余额', '年初贷方余额', '年初贷方',
+    '期初余额_贷方', '期初余额_贷方_金额', '期初余额贷方', '期初余额贷方金额',
+  ],
+  current_debit: [
+    '本期借方', '本期借', '期间借方', '本币期间异动借', '本币期间异动(借)', '本期借方发生额',
+    '本期发生_借方', '本期发生_借方_金额', '本期发生借方', '本期发生额_借方',
+  ],
+  current_credit: [
+    '本期贷方', '本期贷', '期间贷方', '本币期间异动贷', '本币期间异动(贷)', '本期贷方发生额',
+    '本期发生_贷方', '本期发生_贷方_金额', '本期发生贷方', '本期发生额_贷方',
+  ],
+  ending_debit: [
+    '期末借方', '期末借', '本币期末借', '本币期末(借)', '期末借方余额',
+    '期末余额_借方', '期末余额_借方_金额', '期末余额借方',
+  ],
+  ending_credit: [
+    '期末贷方', '期末贷', '本币期末贷', '本币期末(贷)', '期末贷方余额',
+    '期末余额_贷方', '期末余额_贷方_金额', '期末余额贷方',
+  ],
+  // 单列金额（按标准方向拆分）：常见「期初金额/本期金额/期末金额」单列格式
+  opening_amount: ['期初金额', '期初余额', '本币期初金额'],
+  current_amount: ['本期金额', '本期发生额', '本期发生', '本币本期金额'],
+  ending_amount: ['期末金额', '期末余额', '本币期末金额'],
+}
+
+// 规范化表头用于别名匹配：去空格、NFKC、小写、去括号/分隔符
+function stdNormalizeHeader(h: string): string {
+  return String(h || '')
+    .normalize('NFKC')
+    .replace(/[\s_\-—–./\\:：;；,，()（）\[\]【】{}]/g, '')
+    .toLowerCase()
+}
+
+// 根据表头文本自动推断字段名；未命中返回 ''
+function stdGuessFieldByHeader(header: string, usedFields: Set<string>): string {
+  const norm = stdNormalizeHeader(header)
+  if (!norm) return ''
+  // 优先精确匹配别名（规范化后比较）
+  for (const [field, aliases] of Object.entries(STD_HEADER_ALIASES)) {
+    if (usedFields.has(field)) continue
+    for (const alias of aliases) {
+      if (stdNormalizeHeader(alias) === norm) return field
+    }
+  }
+  // 再做包含匹配（表头包含别名，如「本币期初借方余额」包含「期初借方」）
+  for (const [field, aliases] of Object.entries(STD_HEADER_ALIASES)) {
+    if (usedFields.has(field)) continue
+    for (const alias of aliases) {
+      const normAlias = stdNormalizeHeader(alias)
+      if (normAlias && norm.includes(normAlias)) return field
+    }
+  }
+  return ''
+}
+
 function stdInitMappings() {
   const cols = stdColumns.value
   const rows = stdSampleRows.value
   const first = rows[0] || {}
-  stdMappings.value = cols.map(c => ({
-    column_id: c.column_id,
-    header_text: c.header_text,
-    column_index: c.column_index,
-    field_name: '',
-    split_mode: null,
-    sample_value: String(first[c.column_id] || ''),
-  }))
+  const usedFields = new Set<string>()
+  stdMappings.value = cols.map(c => {
+    const field_name = stdGuessFieldByHeader(c.header_text, usedFields)
+    if (field_name) usedFields.add(field_name)
+    const split_mode = field_name && stdIsSingleAmountField(field_name) ? 'single_by_direction' : null
+    return {
+      column_id: c.column_id,
+      header_text: c.header_text,
+      column_index: c.column_index,
+      field_name,
+      split_mode,
+      sample_value: String(first[c.column_id] || ''),
+    }
+  })
 }
 
 const stdEffectiveFiscalYear = computed(() => {
@@ -1589,8 +1603,26 @@ const stdAmounts = ref<import('@/types').AmountInfo[]>([])
 const stdErrors = ref<import('@/types').BlockingError[]>([])
 const stdWarnings = ref<import('@/types').WarningItem[]>([])
 
+type StdRowFilter = 'all' | 'unmapped' | 'matched' | 'ignored' | 'warning'
+type StdReviewRow = {
+  row_index: number
+  client_account_code: string | null
+  client_account_name: string | null
+  level: number | null
+  parent_key: string | null
+  is_leaf: boolean
+  is_summary: boolean
+  participates_in_entry: boolean
+  level_source: string
+  hierarchy: import('@/types').HierarchyInfo | null
+  amount: import('@/types').AmountInfo | null
+  rec: import('@/types').MappingRecommendEntry | null
+}
+
 // 用户确认的映射：row_index → candidate
 const stdConfirmedMap = ref<Record<number, import('@/types').MappingCandidate | null>>({})
+const stdIgnoredRows = ref<Record<number, boolean>>({})
+const stdRowFilter = ref<StdRowFilter>('all')
 
 // 搜索
 const stdSearchQueries = ref<Record<number, string>>({})
@@ -1620,6 +1652,16 @@ async function stdGoAnalyze() {
         entry.split_mode = 'two_column'
       }
       fieldMappings.push(entry)
+    }
+
+    // 前置校验：必须至少映射「客户科目代码」或「客户科目名称」之一，
+    // 否则后端无法识别行身份，第三步会全部显示为空行（代码/名称为 —，未匹配 0）。
+    const hasAccountIdentity = fieldMappings.some(
+      fm => fm.field_name === 'account_code' || fm.field_name === 'account_name'
+    )
+    if (!hasAccountIdentity) {
+      ElMessage.warning('请至少将一列映射为「客户科目代码」或「客户科目名称」，否则无法识别科目行。')
+      return
     }
 
     // pair debit/credit columns
@@ -1656,11 +1698,16 @@ async function stdGoAnalyze() {
 
     // 自动选中高置信度候选（非警告）
     stdConfirmedMap.value = {}
+    stdIgnoredRows.value = {}
+    stdSearchQueries.value = {}
+    stdSearchResults.value = {}
+    stdRowFilter.value = 'all'
     for (let i = 0; i < data.mapping_recommendations.length; i++) {
       const rec = data.mapping_recommendations[i]
+      const rowIndex = stdRecommendationRowIndex(rec, i)
       const best = rec.candidates.find(c => !c.warning && c.score >= 0.9)
       if (best) {
-        stdConfirmedMap.value[i] = best
+        stdConfirmedMap.value[rowIndex] = best
       }
     }
 
@@ -1677,6 +1724,167 @@ async function stdGoAnalyze() {
 const stdFlatHierarchy = computed(() => stdHierarchy.value)
 const stdFlatAmounts = computed(() => stdAmounts.value)
 
+function stdRecommendationRowIndex(rec: import('@/types').MappingRecommendEntry, fallback: number): number {
+  const maybeRec = rec as import('@/types').MappingRecommendEntry & { row_index?: number | null }
+  return typeof maybeRec.row_index === 'number' ? maybeRec.row_index : fallback
+}
+
+const stdHierarchyByRow = computed(() => {
+  const map = new Map<number, import('@/types').HierarchyInfo>()
+  for (const item of stdHierarchy.value) map.set(item.row_index, item)
+  return map
+})
+
+const stdAmountsByRow = computed(() => {
+  const map = new Map<number, import('@/types').AmountInfo>()
+  for (const item of stdAmounts.value) map.set(item.row_index, item)
+  return map
+})
+
+const stdRecommendationsByRow = computed(() => {
+  const map = new Map<number, import('@/types').MappingRecommendEntry>()
+  for (let i = 0; i < stdMappingRecs.value.length; i++) {
+    const rec = stdMappingRecs.value[i]
+    map.set(stdRecommendationRowIndex(rec, i), rec)
+  }
+  return map
+})
+
+const stdWarningsByRow = computed(() => {
+  const map = new Map<number, import('@/types').WarningItem[]>()
+  for (const warning of stdWarnings.value) {
+    if (typeof warning.row_index !== 'number') continue
+    const items = map.get(warning.row_index) || []
+    items.push(warning)
+    map.set(warning.row_index, items)
+  }
+  return map
+})
+
+const stdReviewRows = computed<StdReviewRow[]>(() => {
+  const rowIndexes = new Set<number>()
+  for (const item of stdHierarchy.value) rowIndexes.add(item.row_index)
+  for (const item of stdAmounts.value) rowIndexes.add(item.row_index)
+  for (let i = 0; i < stdMappingRecs.value.length; i++) {
+    rowIndexes.add(stdRecommendationRowIndex(stdMappingRecs.value[i], i))
+  }
+
+  return Array.from(rowIndexes).sort((a, b) => a - b).map((rowIndex) => {
+    const hierarchy = stdHierarchyByRow.value.get(rowIndex) || null
+    const amount = stdAmountsByRow.value.get(rowIndex) || null
+    const rec = stdRecommendationsByRow.value.get(rowIndex) || null
+    const isSummary = rec?.is_summary ?? hierarchy?.is_summary ?? false
+    const isLeaf = rec?.is_leaf ?? hierarchy?.is_leaf ?? !isSummary
+    const participates = rec?.participates_in_entry ?? (isLeaf && !isSummary)
+
+    return {
+      row_index: rowIndex,
+      client_account_code: hierarchy?.client_account_code ?? rec?.client_account_code ?? null,
+      client_account_name: hierarchy?.client_account_name ?? rec?.client_account_name ?? null,
+      level: hierarchy?.level ?? null,
+      parent_key: hierarchy?.parent_key ?? null,
+      is_leaf: isLeaf,
+      is_summary: isSummary,
+      participates_in_entry: participates,
+      level_source: hierarchy?.level_source ?? '',
+      hierarchy,
+      amount,
+      rec,
+    }
+  })
+})
+
+const stdIgnoredRowIndexes = computed(() =>
+  Object.keys(stdIgnoredRows.value)
+    .map(Number)
+    .filter(rowIndex => stdIgnoredRows.value[rowIndex])
+    .sort((a, b) => a - b)
+)
+
+function stdRowHasIdentity(row: StdReviewRow): boolean {
+  return !!(row.client_account_code || row.client_account_name)
+}
+
+function stdRowParticipates(row: StdReviewRow): boolean {
+  return row.participates_in_entry && row.is_leaf && !row.is_summary
+}
+
+function stdIsIgnored(rowIndex: number): boolean {
+  return !!stdIgnoredRows.value[rowIndex]
+}
+
+function stdRowRequiresMapping(row: StdReviewRow): boolean {
+  return stdRowParticipates(row) && stdRowHasIdentity(row) && !stdIsIgnored(row.row_index)
+}
+
+function stdRowWarningMessages(row: StdReviewRow): string[] {
+  const messages: string[] = []
+  for (const warning of stdWarningsByRow.value.get(row.row_index) || []) messages.push(warning.message)
+  for (const warning of row.amount?.warnings || []) messages.push(warning)
+  const selected = stdSelectedMapping(row.row_index)
+  if (selected?.warning) messages.push(selected.warning)
+  for (const candidate of row.rec?.candidates || []) {
+    if (candidate.warning) messages.push(candidate.warning)
+  }
+  return Array.from(new Set(messages))
+}
+
+function stdRowStatus(row: StdReviewRow): { label: string; type: '' | 'success' | 'warning' | 'info' | 'danger' } {
+  if (stdIsIgnored(row.row_index)) return { label: '已忽略', type: 'info' }
+  if (!stdRowParticipates(row)) return { label: '父级不入库', type: 'warning' }
+  if (stdSelectedMapping(row.row_index)) return { label: '已匹配', type: 'success' }
+  return { label: '未匹配', type: 'danger' }
+}
+
+function stdConfidenceText(score: number | null | undefined): string {
+  if (typeof score !== 'number' || Number.isNaN(score)) return '—'
+  return `${Math.round(score * 100)}%`
+}
+
+function stdReviewRowClassName({ row }: { row: StdReviewRow }): string {
+  if (stdIsIgnored(row.row_index)) return 'std-row-ignored'
+  if (!stdRowParticipates(row)) return 'std-row-parent'
+  if (stdRowRequiresMapping(row) && !stdSelectedMapping(row.row_index)) return 'std-row-unmapped'
+  return ''
+}
+
+const stdMatchedCount = computed(() =>
+  stdReviewRows.value.filter(row => stdRowRequiresMapping(row) && !!stdSelectedMapping(row.row_index)).length
+)
+
+const stdWarningRowCount = computed(() =>
+  stdReviewRows.value.filter(row => stdRowWarningMessages(row).length > 0).length
+)
+
+const stdFilteredReviewRows = computed(() => {
+  switch (stdRowFilter.value) {
+    case 'unmapped':
+      return stdReviewRows.value.filter(row => stdRowRequiresMapping(row) && !stdSelectedMapping(row.row_index))
+    case 'matched':
+      return stdReviewRows.value.filter(row => stdRowRequiresMapping(row) && !!stdSelectedMapping(row.row_index))
+    case 'ignored':
+      return stdReviewRows.value.filter(row => stdIsIgnored(row.row_index))
+    case 'warning':
+      return stdReviewRows.value.filter(row => stdRowWarningMessages(row).length > 0)
+    default:
+      return stdReviewRows.value
+  }
+})
+
+function stdReviewRowByIndex(rowIndex: number | null | undefined): StdReviewRow | null {
+  if (typeof rowIndex !== 'number') return null
+  return stdReviewRows.value.find(row => row.row_index === rowIndex) || null
+}
+
+function stdBackendErrorStillBlocks(error: import('@/types').BlockingError): boolean {
+  if (error.category === 'unmapped_account' || error.category === 'no_direction') return false
+  if (typeof error.row_index !== 'number') return true
+  if (stdIsIgnored(error.row_index)) return false
+  const row = stdReviewRowByIndex(error.row_index)
+  if (row && !stdRowParticipates(row)) return false
+  return true
+}
+
 // 动态计算阻止项：基于当前确认映射状态，而非 analyze 的静态错误快照
 const stdBlockingErrors = computed(() => {
   const errors: Array<{ code: string; message: string; category: string; row_index: number | null }> = []
@@ -1687,31 +1895,18 @@ const stdBlockingErrors = computed(() => {
     (m.field_name === 'opening_amount' || m.field_name === 'current_amount' || m.field_name === 'ending_amount')
   )
 
-  // 遍历所有映射推荐，动态检查未映射和方向缺失
-  for (let i = 0; i < stdMappingRecs.value.length; i++) {
-    const rec = stdMappingRecs.value[i]
-    // 跳过没有代码也没有名称的行（无标识行，后端已在 analyze 中忽略）
-    if (!rec.client_account_code && !rec.client_account_name) continue
+  // 遍历参与入库的当前行，动态检查方向缺失。未映射由 stdUnmappedCount 单独统计。
+  for (const row of stdReviewRows.value) {
+    if (!stdRowRequiresMapping(row)) continue
+    const cm = stdSelectedMapping(row.row_index)
+    if (!cm) continue
 
-    const cm = stdConfirmedMap.value[i]
-
-    // 1. 未映射检查：有代码或名称的末级行必须有确认映射
-    if (!cm) {
-      errors.push({
-        row_index: i,
-        code: 'unmapped_account',
-        message: `客户科目「${rec.client_account_code || '?'} ${rec.client_account_name || ''}」未映射到标准科目，请手动选择`,
-        category: 'unmapped_account',
-      })
-      continue // 未映射则无需检查方向
-    }
-
-    // 2. 方向缺失检查：使用"按标准方向拆分"时，标准科目必须有余额方向
+    // 使用"按标准方向拆分"时，标准科目必须有余额方向
     if (hasDirectionSplit) {
       const dir = cm.standard_balance_direction
       if (!dir || dir === '') {
         errors.push({
-          row_index: i,
+          row_index: row.row_index,
           code: 'no_direction',
           message: `标准科目「${cm.standard_account_code} ${cm.standard_account_name}」余额方向为空，无法按标准方向拆分金额，请改为显式借/贷方`,
           category: 'no_direction',
@@ -1720,11 +1915,9 @@ const stdBlockingErrors = computed(() => {
     }
   }
 
-  // 3. 保留真实数据缺陷（来自 analyze 的 missing_amount / missing_code_and_name）
+  // 保留真实数据缺陷；已忽略行和父级不入库行不再阻止。
   for (const e of stdErrors.value) {
-    if (e.category === 'missing_amount' || e.category === 'missing_code_and_name') {
-      errors.push(e)
-    }
+    if (stdBackendErrorStillBlocks(e)) errors.push(e)
   }
 
   return errors
@@ -1736,7 +1929,10 @@ const stdHasWarnings = computed(() => stdWarnings.value.length > 0)
 const stdWarningsConfirmed = ref(false)
 
 function levelSourceLabel(s: string): string {
-  const map: Record<string, string> = { code: '代码', indent: '缩进', flat: '平铺', indent_suggested: '缩进推断', auto: '自动' }
+  const map: Record<string, string> = {
+    code: '代码', code_prefix: '代码前缀', indent: '缩进',
+    flat: '平铺', indent_suggested: '缩进推断', auto: '自动',
+  }
   return map[s] || s
 }
 
@@ -1751,7 +1947,14 @@ function matchSourceLabel(s: string): string {
     company_history: '该客户历史',
     global_history: '全局历史',
     code_match: '代码匹配',
+    code_match_conflict: '代码冲突',
+    name_exact: '名称精确',
     name_similarity: '名称相似',
+    code_prefix_parent: '代码前缀',
+    code_category_anchor: '代码类别',
+    category_prefix: '类别前缀',
+    name_anchor: '名称锚点',
+    semantic_alias: '语义匹配',
     user_selected: '手动选择',
   }
   return map[s] || s
@@ -1773,20 +1976,59 @@ function stdClearMapping(ri: number) {
   stdSearchResults.value[ri] = []
 }
 
-// 未映射的末级科目数量
+// 忽略行：只能忽略参与入库的末级行
+function stdIgnoreRow(rowIndex: number) {
+  const row = stdReviewRowByIndex(rowIndex)
+  if (!row) {
+    ElMessage.warning('未找到该行，无法忽略')
+    return
+  }
+  // 只有参与入库的末级行可以忽略；父级行、无身份空行不允许忽略
+  if (!stdRowParticipates(row)) {
+    ElMessage.warning('该行不是参与入库的末级科目，无需忽略')
+    return
+  }
+  // 设置忽略标记
+  stdIgnoredRows.value[rowIndex] = true
+  // 清除该行已确认的映射
+  delete stdConfirmedMap.value[rowIndex]
+  // 清除该行搜索框和搜索结果
+  stdSearchQueries.value[rowIndex] = ''
+  stdSearchResults.value[rowIndex] = []
+  // 忽略会改变行级状态，重置警告确认
+  if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
+}
+
+// 取消忽略行
+function stdCancelIgnoreRow(rowIndex: number) {
+  delete stdIgnoredRows.value[rowIndex]
+  // 取消忽略会改变行级状态，重置警告确认
+  if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
+  // 可选：如果该行原本有高置信无警告候选，重新自动选中
+  const row = stdReviewRowByIndex(rowIndex)
+  if (row && !stdConfirmedMap.value[rowIndex]) {
+    const best = row.rec?.candidates.find(c => !c.warning && c.score >= 0.9)
+    if (best) {
+      stdConfirmedMap.value[rowIndex] = best
+    }
+  }
+}
+
+// 未映射的末级科目数量（基于行级状态：参与入库且需匹配但未选择的行）
 const stdUnmappedCount = computed(() => {
   let count = 0
-  for (let i = 0; i < stdMappingRecs.value.length; i++) {
-    const rec = stdMappingRecs.value[i]
-    if (!rec.client_account_code && !rec.client_account_name) continue
-    if (!stdConfirmedMap.value[i]) count++
+  for (const row of stdReviewRows.value) {
+    // 已忽略、父级不入库、无身份空行都不计未匹配
+    if (!stdRowRequiresMapping(row)) continue
+    if (!stdSelectedMapping(row.row_index)) count++
   }
   return count
 })
 
-// 确认的映射摘要（用于步骤 3 展示）
+// 确认的映射摘要（用于步骤 3 展示）：基于 stdReviewRows 按 row_index 汇总
 const stdConfirmedMappingSummary = computed(() => {
   const summary: Array<{
+    row_index: number
     client_account_code: string | null
     client_account_name: string | null
     standard_account_code: string
@@ -1794,13 +2036,17 @@ const stdConfirmedMappingSummary = computed(() => {
     source: string
     warning: string | null
   }> = []
-  for (let i = 0; i < stdMappingRecs.value.length; i++) {
-    const rec = stdMappingRecs.value[i]
-    const cm = stdConfirmedMap.value[i]
+  for (const row of stdReviewRows.value) {
+    // 已忽略行不进入摘要；父级不入库行不进入摘要
+    if (stdIsIgnored(row.row_index)) continue
+    if (!stdRowParticipates(row)) continue
+    const cm = stdSelectedMapping(row.row_index)
     if (!cm) continue
+    // 使用行级 rec/client_account_code/client_account_name，不靠代码名称回找 hierarchy
     summary.push({
-      client_account_code: rec.client_account_code,
-      client_account_name: rec.client_account_name,
+      row_index: row.row_index,
+      client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
+      client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
       standard_account_code: cm.standard_account_code,
       standard_account_name: cm.standard_account_name,
       source: cm.source,
@@ -1914,19 +2160,17 @@ async function stdGoExecute() {
 
   try {
     const confirmedMappings: import('@/types').ConfirmedMapping[] = []
-    for (let i = 0; i < stdMappingRecs.value.length; i++) {
-      const rec = stdMappingRecs.value[i]
-      const cm = stdConfirmedMap.value[i]
+    // 基于 stdReviewRows 按 row_index 提交，使用行级 rec/client_account_code/client_account_name，
+    // 不靠代码名称回找 hierarchy。已忽略行不进入提交。
+    for (const row of stdReviewRows.value) {
+      if (stdIsIgnored(row.row_index)) continue
+      if (!stdRowParticipates(row)) continue
+      const cm = stdSelectedMapping(row.row_index)
       if (!cm) continue
-      // find the hierarchy entry for this recommendation
-      const hier = stdHierarchy.value.find(h =>
-        (h.client_account_code || '') === (rec.client_account_code || '') &&
-        (h.client_account_name || '') === (rec.client_account_name || '')
-      )
       confirmedMappings.push({
-        row_index: hier?.row_index ?? i,
-        client_account_code: rec.client_account_code,
-        client_account_name: rec.client_account_name,
+        row_index: row.row_index,
+        client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
+        client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
         standard_account_id: cm.standard_account_id,
         standard_account_code: cm.standard_account_code,
         standard_account_name: cm.standard_account_name,
@@ -1935,6 +2179,7 @@ async function stdGoExecute() {
 
     const req: import('@/types').StdExecuteRequest = {
       confirmed_mappings: confirmedMappings,
+      ignored_rows: stdIgnoredRowIndexes.value,
       warnings_confirmed: stdWarningsConfirmed.value,
       save_mapping_experience: true,
     }
@@ -2649,40 +2894,6 @@ watch(dataType, (newVal, oldVal) => {
 }
 
 /* ============================================================
-   模板候选（TASK-024）
-   ============================================================ */
-.template-candidates {
-  margin-top: var(--spacing-4);
-  padding: var(--spacing-3);
-  background: var(--color-primary-50, #f0f5ff);
-  border: 1px solid var(--color-primary-200, #bdd3f0);
-  border-radius: var(--radius-md);
-}
-.tc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-2); }
-.tc-title { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-
-.tc-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-3);
-  margin-bottom: var(--spacing-2);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  transition: border-color var(--transition-fast);
-}
-.tc-card:hover { border-color: var(--color-primary-400); }
-.tc-card.selected { border-color: var(--color-success); background: rgba(103, 194, 58, 0.04); }
-
-.tc-card-left { min-width: 0; }
-.tc-name { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
-.tc-score { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
-.tc-warnings { font-size: var(--font-size-xs); color: var(--color-warning); margin-top: 2px; }
-.tc-card-right { flex-shrink: 0; margin-left: var(--spacing-2); }
-
-/* ============================================================
    标准化导入样式 — TASK-045
    ============================================================ */
 
@@ -2715,6 +2926,126 @@ watch(dataType, (newVal, oldVal) => {
 .std-review-left,
 .std-review-right {
   min-width: 0;
+}
+
+/* ===== 第三步行级匹配表 ===== */
+.std-match-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.std-match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+.std-match-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+.std-table-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.std-match-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  /* 确保内部表格不撑破外层容器 */
+  contain: layout style;
+}
+
+/* 匹配表总宽固定，列宽之和 > 容器宽度时 el-table body-wrapper 出现横向滚动条 */
+.std-match-table-wrap :deep(.std-match-table) {
+  min-width: 1900px;
+}
+
+/* 金额列：右对齐、不换行、等宽数字、完整显示不省略 */
+.std-match-table-wrap :deep(.std-amount-col .cell) {
+  text-align: right;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, 'Consolas', 'Monaco', monospace);
+  color: var(--text-primary);
+  padding-right: 16px;
+  padding-left: 8px;
+}
+
+.std-level-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.std-level-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.std-parent-key {
+  font-size: var(--font-size-xs);
+  color: var(--text-placeholder);
+}
+
+.std-row-warning-count {
+  margin-top: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-warning);
+}
+
+.std-current-account {
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.std-current-account code {
+  margin-right: 6px;
+  color: var(--color-primary);
+}
+
+.std-current-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.std-current-warning {
+  font-size: var(--font-size-xs);
+  color: var(--color-warning);
+  margin-top: 2px;
+}
+
+.std-current-account.ignored {
+  color: var(--text-placeholder);
+  font-style: italic;
+}
+
+.std-current-account.muted {
+  color: var(--text-placeholder);
+}
+
+.std-current-account.unmapped {
+  color: var(--color-danger);
+}
+
+.std-action-muted {
+  color: var(--text-placeholder);
+  font-size: var(--font-size-xs);
 }
 
 .warning-block {

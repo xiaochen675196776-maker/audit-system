@@ -53,17 +53,6 @@ export interface PaginatedResponse<T> {
 
 // ===== 导入相关 =====
 
-// 预览 API 返回的匹配结果
-export interface TemplateCandidate {
-  template_id: string
-  name: string
-  score: number
-  matched_fields: string[]
-  missing_fields: string[]
-  warnings: string[]
-  source_label: string | null
-}
-
 export interface ColumnInfo {
   column_id: string
   index: number
@@ -87,13 +76,9 @@ export interface ImportPreviewResponse {
   preview_rows: string[][]
   row_count: number
   data_type: string
-  template_candidates?: TemplateCandidate[]
-  applied_mapping_v2?: Record<string, string>
-  applied_template_name?: string
-  template_default_values?: Record<string, any>
   mapping_suggestions_v2?: Record<string, {
     target_field: string
-    source: 'template' | 'company_experience' | 'global_experience' | 'keyword_match'
+    source: 'company_experience' | 'global_experience' | 'keyword_match'
     confidence: number
     experience_id?: string
   }>
@@ -155,10 +140,22 @@ export interface ImportBatchListResponse {
 
 // ===== 数据查看：树形节点 =====
 
+// ===== 数据查看：树形节点 =====
+
+export type TreeNodeType = 'account' | 'client_group' | 'entry'
+
 export interface TreeNode {
+  node_id: string
+  node_type: TreeNodeType
   standard_account_id: string
+  entry_id: string | null
   account_code: string
   account_name: string
+  // entry 节点携带的标准科目快照（account 节点为 null），用于展示「标准：141101 包装物」
+  standard_account_code: string | null
+  standard_account_name: string | null
+  client_account_code: string | null
+  client_account_name: string | null
   account_category: string | null
   balance_direction: string | null
   level: number | null
@@ -294,8 +291,12 @@ export interface MappingCandidate {
 }
 
 export interface MappingRecommendEntry {
+  row_index: number
   client_account_code: string | null
   client_account_name: string | null
+  is_leaf?: boolean
+  is_summary?: boolean
+  participates_in_entry?: boolean
   candidates: MappingCandidate[]
 }
 
@@ -320,6 +321,7 @@ export interface ConfirmedMapping {
 
 export interface StdExecuteRequest {
   confirmed_mappings: ConfirmedMapping[]
+  ignored_rows: number[]
   warnings_confirmed: boolean
   save_mapping_experience: boolean
 }
