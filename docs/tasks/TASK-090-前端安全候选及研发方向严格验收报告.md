@@ -5,7 +5,7 @@
 | 项 | 内容 |
 |---|---|
 | 基准提交 | `c0e3fa8` (TASK-089:科目余额表匹配真实数据回归 — 验收缺陷修复) |
-| 完成提交 | 见末尾 Git 段 |
+| 完成提交 | `a2ce39a` (TASK-090: 前端安全候选及研发方向严格验收) |
 | 执行日期 | 2026-06-26 |
 | 任务范围 | 前端安全候选生产函数修复 + 前端测试重写 + 后端研发方向严格验收 + 后端生产代码小范围修复 |
 | 任务文档 | `D:\APP\谷歌\文件下载\TASK-090_前端安全候选及研发方向严格验收.md` |
@@ -371,4 +371,17 @@ TASK-087 是否可关闭:是
 
 ## 13. Git
 
-(将在提交推送后补全)
+```
+a2ce39a TASK-090: 前端安全候选及研发方向严格验收
+        12 files changed, 1086 insertions(+), 155 deletions(-)
+        M  backend/app/services/client_account_mapping_service.py
+        M  backend/tests/test_client_account_mapping_name_first.py
+        M  backend/test_reports/task_089_mapping_regression.{csv,json,md}  (六表重跑更新)
+        A  backend/test_reports/task_090_console_output.txt
+        A  backend/test_reports/task_090_mapping_regression.{csv,json,md}
+        A  docs/tasks/TASK-090-前端安全候选及研发方向严格验收报告.md
+        M  frontend/src/utils/mappingCandidate.ts
+        M  frontend/src/utils/mappingCandidate.test.ts
+
+推送: c0e3fa8..a2ce39a  master -> master ✅
+```
