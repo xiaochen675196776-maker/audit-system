@@ -962,6 +962,7 @@ import {
 import type { UploadFile, UploadInstance } from 'element-plus'
 import api from '@/api'
 import { normalizeError } from '@/utils/error'
+import { isSafeCandidate, pickUniqueAutoConfirmCandidate, getAutoConfirmCandidate } from '@/utils/mappingCandidate'
 import type {
   Company,
   ImportPreviewResponse,
@@ -1696,7 +1697,7 @@ async function stdGoAnalyze() {
     stdErrors.value = data.errors
     stdWarnings.value = data.warnings
 
-    // 自动选中高置信度候选（非警告）
+    // TASK-087：使用后端 auto_confirm_candidate 进行安全自动选中
     stdConfirmedMap.value = {}
     stdIgnoredRows.value = {}
     stdSearchQueries.value = {}
@@ -1705,7 +1706,8 @@ async function stdGoAnalyze() {
     for (let i = 0; i < data.mapping_recommendations.length; i++) {
       const rec = data.mapping_recommendations[i]
       const rowIndex = stdRecommendationRowIndex(rec, i)
-      const best = rec.candidates.find(c => !c.warning && c.score >= 0.9)
+      // 优先使用后端决策，回退到前端安全判定
+      const best = getAutoConfirmCandidate(rec.candidates, rec.auto_confirm_candidate)
       if (best) {
         stdConfirmedMap.value[rowIndex] = best
       }
@@ -2004,10 +2006,13 @@ function stdCancelIgnoreRow(rowIndex: number) {
   delete stdIgnoredRows.value[rowIndex]
   // 取消忽略会改变行级状态，重置警告确认
   if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
-  // 可选：如果该行原本有高置信无警告候选，重新自动选中
+  // TASK-087：使用安全判定逻辑重新自动选中
   const row = stdReviewRowByIndex(rowIndex)
   if (row && !stdConfirmedMap.value[rowIndex]) {
-    const best = row.rec?.candidates.find(c => !c.warning && c.score >= 0.9)
+    const best = getAutoConfirmCandidate(
+      row.rec?.candidates || [],
+      row.rec?.auto_confirm_candidate
+    )
     if (best) {
       stdConfirmedMap.value[rowIndex] = best
     }
@@ -2131,6 +2136,10 @@ function stdSelectSearchedAccount(ri: number, sa: any) {
     reason: `用户手动选择 → ${sa.account_code} ${sa.account_name}`,
     warning: null,
     standard_balance_direction: sa.balance_direction,
+    auto_confirmable: false,
+    compatibility_status: 'compatible',
+    compatibility_reason: '用户人工确认',
+    evidence: ['user_selected'],
   }
   stdConfirmedMap.value[ri] = candidate
   stdSearchQueries.value[ri] = ''

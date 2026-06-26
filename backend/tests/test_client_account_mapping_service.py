@@ -168,7 +168,8 @@ class TestGlobalFallback:
         code_candidates = [c for c in candidates if c["source"] == "code_match"]
         assert len(code_candidates) >= 1
         assert code_candidates[0]["standard_account_code"] == "4001"
-        assert code_candidates[0]["score"] == 0.95
+        # TASK-087：代码匹配后需要通过名称兼容性检查；名称"营业收入"≠"主营业务收入"→ unknown
+        assert code_candidates[0]["score"] == 0.82
 
     @pytest.mark.asyncio
     async def test_name_similarity_fallback(self, db):
@@ -226,7 +227,8 @@ class TestNormalizedMatching:
         assert first["source"] == "code_match"
         assert first["standard_account_id"] == str(sa.id)
         assert first["standard_account_code"] == "100101"
-        assert first["warning"] is None
+        # TASK-087：名称"现金"≠"库存现金"，但代码匹配通过名称兼容性检查后为 unknown
+        assert first["compatibility_status"] == "unknown"
 
     @pytest.mark.asyncio
     async def test_name_exact_match_normalizes_internal_spaces(self, db):
@@ -1007,9 +1009,9 @@ class TestCanonicalNameAndCategoryAnchor:
         category_cands = [c for c in candidates if c["source"] == "code_category_anchor"]
         assert len(category_cands) >= 1, "无 6604 标准科目时应按代码类别锚点命中"
         assert category_cands[0]["standard_account_id"] == str(sa.id)
-        # TASK-079：代码类别锚点命中且标准科目 canonical name 与锚点一致时，提升为安全候选
-        assert category_cands[0]["score"] >= 0.9
-        assert category_cands[0]["warning"] is None
+        # TASK-087：名称不直接匹配时需要名称兼容性检查；名称"研发项目支出"未明确匹配"研发费用"
+        assert category_cands[0]["score"] >= 0.85
+        assert category_cands[0]["warning"] is not None
 
         # 仅给代码无名称时也应命中
         results2 = await recommend_mappings(

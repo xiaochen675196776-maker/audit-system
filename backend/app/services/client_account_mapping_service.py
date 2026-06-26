@@ -11,16 +11,30 @@
 """
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 import re
 import unicodedata
+from typing import Literal
 
 from sqlalchemy import select, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client_account_mapping import ClientAccountMapping
 from app.models.standard_account import StandardAccount
+
+
+# ── TASK-087：统一名称兼容性评估结果 ────────────────────
+
+
+@dataclass
+class CompatibilityResult:
+    """客户科目名称与标准科目的语义兼容性判定结果。"""
+    status: Literal["compatible", "conflict", "unknown"]
+    reason: str
+    evidence: list[str] = field(default_factory=list)
+    detected_group: str | None = None
 
 
 # ── 旧科目编码→新标准科目编码 crosswalk ──────────────
@@ -486,6 +500,211 @@ def _standard_account_conflicts_semantic_group(sa: StandardAccount, group_key: s
     return False
 
 
+# ── TASK-087：统一名称语义兼容性评估器 ──────────────────
+
+def evaluate_name_compatibility(
+    standard_account: StandardAccount,
+    *,
+    client_account_name: str | None,
+    parent_client_account_name: str | None = None,
+    ancestor_names: list[str] | None = None,
+    client_account_full_path: str | None = None,
+) -> CompatibilityResult:
+    """统一评估客户科目名称与标准科目的语义兼容性。
+
+    所有候选源（code_match / crosswalk / parent_inherited / code_category_anchor 等）
+    必须通过此评估器后才能判定为安全候选。禁止各来源各自实现零散冲突判断。
+
+    返回 CompatibilityResult: compatible / conflict / unknown
+    """
+    evidence: list[str] = []
+
+    # ── 构建客户名称上下文 ──
+    client_norm = _normalize_name(client_account_name)
+    parent_norm = _normalize_name(parent_client_account_name)
+    ancestor_norms = [_normalize_name(a) for a in (ancestor_names or [])]
+    path_norm = _normalize_name(client_account_full_path)
+    evidence.append(f"client_name={client_account_name or '(空)'}")
+
+    # ── 规则 0：客户端名称缺失 ──
+    if not client_norm:
+        return CompatibilityResult(
+            status="unknown",
+            reason="客户科目名称为空，无法进行名称语义兼容性判断",
+            evidence=evidence,
+        )
+
+    # ── 构建标准科目信息 ──
+    sa_name = standard_account.account_name or ""
+    sa_code = standard_account.account_code or ""
+    sa_canonical = _canonical_name(sa_name)
+    sa_norm = _normalize_name(sa_name)
+
+    evidence.append(f"standard={sa_code} {sa_name}")
+
+    # ── 规则 1：名称规范化后完全一致 ──
+    # 但标准名称含「减：/加：/其中：」时不视为精确一致（需人工确认）
+    if client_norm == sa_norm:
+        # 检查标准名称是否带显示前缀
+        for pfx in _STANDARD_NAME_DISPLAY_PREFIXES:
+            if pfx and sa_name.lstrip().startswith(pfx):
+                return CompatibilityResult(
+                    status="unknown",
+                    reason=f"名称一致但标准科目带显示前缀「{pfx}」，需人工确认经济含义",
+                    evidence=evidence,
+                )
+        return CompatibilityResult(
+            status="compatible",
+            reason="客户科目名称与标准科目名称完全一致",
+            evidence=evidence,
+        )
+
+    # ── 规则 2：客户名称过于泛化，无法判断 ──
+    generic_norm = {_normalize_name(n) for n in _GENERIC_LEAF_NAMES}
+    if client_norm in generic_norm and not parent_norm and not ancestor_norms:
+        return CompatibilityResult(
+            status="unknown",
+            reason=f"客户名称「{client_account_name}」过于泛化且无父级上下文，无法判断兼容性",
+            evidence=evidence,
+        )
+
+    # ── 规则 3：语义组检测 ──
+    client_group = _detect_semantic_group(client_account_name)
+    # 也尝试用父级名称检测语义组
+    parent_group = _detect_semantic_group(parent_client_account_name) if parent_client_account_name else None
+    # 用祖先名称检测语义组
+    ancestor_groups: list[str] = []
+    for anc_name in (ancestor_names or []):
+        g = _detect_semantic_group(anc_name)
+        if g and g not in ancestor_groups:
+            ancestor_groups.append(g)
+
+    effective_group = client_group or parent_group or (ancestor_groups[0] if ancestor_groups else None)
+
+    if effective_group:
+        evidence.append(f"semantic_group={effective_group}")
+        # 检查标准科目是否属于同一语义组
+        if _standard_account_matches_semantic_group(standard_account, effective_group):
+            return CompatibilityResult(
+                status="compatible",
+                reason=f"客户科目语义组「{effective_group}」与标准科目一致",
+                evidence=evidence,
+                detected_group=effective_group,
+            )
+        # 检查标准科目是否冲突
+        if _standard_account_conflicts_semantic_group(standard_account, effective_group):
+            return CompatibilityResult(
+                status="conflict",
+                reason=f"客户科目属于语义组「{effective_group}」，但标准科目属于冲突类别",
+                evidence=evidence,
+                detected_group=effective_group,
+            )
+
+    # ── 规则 4：备抵/减值冲突检测 ──
+    sa_is_reserve = _has_negative_reserve_semantics(sa_name)
+    client_is_reserve = _has_negative_reserve_semantics(client_account_name)
+    if sa_is_reserve and not client_is_reserve:
+        return CompatibilityResult(
+            status="conflict",
+            reason=f"标准科目「{sa_code} {sa_name}」是备抵/减值类，但客户名称无减值语义",
+            evidence=evidence,
+        )
+    if client_is_reserve and not sa_is_reserve:
+        return CompatibilityResult(
+            status="conflict",
+            reason=f"客户名称含备抵/减值语义，但标准科目「{sa_code} {sa_name}」是原值/非备抵类",
+            evidence=evidence,
+        )
+
+    # ── 规则 5：名称锚点冲突检测 ──
+    anchor = _detect_name_anchor(client_account_name)
+    if anchor and sa_canonical:
+        anchor_norm = _normalize_name(anchor)
+        if anchor_norm and anchor_norm not in sa_canonical:
+            # 锚点不在标准科目 canonical name 中 → 冲突
+            return CompatibilityResult(
+                status="conflict",
+                reason=f"客户名称锚点「{anchor}」不在标准科目「{sa_name}」中",
+                evidence=evidence,
+            )
+
+    # ── 规则 6：研发支出方向检测（费用化 vs 资本化） ──
+    client_tokens = _split_name_tokens(client_account_name or "")
+    client_token_norms = [_normalize_name(t) for t in client_tokens]
+    if "研发支出" in client_norm or "研发费用" in client_norm:
+        has_expensing = any(t in client_token_norms for t in
+                           [_normalize_name("费用化支出"), _normalize_name("费用化")])
+        has_capitalizing = any(t in client_token_norms for t in
+                               [_normalize_name("资本化支出"), _normalize_name("资本化")])
+        if has_expensing and ("资本化支出" in sa_canonical or "资本化" in sa_canonical
+                              or "660201" not in sa_code):
+            # 客户是费用化，目标是资本化 → 冲突
+            if "研发支出-资本化" in sa_canonical or "170401" in sa_code:
+                return CompatibilityResult(
+                    status="conflict",
+                    reason="客户科目含费用化支出语义，目标为资本化支出，方向冲突",
+                    evidence=evidence,
+                )
+        if has_capitalizing and ("费用化支出" in sa_canonical or "费用化" in sa_canonical
+                                  or "660201" in sa_code):
+            # 客户是资本化，目标是费用化 → 冲突
+            if "研发支出-费用化" in sa_canonical or "170402" in sa_code:
+                return CompatibilityResult(
+                    status="conflict",
+                    reason="客户科目含资本化支出语义，目标为费用化支出，方向冲突",
+                    evidence=evidence,
+                )
+        # 研发支出无费用化/资本化上下文时 → unknown
+        if not has_expensing and not has_capitalizing:
+            if client_group is None and parent_group is None:
+                if "研发支出" in client_norm and client_norm == _normalize_name("研发支出"):
+                    return CompatibilityResult(
+                        status="unknown",
+                        reason="研发支出未明确费用化或资本化方向，需人工确认",
+                        evidence=evidence,
+                    )
+            # 研发费用 客户名 vs 资本化支出 标准 → conflict without context
+            if "研发费用" in client_norm and ("资本化" in sa_canonical or "170401" in sa_code):
+                return CompatibilityResult(
+                    status="conflict",
+                    reason="客户为研发费用，目标为资本化支出，方向冲突",
+                    evidence=evidence,
+                )
+
+    # ── 规则 7：父级/祖先上下文辅助判断 ──
+    if parent_group and parent_group != effective_group:
+        evidence.append(f"parent_group={parent_group}")
+    if ancestor_groups:
+        evidence.append(f"ancestor_groups={ancestor_groups}")
+
+    # ── 规则 7.5：客户名称以标准名称开头（不含前缀后缀变化） ──
+    # 例如"周转材料_在用"以"周转材料"开头，同时代码也一致 → compatible
+    if client_account_name and sa_canonical:
+        # 检查客户 canonical name 是否以标准 canonical name 开头
+        client_canonical = _canonical_name(client_account_name)
+        if client_canonical and sa_canonical and len(client_canonical) > len(sa_canonical):
+            if client_canonical.startswith(sa_canonical):
+                # 排除备抵冲突
+                if _has_negative_reserve_semantics(sa_name) and not _has_negative_reserve_semantics(client_account_name):
+                    return CompatibilityResult(
+                        status="conflict",
+                        reason=f"标准科目是备抵类，客户名称无减值语义",
+                        evidence=evidence,
+                    )
+                return CompatibilityResult(
+                    status="compatible",
+                    reason=f"客户名称以标准科目名称开头（{sa_name}）",
+                    evidence=evidence,
+                )
+
+    # ── 规则 8：无法判定 → unknown ──
+    return CompatibilityResult(
+        status="unknown",
+        reason="无法确定名称语义兼容性，需人工确认",
+        evidence=evidence,
+    )
+
+
 # ── TASK-085：标准科目内存索引 ──────────────────────────
 # 避免大文件（如 205201 18984 唯一科目）逐次 select(StandardAccount) 全表扫描。
 # recommend_mappings 入口一次性加载全部标准科目到内存，后续 _query_* 用纯 Python 过滤。
@@ -502,13 +721,17 @@ class _StandardAccountIndex:
       - by_norm_name: {normalized_name: [StandardAccount]}
     """
 
-    __slots__ = ("all_accounts", "all_active", "by_norm_code", "by_norm_name")
+    __slots__ = ("all_accounts", "all_active", "by_norm_code", "by_norm_name",
+                 "semantic_groups_by_sa_id", "negative_tokens_by_sa_id")
 
     def __init__(self, all_accounts: list[StandardAccount]):
         self.all_accounts = list(all_accounts)
         self.all_active = [sa for sa in all_accounts if sa.is_active]
         self.by_norm_code: dict[str, list[StandardAccount]] = {}
         self.by_norm_name: dict[str, list[StandardAccount]] = {}
+        # TASK-087：预计算每个标准科目的语义组归属和备抵标记
+        self.semantic_groups_by_sa_id: dict[str, list[str]] = {}
+        self.negative_tokens_by_sa_id: dict[str, bool] = {}
         for sa in all_accounts:
             nc = _normalize_code(sa.account_code)
             if nc:
@@ -516,6 +739,16 @@ class _StandardAccountIndex:
             nn = _normalize_name(sa.account_name)
             if nn:
                 self.by_norm_name.setdefault(nn, []).append(sa)
+            sa_id = str(sa.id)
+            # 预计算语义组归属
+            sa_groups = []
+            for gk, gd in _SEMANTIC_ACCOUNT_GROUPS.items():
+                if _standard_account_matches_semantic_group(sa, gk):
+                    sa_groups.append(gk)
+            if sa_groups:
+                self.semantic_groups_by_sa_id[sa_id] = sa_groups
+            # 预计算备抵标记
+            self.negative_tokens_by_sa_id[sa_id] = _has_negative_reserve_semantics(sa.account_name)
 
 
 async def _load_standard_account_index(db: AsyncSession) -> _StandardAccountIndex:
@@ -573,14 +806,21 @@ def _build_semantic_alias_candidate(
     """从语义别名匹配构造安全候选。"""
     group_def = _SEMANTIC_ACCOUNT_GROUPS.get(group_key, {})
     canonical = group_def.get("canonical", group_key)
+    has_negatives = bool(group_def.get("negative_aliases", []))
     return {
         "standard_account_id": str(sa.id),
         "standard_account_code": sa.account_code,
         "standard_account_name": sa.account_name,
-        "score": 0.93,
+        "score": 0.95,
         "source": "semantic_alias",
         "reason": f"语义别名匹配：客户「{client_name}」≈ 标准「{canonical}」",
         "warning": None,
+        # TASK-087：增加统一兼容性字段
+        "auto_confirmable": True,
+        "compatibility_status": "compatible",
+        "compatibility_reason": f"语义组「{group_key}」匹配",
+        "evidence": [f"semantic_group={group_key}", f"canonical={canonical}",
+                      f"negative_aliases_exist={has_negatives}"],
     }
 
 
@@ -668,7 +908,11 @@ async def recommend_mappings(
             for sa in code_matches:
                 if str(sa.id) in existing_ids:
                     continue
-                candidate = _build_code_match_candidate(sa, client_name)
+                candidate = _build_code_match_candidate(
+                    sa, client_name,
+                    parent_client_account_name=ca.get("parent_client_account_name"),
+                    ancestor_names=ca.get("ancestor_names") or [],
+                )
                 entry["candidates"].append(candidate)
 
         # ── 优先级 3b：标准科目名称精确匹配 ────
@@ -703,7 +947,11 @@ async def recommend_mappings(
             if crosswalk_code:
                 crosswalk_matches = await _query_crosswalk_match(db, crosswalk_code)
                 for sa in crosswalk_matches:
-                    candidate = _build_crosswalk_candidate(sa, client_code, client_name, crosswalk_code)
+                    candidate = _build_crosswalk_candidate(
+                        sa, client_code, client_name, crosswalk_code,
+                        parent_client_account_name=ca.get("parent_client_account_name"),
+                        ancestor_names=ca.get("ancestor_names") or [],
+                    )
                     entry["candidates"].append(candidate)
 
         # ── 优先级 3c3：父级继承 ──
@@ -828,15 +1076,45 @@ async def recommend_mappings(
         if normalized_client_name:
             await _resolve_exact_code_vs_exact_name_conflict(db, entry, client_name, sa_index=sa_index)
 
-        # ── 统一候选排序（TASK-077）：所有候选构造、冲突降级、兜底补充完成后，
-        # 用 _sort_candidates 重排，保证安全候选（warning is None 且 score >= 0.9）
-        # 始终排在所有 warning/低分候选前。否则 code_match_conflict 等带 warning 候选
-        # 仍可能因加入顺序靠前而被自动确认盲取 candidates[0] 错导入。
+        # ── 统一候选排序（TASK-087）：所有候选构造、冲突降级、兜底补充完成后，
+        # 用 _sort_candidates 重排，保证安全候选始终排在所有非安全候选前。
         entry["candidates"] = _sort_candidates(entry["candidates"])
 
         # 兜底候选去重后可能仍较多，限制最多 10 个（保留已加入的顺序：高优先级在前）
         if len(entry["candidates"]) > 10:
             entry["candidates"] = entry["candidates"][:10]
+
+        # ── TASK-087：自动确认决策 ──
+        auto_confirm = pick_unique_auto_confirm_candidate(entry["candidates"])
+        if auto_confirm is not None:
+            entry["auto_confirm_candidate"] = auto_confirm
+            # 检查是否同一目标多来源
+            safe_ids = set()
+            for c in entry["candidates"]:
+                if _is_safe_candidate(c):
+                    safe_ids.add(c.get("standard_account_id"))
+            if len(safe_ids) > 1:
+                entry["auto_confirm_status"] = "ambiguous"
+                entry["auto_confirm_reason"] = f"存在 {len(safe_ids)} 个不同安全目标，不自动确认"
+                entry["auto_confirm_candidate"] = None
+            else:
+                entry["auto_confirm_status"] = "unique_safe"
+                entry["auto_confirm_reason"] = f"唯一安全候选：{auto_confirm.get('source')} → {auto_confirm.get('standard_account_code')} {auto_confirm.get('standard_account_name')}"
+        else:
+            entry["auto_confirm_candidate"] = None
+            # 检查是否有安全候选但多目标
+            safe = [c for c in entry["candidates"] if _is_safe_candidate(c)]
+            if len(safe) > 1:
+                safe_ids = {c.get("standard_account_id") for c in safe}
+                if len(safe_ids) > 1:
+                    entry["auto_confirm_status"] = "ambiguous"
+                    entry["auto_confirm_reason"] = f"存在 {len(safe_ids)} 个不同安全目标，需人工选择"
+                else:
+                    entry["auto_confirm_status"] = "unique_safe"
+                    entry["auto_confirm_reason"] = f"唯一安全目标但无最佳候选"
+            else:
+                entry["auto_confirm_status"] = "none"
+                entry["auto_confirm_reason"] = "无安全候选，需人工确认"
 
         results.append(entry)
 
@@ -883,19 +1161,23 @@ def _add_fallback_candidate(entry: dict, candidate: dict) -> None:
 # source 优先级权重，用于冲突收口后的候选重排。
 # 遵循既有优先级：company_history > global_history > 安全 code_match/name_exact/name_prefix
 # > semantic_alias/name_anchor > 兜底/warning 候选。
+# TASK-087：调整候选来源优先级 — 名称语义优先于代码
 _CANDIDATE_SOURCE_PRIORITY: dict[str, int] = {
     "company_history": 0,
-    "global_history": 1,
-    "code_match": 2,
-    "name_exact": 2,
-    "name_prefix": 2,
-    "semantic_alias": 3,
-    "code_prefix_parent": 4,
-    "name_anchor": 4,
-    "code_category_anchor": 4,
-    "name_similarity": 5,
-    "code_match_conflict": 6,
-    "history_conflict": 6,
+    "name_exact": 1,          # 名称精确匹配高于全局历史
+    "semantic_alias": 2,       # 语义别名高于代码匹配
+    "name_prefix": 3,          # 名称首段高于全局历史
+    "global_history": 4,       # 全局历史低于名称候选
+    "code_match": 5,           # 代码匹配必须在名称检查之后
+    "old_code_crosswalk": 6,   # 旧编码低于名称候选
+    "parent_inherited_crosswalk": 7,
+    "auxiliary_inherited_parent": 7,
+    "name_anchor": 8,          # 名称锚点
+    "name_similarity": 9,      # 模糊匹配（永不自认）
+    "code_prefix_parent": 10,  # 代码前缀（默认人工）
+    "code_category_anchor": 11, # 代码类别锚点（默认人工）
+    "code_match_conflict": 12,  # 代码冲突
+    "history_conflict": 12,     # 历史冲突
 }
 
 
@@ -910,8 +1192,24 @@ _SAFE_CANDIDATE_MIN_SCORE = 0.9
 
 
 def _is_safe_candidate(c: dict) -> bool:
-    """判定是否为安全候选：warning 为空且 score >= 0.9。"""
+    """TASK-087：判定是否为安全候选。
+
+    必须同时满足：
+    - auto_confirmable is True
+    - warning is None
+    - score >= 0.9
+    - standard_account is_active (通过 warning 间接检查)
+    - compatibility_status == "compatible"
+
+    缺少 auto_confirmable 字段的旧候选按保守方式处理（视为不安全）。
+    """
     if c.get("warning"):
+        return False
+    # TASK-087：必须显式标记 auto_confirmable
+    if c.get("auto_confirmable") is not True:
+        return False
+    # TASK-087：必须兼容
+    if c.get("compatibility_status") != "compatible":
         return False
     try:
         return float(c.get("score", 0) or 0) >= _SAFE_CANDIDATE_MIN_SCORE
@@ -922,28 +1220,62 @@ def _is_safe_candidate(c: dict) -> bool:
 def _sort_candidates(candidates: list[dict]) -> list[dict]:
     """统一候选排序：安全候选必须排在所有非安全候选前。
 
-    规则（TASK-077）：
-    1. 先按「是否安全候选」分区：safe（warning is None 且 score >= 0.9）在前，
-       non-safe（warning 非空或 score < 0.9）在后。
-    2. 安全候选内部按既有来源优先级排序，再按 score 降序。
-    3. 非安全候选内部同样按来源优先级、score 降序，但整体排在安全候选之后。
-
-    这样无论 code_match_conflict 由 _build_code_match_candidate 直接产生还是由
-    _resolve_exact_code_vs_exact_name_conflict 降级产生，只要有安全候选，安全候选
-    永远排在 candidates[0]，避免自动确认盲取 warning 首项导致的错导入。
+    规则（TASK-087 增强）：
+    1. 先按「是否安全候选」分区：safe 在前，non-safe 在后。
+    2. 安全候选内部先按 source priority，再按 score 降序。
+    3. 非安全候选内部：auto_confirmable > source_priority > compatibility > score。
     """
     safe = [c for c in candidates if _is_safe_candidate(c)]
     non_safe = [c for c in candidates if not _is_safe_candidate(c)]
     safe.sort(key=_candidate_priority)
-    non_safe.sort(key=_candidate_priority)
+    # 非安全候选：先按是否 auto_confirmable，再按 source priority，再按兼容性，再按 score
+    def _non_safe_key(c: dict) -> tuple:
+        auto_ok = 0 if c.get("auto_confirmable") is True else 1
+        source = _CANDIDATE_SOURCE_PRIORITY.get(c.get("source", ""), 9)
+        compat = {"compatible": 0, "unknown": 1, "conflict": 2}.get(c.get("compatibility_status"), 3)
+        return (auto_ok, source, compat, -float(c.get("score", 0) or 0))
+    non_safe.sort(key=_non_safe_key)
     return safe + non_safe
 
 
-def _pick_auto_confirm_candidate(candidates: list[dict]) -> dict | None:
-    """自动选中推荐候选：优先取第一条安全候选；无安全候选时回退到首项。
+def pick_unique_auto_confirm_candidate(candidates: list[dict]) -> dict | None:
+    """TASK-087：唯一安全候选自动确认。
 
-    供后端导入链路使用，避免盲取 candidates[0] 命中 warning 候选。
+    规则：
+    1. 筛选所有安全候选
+    2. 按 standard_account_id 去重
+    3. 只有一个不同目标 → 返回最佳候选
+    4. 多个不同安全目标 → 返回 None（ambiguous）
+    5. 无安全候选 → 返回 None
     """
+    if not candidates:
+        return None
+    safe = [c for c in candidates if _is_safe_candidate(c)]
+    if not safe:
+        return None
+    # 按 standard_account_id 去重
+    seen_ids: dict[str, dict] = {}
+    for c in safe:
+        sa_id = c.get("standard_account_id", "")
+        if sa_id and sa_id not in seen_ids:
+            seen_ids[sa_id] = c
+    if len(seen_ids) == 0:
+        return None
+    if len(seen_ids) == 1:
+        # 唯一目标：返回最佳候选（按优先级最高）
+        best = min(seen_ids.values(), key=_candidate_priority)
+        return best
+    # 多个不同安全目标：不自动确认
+    return None
+
+
+def _pick_auto_confirm_candidate(candidates: list[dict]) -> dict | None:
+    """【已废弃】请使用 pick_unique_auto_confirm_candidate。
+    保留向后兼容：回退到唯一安全候选；无安全候选时回退到首项。
+    """
+    result = pick_unique_auto_confirm_candidate(candidates)
+    if result is not None:
+        return result
     if not candidates:
         return None
     safe = next((c for c in candidates if _is_safe_candidate(c)), None)
@@ -1020,7 +1352,8 @@ async def _resolve_exact_code_vs_exact_name_conflict(
     详见 TASK-068 / TASK-070。
     """
     candidates = entry["candidates"]
-    code_candidates = [c for c in candidates if c.get("source") == "code_match"]
+    # TASK-087：同时检查 code_match 和 code_match_conflict（已被 _build_code_match_candidate 降级）
+    code_candidates = [c for c in candidates if c.get("source") in ("code_match", "code_match_conflict")]
     if not code_candidates:
         return
     norm_client = _normalize_name(client_name)
@@ -1391,6 +1724,10 @@ async def _build_candidate(
             "source": source,
             "reason": "历史映射经验（标准科目已不存在）",
             "warning": "标准科目已被删除，请重新选择启用的标准科目",
+            "auto_confirmable": False,
+            "compatibility_status": "conflict",
+            "compatibility_reason": "标准科目已删除",
+            "evidence": ["deleted_standard_account"],
         }
 
     if not sa.is_active:
@@ -1402,6 +1739,10 @@ async def _build_candidate(
             "source": source,
             "reason": f"历史映射经验 → {sa.account_code} {sa.account_name}",
             "warning": f"标准科目「{sa.account_code} {sa.account_name}」已停用，请重新选择启用的标准科目",
+            "auto_confirmable": False,
+            "compatibility_status": "conflict",
+            "compatibility_reason": "标准科目已停用",
+            "evidence": [f"inactive_sa={sa.account_code}"],
         }
 
     # 检查历史映射是否存在名称冲突（防止旧错配继续作为安全候选）
@@ -1415,7 +1756,56 @@ async def _build_candidate(
             "source": f"{source}_conflict",
             "reason": f"历史映射与当前客户科目名称冲突：{conflict}",
             "warning": conflict,
+            "auto_confirmable": False,
+            "compatibility_status": "conflict",
+            "compatibility_reason": conflict,
+            "evidence": [f"conflict={conflict}"],
         }
+
+    # TASK-087：历史映射必须接受当前名称一致性检查
+    hist_name = _history_name_value(cam)
+    curr_name = _normalize_name(cam.client_account_name)
+    name_consistent = hist_name == curr_name
+
+    # TASK-087：公司历史映射：仅名称一致时可自动确认
+    is_company_history = source == "company_history"
+    auto_confirm = is_company_history and name_consistent and score >= 0.9
+
+    # TASK-087：全局历史映射：名称一致 + 兼容时才安全
+    if source == "global_history":
+        compat = evaluate_name_compatibility(
+            sa,
+            client_account_name=cam.client_account_name,
+        )
+        if compat.status == "conflict":
+            return {
+                "standard_account_id": str(sa.id),
+                "standard_account_code": sa.account_code,
+                "standard_account_name": sa.account_name,
+                "score": min(score, 0.75),
+                "source": "history_conflict",
+                "reason": f"历史映射与当前名称冲突：{compat.reason}",
+                "warning": f"全局历史映射「{sa.account_code} {sa.account_name}」与当前名称冲突：{compat.reason}，请人工确认",
+                "auto_confirmable": False,
+                "compatibility_status": "conflict",
+                "compatibility_reason": compat.reason,
+                "evidence": compat.evidence,
+            }
+        if compat.status == "unknown":
+            return {
+                "standard_account_id": str(sa.id),
+                "standard_account_code": sa.account_code,
+                "standard_account_name": sa.account_name,
+                "score": min(score, 0.82),
+                "source": "global_history",
+                "reason": f"历史映射经验 → {sa.account_code} {sa.account_name}",
+                "warning": "全局历史映射，名称语义不明确，请人工确认",
+                "auto_confirmable": False,
+                "compatibility_status": "unknown",
+                "compatibility_reason": compat.reason,
+                "evidence": compat.evidence,
+            }
+        auto_confirm = name_consistent
 
     return {
         "standard_account_id": str(sa.id),
@@ -1425,6 +1815,15 @@ async def _build_candidate(
         "source": source,
         "reason": f"历史映射经验 → {sa.account_code} {sa.account_name}",
         "warning": None,
+        "auto_confirmable": auto_confirm,
+        "compatibility_status": "compatible",
+        "compatibility_reason": "历史映射名称一致" if name_consistent else "历史映射（名称有变化但兼容）",
+        "evidence": [
+            f"hist_name={hist_name}",
+            f"curr_name={curr_name}",
+            f"name_consistent={name_consistent}",
+            f"source={source}",
+        ],
     }
 
 
@@ -1472,32 +1871,99 @@ def _check_standard_name_conflict(
 def _build_code_match_candidate(
     sa: StandardAccount,
     client_name: str | None = None,
+    parent_client_account_name: str | None = None,
+    ancestor_names: list[str] | None = None,
 ) -> dict:
     """从代码精确匹配构造候选。
 
-    若客户名称包含名称锚点（如「预付账款」），但标准科目 canonical name 不包含该锚点，
-    则判定为代码冲突，降级为 code_match_conflict，带 warning 且 score 降低，
-    不会被前端自动确认。
+    TASK-087：代码精确匹配必须通过名称兼容性检查。
+    - compatible → 安全自动确认 (score=0.92, auto_confirmable=True)
+    - conflict → 降级为 code_match_conflict (score<=0.60, auto_confirmable=False)
+    - unknown → 降级为 code_match_conflict (score<=0.82, auto_confirmable=False)
     """
     if client_name:
-        conflict = _check_code_match_name_conflict(sa, client_name)
-        if conflict:
+        # 先用旧的锚点冲突检查（快速路径）
+        conflict_check = _check_code_match_name_conflict(sa, client_name)
+        if conflict_check:
             return {
                 "standard_account_id": str(sa.id),
                 "standard_account_code": sa.account_code,
                 "standard_account_name": sa.account_name,
-                "score": conflict["score"],
+                "score": conflict_check["score"],
                 "source": "code_match_conflict",
                 "reason": f"科目代码相同但名称锚点不一致 → {sa.account_code} {sa.account_name}",
-                "warning": conflict["warning"],
+                "warning": conflict_check["warning"],
+                "auto_confirmable": False,
+                "compatibility_status": "conflict",
+                "compatibility_reason": conflict_check.get("warning", "名称锚点冲突"),
+                "evidence": [f"client_name={client_name}", f"sa_name={sa.account_name}"],
             }
 
-    return _build_standard_account_candidate(
-        sa,
-        source="code_match",
-        score=0.95,
-        reason_prefix="科目代码精确匹配",
-    )
+        # TASK-087：统一兼容性评估
+        compat = evaluate_name_compatibility(
+            sa,
+            client_account_name=client_name,
+            parent_client_account_name=parent_client_account_name,
+            ancestor_names=ancestor_names,
+        )
+        if compat.status == "conflict":
+            return {
+                "standard_account_id": str(sa.id),
+                "standard_account_code": sa.account_code,
+                "standard_account_name": sa.account_name,
+                "score": 0.60,
+                "source": "code_match_conflict",
+                "reason": f"代码相同但客户名称与目标标准科目性质冲突：{compat.reason}",
+                "warning": f"代码相同但客户名称「{client_name}」与目标「{sa.account_code} {sa.account_name}」性质冲突：{compat.reason}，请人工确认",
+                "auto_confirmable": False,
+                "compatibility_status": "conflict",
+                "compatibility_reason": compat.reason,
+                "evidence": compat.evidence,
+            }
+        if compat.status == "unknown":
+            return {
+                "standard_account_id": str(sa.id),
+                "standard_account_code": sa.account_code,
+                "standard_account_name": sa.account_name,
+                "score": 0.82,
+                "source": "code_match",
+                "reason": f"科目代码精确匹配，但缺少名称语义证据 → {sa.account_code} {sa.account_name}",
+                "warning": "仅科目代码命中，缺少名称语义证据，请人工确认",
+                "auto_confirmable": False,
+                "compatibility_status": "unknown",
+                "compatibility_reason": compat.reason,
+                "evidence": compat.evidence,
+            }
+        # compatible: 安全（但停用科目除外）
+        is_active = sa.is_active
+        return {
+            "standard_account_id": str(sa.id),
+            "standard_account_code": sa.account_code,
+            "standard_account_name": sa.account_name,
+            "score": 0.92 if is_active else 0.82,
+            "source": "code_match",
+            "reason": f"科目代码精确匹配且名称兼容 → {sa.account_code} {sa.account_name}",
+            "warning": None if is_active else f"标准科目「{sa.account_code} {sa.account_name}」已停用，请重新选择启用的标准科目",
+            "auto_confirmable": is_active,
+            "compatibility_status": "compatible" if is_active else "conflict",
+            "compatibility_reason": compat.reason if is_active else "标准科目已停用",
+            "evidence": compat.evidence,
+        }
+
+    # 无客户名称：仅代码命中
+    return {
+        "standard_account_id": str(sa.id),
+        "standard_account_code": sa.account_code,
+        "standard_account_name": sa.account_name,
+        "score": 0.82,
+        "source": "code_match",
+        "reason": f"科目代码精确匹配（无客户名称） → {sa.account_code} {sa.account_name}",
+        "warning": "仅科目代码命中，缺少客户名称，请人工确认",
+        "auto_confirmable": False,
+        "compatibility_status": "unknown",
+        "compatibility_reason": "客户名称为空",
+        "evidence": ["client_name=(空)", f"sa_code={sa.account_code}"],
+    }
 
 
 # ── TASK-072：备抵/减值类名称检测 ──
@@ -1575,12 +2041,21 @@ def _check_code_match_name_conflict(
 
 def _build_name_exact_candidate(sa: StandardAccount) -> dict:
     """从名称规范化精确匹配构造候选"""
-    return _build_standard_account_candidate(
-        sa,
-        source="name_exact",
-        score=0.94,
-        reason_prefix="科目名称精确匹配",
-    )
+    is_active = sa.is_active
+    warning = None if is_active else f"标准科目「{sa.account_code} {sa.account_name}」已停用，请重新选择启用的标准科目"
+    return {
+        "standard_account_id": str(sa.id),
+        "standard_account_code": sa.account_code,
+        "standard_account_name": sa.account_name,
+        "score": 0.98 if is_active else 0.82,
+        "source": "name_exact",
+        "reason": f"科目名称精确匹配 → {sa.account_code} {sa.account_name}",
+        "warning": warning,
+        "auto_confirmable": is_active,
+        "compatibility_status": "compatible" if is_active else "conflict",
+        "compatibility_reason": "名称规范化后完全一致" if is_active else "标准科目已停用",
+        "evidence": [f"sa_name={sa.account_name}", "match=exact_normalized", f"active={is_active}"],
+    }
 
 
 # ── TASK-070：客户名称首段/开头命中更精确标准子级名称 ──
@@ -1677,35 +2152,49 @@ async def _query_name_prefix_match(
 def _build_name_prefix_candidate(sa: StandardAccount, client_name: str) -> dict:
     """从客户名称首段/开头命中更精确标准子级名称构造安全候选。
 
-    安全（warning=None, score=0.93）：客户名称明显以更精确标准科目名称开头，
+    安全（warning=None, score=0.94）：客户名称明显以更精确标准科目名称开头，
     语义精确度高于父级代码命中，应优先自动确认到该子级。详见 TASK-070。
     """
-    candidate = _build_standard_account_candidate(
-        sa,
-        source="name_prefix",
-        score=0.93,
-        reason_prefix="客户科目名称首段匹配更精确标准科目",
-    )
-    candidate["reason"] = (
-        f"客户科目名称首段/开头匹配更精确标准科目 → {sa.account_code} {sa.account_name}"
-    )
-    return candidate
+    is_active = sa.is_active
+    warning = None if is_active else f"标准科目「{sa.account_code} {sa.account_name}」已停用，请重新选择启用的标准科目"
+    return {
+        "standard_account_id": str(sa.id),
+        "standard_account_code": sa.account_code,
+        "standard_account_name": sa.account_name,
+        "score": 0.94 if is_active else 0.82,
+        "source": "name_prefix",
+        "reason": (
+            f"客户科目名称首段/开头匹配更精确标准科目 → {sa.account_code} {sa.account_name}"
+        ),
+        "warning": warning,
+        "auto_confirmable": is_active,
+        "compatibility_status": "compatible" if is_active else "conflict",
+        "compatibility_reason": f"客户名称以标准科目「{sa.account_name}」开头" if is_active else "标准科目已停用",
+        "evidence": [f"client_name={client_name}", f"sa_name={sa.account_name}", "match=name_prefix"],
+    }
 
 
 def _build_name_similarity_candidate(sa: StandardAccount, similarity: float) -> dict:
-    """从名称相似度构造候选"""
-    score = round(0.7 + (similarity - 0.6) * 0.5, 2)  # 0.6→0.7, 1.0→0.9
-    warning = None if similarity >= 0.85 else f"名称相似度仅 {similarity:.0%}，建议人工确认"
+    """从名称相似度构造候选。
+    TASK-087：模糊匹配永远不自动确认（auto_confirmable=False），无论相似度多高。
+    """
+    score = round(0.7 + (similarity - 0.6) * 0.5, 2)
+    score = min(score, 0.89)  # TASK-087：上限 0.89，永不超过安全阈值
+    warning = f"名称相似度 {similarity:.0%}，非精确匹配，请人工确认"
     if not sa.is_active:
         warning = f"标准科目「{sa.account_code} {sa.account_name}」已停用，请重新选择启用的标准科目"
     return {
         "standard_account_id": str(sa.id),
         "standard_account_code": sa.account_code,
         "standard_account_name": sa.account_name,
-        "score": min(score, 0.92),
+        "score": score,
         "source": "name_similarity",
         "reason": f"科目名称相似（相似度 {similarity:.0%}）→ {sa.account_code} {sa.account_name}",
         "warning": warning,
+        "auto_confirmable": False,
+        "compatibility_status": "unknown",
+        "compatibility_reason": "模糊匹配，非精确名称对应",
+        "evidence": [f"similarity={similarity:.0%}"],
     }
 
 
@@ -1771,7 +2260,18 @@ def _is_safe_auto_rollup(sa: StandardAccount, client_name: str | None, context: 
                 if cat_norm and sa_canonical and (
                     sa_canonical == cat_norm or sa_canonical.startswith(cat_norm)
                 ):
-                    # 类别锚点精确匹配时，即便标准是备抵/减值类也安全
+                    # TASK-087：类别锚点匹配时，增加名称兼容性检查
+                    # 例如：客户代码 4101 锚点到「资本公积」，但客户名称「生产成本」
+                    # 与目标「资本公积」冲突 → 不应安全归入
+                    if client_name:
+                        compat = evaluate_name_compatibility(
+                            sa,
+                            client_account_name=client_name,
+                        )
+                        if compat.status == "conflict":
+                            return False
+                        if compat.status == "unknown":
+                            return False
                     return True
 
     # TASK-078：纯代码前缀明细（如金蝶 1123.001 业务款项 / 1222.001 内部关联方）
@@ -1793,9 +2293,20 @@ def _is_safe_auto_rollup(sa: StandardAccount, client_name: str | None, context: 
             # 后缀必须全部是数字（如 1123.001 -> 1123001，后缀 "001"）
             suffix = client_norm[len(sa_norm):]
             if suffix.isdigit():
-                # 代码前缀直接确认父子关系时，即使标准科目是备抵/减值类也安全
-                # 例如客户 1602003 前缀命中标准 1602 累计折旧 → 安全
-                # _check_code_match_name_conflict 会在 code_match 层防止误冲突
+                # TASK-087：代码前缀确认父子关系时，必须通过名称兼容性检查
+                # 例如客户 4105.003「--折旧费」前缀命中标准 4105 利润分配 → 必须检查名称冲突
+                # 正常情况如客户 10020108 前缀命中标准 1002 银行存款，名称含银行信息 → 兼容
+                if client_name:
+                    compat = evaluate_name_compatibility(
+                        sa,
+                        client_account_name=client_name,
+                    )
+                    if compat.status == "conflict":
+                        return False
+                    if compat.status == "unknown":
+                        # 仅代码前缀 + 未知名称 → 不安全，需人工确认
+                        return False
+                # 名称兼容或无名称 → 允许代码前缀安全归入
                 return True
 
     return False
@@ -1809,10 +2320,11 @@ def _build_code_prefix_parent_candidate(
 ) -> dict:
     """从客户明细代码最长标准科目前缀构造候选（父级汇总）。
 
-    若名称锚点与标准科目 canonical name 一致，则视为安全自动归入
+    若名称锚点与标准科目 canonical name 一致并经名称兼容性检查，则视为安全自动归入
     （warning=None, score=0.92）；否则为兜底候选（带 warning, score=0.85）。
     """
-    if _is_safe_auto_rollup(sa, client_name, context):
+    is_safe = _is_safe_auto_rollup(sa, client_name, context)
+    if is_safe:
         return {
             "standard_account_id": str(sa.id),
             "standard_account_code": sa.account_code,
@@ -1821,6 +2333,10 @@ def _build_code_prefix_parent_candidate(
             "source": "code_prefix_parent",
             "reason": f"明细代码前缀安全归入上级科目 → {sa.account_code} {sa.account_name}",
             "warning": None,
+            "auto_confirmable": True,
+            "compatibility_status": "compatible",
+            "compatibility_reason": "代码前缀匹配且名称兼容",
+            "evidence": [f"client_code={client_code}", f"sa_code={sa.account_code}"],
         }
     score = 0.85
     warning = (
@@ -1837,6 +2353,10 @@ def _build_code_prefix_parent_candidate(
         "source": "code_prefix_parent",
         "reason": f"明细代码前缀匹配上级科目 → {sa.account_code} {sa.account_name}",
         "warning": warning,
+        "auto_confirmable": False,
+        "compatibility_status": "unknown",
+        "compatibility_reason": "仅代码前缀匹配，缺少名称证据",
+        "evidence": [f"client_code={client_code}", f"sa_code={sa.account_code}"],
     }
 
 
@@ -1848,10 +2368,11 @@ def _build_name_anchor_candidate(
 ) -> dict:
     """从名称锚点构造候选。
 
-    若锚点与标准科目 canonical name 一致，视为安全自动归入（warning=None, score=0.92）；
+    若锚点与标准科目 canonical name 一致并经兼容性检查，视为安全自动归入（warning=None, score=0.92）；
     否则为兜底候选（带 warning, score=0.86）。
     """
-    if _is_safe_auto_rollup(sa, client_name, context):
+    is_safe = _is_safe_auto_rollup(sa, client_name, context)
+    if is_safe:
         return {
             "standard_account_id": str(sa.id),
             "standard_account_code": sa.account_code,
@@ -1860,6 +2381,10 @@ def _build_name_anchor_candidate(
             "source": "name_anchor",
             "reason": f"名称锚点「{anchor}」安全归入 → {sa.account_code} {sa.account_name}",
             "warning": None,
+            "auto_confirmable": True,
+            "compatibility_status": "compatible",
+            "compatibility_reason": f"名称锚点「{anchor}」与目标兼容",
+            "evidence": [f"anchor={anchor}", f"sa_name={sa.account_name}"],
         }
     score = 0.86
     warning = (
@@ -1876,6 +2401,10 @@ def _build_name_anchor_candidate(
         "source": "name_anchor",
         "reason": f"名称锚点「{anchor}」匹配 → {sa.account_code} {sa.account_name}",
         "warning": warning,
+        "auto_confirmable": False,
+        "compatibility_status": "unknown",
+        "compatibility_reason": "仅名称锚点匹配，需人工确认",
+        "evidence": [f"anchor={anchor}"],
     }
 
 
@@ -1887,10 +2416,11 @@ def _build_code_category_anchor_candidate(
 ) -> dict:
     """从客户代码类别锚点构造候选。
 
-    若名称锚点与标准科目 canonical name 一致，视为安全自动归入（warning=None, score=0.92）；
+    若名称锚点与标准科目 canonical name 一致并经兼容性检查，视为安全自动归入（warning=None, score=0.92）；
     否则为兜底候选（带 warning, score=0.86）。
     """
-    if _is_safe_auto_rollup(sa, client_name, context):
+    is_safe = _is_safe_auto_rollup(sa, client_name, context)
+    if is_safe:
         return {
             "standard_account_id": str(sa.id),
             "standard_account_code": sa.account_code,
@@ -1899,6 +2429,10 @@ def _build_code_category_anchor_candidate(
             "source": "code_category_anchor",
             "reason": f"代码类别锚点安全归入 → {sa.account_code} {sa.account_name}",
             "warning": None,
+            "auto_confirmable": True,
+            "compatibility_status": "compatible",
+            "compatibility_reason": "代码类别锚点匹配且名称兼容",
+            "evidence": [f"client_code={client_code}", f"sa_code={sa.account_code}"],
         }
     score = 0.86
     warning = (
@@ -1915,6 +2449,10 @@ def _build_code_category_anchor_candidate(
         "source": "code_category_anchor",
         "reason": f"代码类别锚点匹配 → {sa.account_code} {sa.account_name}",
         "warning": warning,
+        "auto_confirmable": False,
+        "compatibility_status": "unknown",
+        "compatibility_reason": "仅代码类别锚点匹配，缺少名称证据",
+        "evidence": [f"client_code={client_code}"],
     }
 
 
@@ -1924,11 +2462,30 @@ def _build_standard_account_candidate(
     source: str,
     score: float,
     reason_prefix: str,
+    auto_confirmable: bool | None = None,
+    compatibility_status: str | None = None,
+    compatibility_reason: str | None = None,
+    evidence: list[str] | None = None,
 ) -> dict:
-    """从标准科目直接匹配构造候选，停用科目只能作为警告候选。"""
+    """从标准科目直接匹配构造候选，停用科目只能作为警告候选。
+
+    TASK-087：所有候选必须包含 auto_confirmable / compatibility_status / evidence 字段。
+    缺少兼容性信息的调用方应显式传入，否则默认为 unknown。
+    """
     warning = None
     if not sa.is_active:
         warning = f"标准科目「{sa.account_code} {sa.account_name}」已停用，请重新选择启用的标准科目"
+        auto_confirmable = False
+
+    # 默认值：未显式传入时，保守处理
+    if auto_confirmable is None:
+        auto_confirmable = warning is None
+    if compatibility_status is None:
+        compatibility_status = "unknown"
+    if compatibility_reason is None:
+        compatibility_reason = "来源未提供兼容性评估" if warning is None else warning
+    if evidence is None:
+        evidence = [f"source={source}", f"sa_code={sa.account_code}"]
 
     return {
         "standard_account_id": str(sa.id),
@@ -1938,6 +2495,10 @@ def _build_standard_account_candidate(
         "source": source,
         "reason": f"{reason_prefix} → {sa.account_code} {sa.account_name}",
         "warning": warning,
+        "auto_confirmable": auto_confirmable,
+        "compatibility_status": compatibility_status,
+        "compatibility_reason": compatibility_reason,
+        "evidence": evidence,
     }
 
 
@@ -2146,9 +2707,17 @@ def _build_crosswalk_candidate(
     client_code: str,
     client_name: str | None,
     target_code: str,
+    parent_client_account_name: str | None = None,
+    ancestor_names: list[str] | None = None,
 ) -> dict:
-    """从旧编码 crosswalk 构造安全候选。"""
-    return {
+    """从旧编码 crosswalk 构造候选。
+
+    TASK-087：旧编码 crosswalk 必须通过名称兼容性检查。
+    - compatible → 安全自动确认 (score=0.91, auto_confirmable=True)
+    - conflict → 降级 (score<=0.60, auto_confirmable=False)
+    - unknown → 人工确认 (score<=0.82, auto_confirmable=False)
+    """
+    base = {
         "standard_account_id": str(sa.id),
         "standard_account_code": sa.account_code,
         "standard_account_name": sa.account_name,
@@ -2160,6 +2729,53 @@ def _build_crosswalk_candidate(
         ),
         "warning": None,
     }
+    # TASK-087：名称兼容性检查
+    if client_name:
+        compat = evaluate_name_compatibility(
+            sa,
+            client_account_name=client_name,
+            parent_client_account_name=parent_client_account_name,
+            ancestor_names=ancestor_names,
+        )
+        if compat.status == "conflict":
+            base["score"] = 0.60
+            base["source"] = "old_code_crosswalk"
+            base["warning"] = (
+                f"旧编码映射到「{sa.account_code} {sa.account_name}」但客户名称"
+                f"「{client_name}」与目标性质冲突：{compat.reason}，请人工确认"
+            )
+            base["reason"] = f"旧编码 crosswalk 冲突 → {compat.reason}"
+            base["auto_confirmable"] = False
+            base["compatibility_status"] = "conflict"
+            base["compatibility_reason"] = compat.reason
+            base["evidence"] = compat.evidence
+            return base
+        if compat.status == "unknown":
+            base["score"] = 0.82
+            base["warning"] = (
+                f"旧编码映射到「{sa.account_code} {sa.account_name}」，"
+                f"但名称语义不明确：{compat.reason}，请人工确认"
+            )
+            base["auto_confirmable"] = False
+            base["compatibility_status"] = "unknown"
+            base["compatibility_reason"] = compat.reason
+            base["evidence"] = compat.evidence
+            return base
+        # compatible
+        base["score"] = 0.91
+        base["auto_confirmable"] = True
+        base["compatibility_status"] = "compatible"
+        base["compatibility_reason"] = compat.reason
+        base["evidence"] = compat.evidence
+        return base
+    # 无名称：降级
+    base["score"] = 0.82
+    base["warning"] = "旧编码映射，但缺少客户名称，请人工确认"
+    base["auto_confirmable"] = False
+    base["compatibility_status"] = "unknown"
+    base["compatibility_reason"] = "客户名称为空"
+    base["evidence"] = [f"client_code={client_code}", f"target_code={target_code}"]
+    return base
 
 
 def _build_parent_inherited_candidate(
@@ -2171,7 +2787,10 @@ def _build_parent_inherited_candidate(
     target_code: str,
     is_generic: bool = False,
 ) -> dict:
-    """从父级继承构造候选（通过 crosswalk 或前缀匹配）。"""
+    """从父级继承构造候选（通过 crosswalk 或前缀匹配）。
+
+    TASK-087：父级继承必须检查名称兼容性。只有父级名称与目标兼容时才安全。
+    """
     score = 0.93 if is_generic else 0.95
     if is_generic:
         reason = (
@@ -2185,6 +2804,40 @@ def _build_parent_inherited_candidate(
             f"「{parent_code or ''} {parent_name or ''}」→ "
             f"{sa.account_code} {sa.account_name}"
         )
+    # TASK-087：名称兼容性检查（用父级名称作为主要判断依据）
+    compat = evaluate_name_compatibility(
+        sa,
+        client_account_name=parent_name or client_name,
+    )
+    if compat.status == "conflict":
+        return {
+            "standard_account_id": str(sa.id),
+            "standard_account_code": sa.account_code,
+            "standard_account_name": sa.account_name,
+            "score": 0.60,
+            "source": "parent_inherited_crosswalk",
+            "reason": f"父级继承冲突：{compat.reason}",
+            "warning": f"父级「{parent_name or parent_code}」与目标「{sa.account_code} {sa.account_name}」性质冲突：{compat.reason}，请人工确认",
+            "auto_confirmable": False,
+            "compatibility_status": "conflict",
+            "compatibility_reason": compat.reason,
+            "evidence": compat.evidence,
+        }
+    if compat.status == "unknown":
+        return {
+            "standard_account_id": str(sa.id),
+            "standard_account_code": sa.account_code,
+            "standard_account_name": sa.account_name,
+            "score": 0.82 if not is_generic else min(score, 0.82),
+            "source": "parent_inherited_crosswalk",
+            "reason": f"父级继承（名称语义不明）：{reason}",
+            "warning": f"继承父级但名称语义不明确，请人工确认",
+            "auto_confirmable": False,
+            "compatibility_status": "unknown",
+            "compatibility_reason": compat.reason,
+            "evidence": compat.evidence,
+        }
+    # compatible
     return {
         "standard_account_id": str(sa.id),
         "standard_account_code": sa.account_code,
@@ -2193,4 +2846,8 @@ def _build_parent_inherited_candidate(
         "source": "parent_inherited_crosswalk",
         "reason": reason,
         "warning": None,
+        "auto_confirmable": True,
+        "compatibility_status": "compatible",
+        "compatibility_reason": compat.reason,
+        "evidence": compat.evidence,
     }

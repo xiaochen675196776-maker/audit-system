@@ -35,6 +35,7 @@ from app.services.client_account_mapping_service import (
     recommend_mappings,
     save_mapping,
     _pick_auto_confirm_candidate,
+    pick_unique_auto_confirm_candidate,
 )
 from app.models.standard_trial_balance_import_batch import StandardTrialBalanceImportBatch
 from app.models.standard_trial_balance_raw_row import StandardTrialBalanceRawRow
@@ -274,8 +275,8 @@ def _inject_auxiliary_inherited_candidates(
         code = code_by_row.get(ri, "")
         name = name_by_row.get(ri, "")
         if code:
-            # 有代码行：更新 last_picked
-            picked = _pick_auto_confirm_candidate(rec.get("candidates", []))
+            # 有代码行：更新 last_picked（使用后端 auto_confirm_candidate）
+            picked = rec.get("auto_confirm_candidate") or pick_unique_auto_confirm_candidate(rec.get("candidates", []))
             if picked and picked.get("warning") is None:
                 last_picked = picked
             continue
@@ -769,9 +770,9 @@ async def analyze_standard_import(
         key = (rec.get("client_account_code"), rec.get("client_account_name"))
         candidates = rec.get("candidates", [])
         if candidates:
-            # TASK-077：自动选中优先取安全候选，避免盲取 candidates[0] 命中 warning
-            top = _pick_auto_confirm_candidate(candidates)
-            rec_direction_map[key] = top.get("standard_balance_direction")
+            # TASK-087：使用后端 auto_confirm_candidate，只有唯一安全候选时才取方向
+            top = rec.get("auto_confirm_candidate") or pick_unique_auto_confirm_candidate(candidates)
+            rec_direction_map[key] = top.get("standard_balance_direction") if top else None
         else:
             rec_direction_map[key] = None
         row_index = rec.get("row_index")

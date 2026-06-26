@@ -288,6 +288,11 @@ export interface MappingCandidate {
   reason: string
   warning: string | null
   standard_balance_direction?: string | null
+  // TASK-087：统一兼容性字段
+  auto_confirmable: boolean
+  compatibility_status: 'compatible' | 'conflict' | 'unknown'
+  compatibility_reason?: string | null
+  evidence?: string[]
 }
 
 export interface MappingRecommendEntry {
@@ -298,6 +303,10 @@ export interface MappingRecommendEntry {
   is_summary?: boolean
   participates_in_entry?: boolean
   candidates: MappingCandidate[]
+  // TASK-087：后端自动确认决策
+  auto_confirm_candidate?: MappingCandidate | null
+  auto_confirm_status?: 'unique_safe' | 'ambiguous' | 'none'
+  auto_confirm_reason?: string
 }
 
 export interface StdAnalyzeResponse {
