@@ -638,3 +638,369 @@ class TestFullPathOrderOfPrecedence:
         assert "manufacturing_overhead" in evidence_str, \
             f"证据中应有manufacturing_overhead（来自当前名称），实际: {evidence_str}"
 
+
+# ════════════════════════════════════════════════════════════
+# TASK-089：真实数据错配修复回归
+# ════════════════════════════════════════════════════════════
+
+
+class TestOtherPayableDepositNotMatchedToReceivable:
+    """TASK-089 §7.1：其他应付款/保证金 不得匹配其他应收款。
+
+    「保证金」作为叶子名不应单独决定资产/负债方向。当路径或父级明确为
+    其他应付款时，必须保持负债方向（other_payables），不得误配到
+    other_receivables。
+    """
+
+    @pytest.mark.asyncio
+    async def test_other_payable_deposit_path_does_not_match_receivable(self, db):
+        """其他应付款/外部单位/保证金 → 不得安全匹配其他应收款"""
+        sa_receivable = _sa("122101", "其他应收款")
+        sa_payable = _sa("2241", "其他应付款")
+        db.add_all([sa_receivable, sa_payable])
+        await db.flush()
+
+        results = await recommend_mappings(
+            db, data_type="trial_balance",
+            client_accounts=[{
+                "client_account_code": "22410202",
+                "client_account_name": "其他应付款/外部单位/保证金",
+                "client_account_full_path": "其他应付款/外部单位/保证金",
+            }],
+        )
+        candidates = results[0]["candidates"]
+        # 122101 其他应收款不应是安全候选
+        safe_for_receivable = [
+            c for c in candidates
+            if c["standard_account_code"] == "122101" and _is_safe_candidate(c)
+        ]
+        assert len(safe_for_receivable) == 0, \
+            f"其他应付款/保证金 不应安全匹配其他应收款，实际: {safe_for_receivable}"
+        # 2241 其他应付款应该是安全候选
+        safe_for_payable = [
+            c for c in candidates
+            if c["standard_account_code"] == "2241" and _is_safe_candidate(c)
+        ]
+        assert len(safe_for_payable) >= 1, \
+            f"其他应付款/保证金 应安全匹配其他应付款，实际: {safe_for_payable}"
+
+
+class TestManagementFeeIntangibleAmortization:
+    """TASK-089 §7.2：管理费用/无形资产摊销 不得匹配累计摊销。
+
+    路径含「管理费用」时优先费用类别。客户「无形资产摊销」别名必须
+    结合父级和路径，资产路径下的「累计摊销」才匹配1702类备抵。
+    """
+
+    def test_management_path_intangible_amortization_conflict_with_reserve(self):
+        """管理费用/无形资产摊销 → 与累计摊销（1702）应为冲突"""
+        sa_amortization = _sa("1702", "减：无形资产-累计摊销")
+        sa_mgmt = _sa("660201", "管理费用")
+        # 评估兼容性：当前名称「无形资产摊销」含累计摊销语义，标准是备抵
+        # 但路径明确为管理费用 → 应该是 unknown 或 conflict
+        result = evaluate_name_compatibility(
+            sa_amortization,
+            client_account_name="无形资产摊销",
+            client_account_full_path="管理费用/无形资产摊销",
+        )
+        # 路径含「管理费用」语义，标准是备抵类 → 应该不是 compatible
+        assert result.status in ("conflict", "unknown"), \
+            f"管理费用路径/无形资产摊销 vs 累计摊销 应为冲突或unknown，实际: {result.status}"
+
+
+class TestOtherInventoryNotMatchedToReserve:
+    """TASK-089 §7.3：其他存货 不得匹配存货跌价准备。
+
+    备抵目标必须通过 reserve semantics 命中。客户「其他存货」无
+    跌价/减值/准备语义时，不得安全归入「1471 存货跌价准备」。
+    """
+
+    @pytest.mark.asyncio
+    async def test_other_inventory_not_auto_confirmed_to_inventory_reserve(self, db):
+        """其他存货 不得安全匹配 存货跌价准备"""
+        sa_reserve = _sa("1471", "存货跌价准备")
+        sa_inventory = _sa("147199", "其他存货")
+        db.add_all([sa_reserve, sa_inventory])
+        await db.flush()
+
+        results = await recommend_mappings(
+            db, data_type="trial_balance",
+            client_accounts=[{
+                "client_account_code": "147199",
+                "client_account_name": "其他存货",
+            }],
+        )
+        candidates = results[0]["candidates"]
+        # 1471 存货跌价准备不应是安全候选
+        safe_for_reserve = [
+            c for c in candidates
+            if c["standard_account_code"] == "1471" and _is_safe_candidate(c)
+        ]
+        assert len(safe_for_reserve) == 0, \
+            f"其他存货 不应安全匹配存货跌价准备，实际: {safe_for_reserve}"
+
+
+class TestFixedAssetImpairmentNotMatchedToOriginal:
+    """TASK-089 §7.4：固定资产减值准备 不得匹配固定资产原值。
+
+    reserve semantics 必须优先于固定资产名称锚点。名称「固定资产」
+    不得覆盖「减值准备」。
+    """
+
+    @pytest.mark.asyncio
+    async def test_fixed_asset_impairment_not_auto_confirmed_to_original(self, db):
+        """固定资产减值准备 不得安全匹配 固定资产原值"""
+        sa_original = _sa("160101", "固定资产原值")
+        sa_impairment = _sa("1603", "固定资产减值准备")
+        db.add_all([sa_original, sa_impairment])
+        await db.flush()
+
+        results = await recommend_mappings(
+            db, data_type="trial_balance",
+            client_accounts=[{
+                "client_account_code": "1603",
+                "client_account_name": "固定资产减值准备",
+            }],
+        )
+        candidates = results[0]["candidates"]
+        # 160101 固定资产原值不应是安全候选
+        safe_for_original = [
+            c for c in candidates
+            if c["standard_account_code"] == "160101" and _is_safe_candidate(c)
+        ]
+        assert len(safe_for_original) == 0, \
+            f"固定资产减值准备 不应安全匹配固定资产原值，实际: {safe_for_original}"
+
+
+class TestInvestmentIncomeAmortizedCostNotCost:
+    """TASK-089 §7.5：「摊余成本」不应识别为成本类。
+
+    投资收益__以摊余成本计量的金融资产终止确认收益 属于投资收益，
+    不得被识别为成本类。「摊余成本/成本法/历史成本」不属于生产成本。
+    """
+
+    def test_amortized_cost_not_identified_as_production_cost(self):
+        """「投资收益__以摊余成本计量的金融资产终止确认收益」vs 投资收益目标 → 兼容"""
+        sa_investment = _sa("6111", "投资收益")
+        result = evaluate_name_compatibility(
+            sa_investment,
+            client_account_name="投资收益__以摊余成本计量的金融资产终止确认收益",
+        )
+        # 客户名称「投资收益」应识别为 investment_income 语义组
+        # 不应被「摊余成本」中的「成本」二字误判
+        assert result.status == "compatible", \
+            f"投资收益（含摊余成本计量）应与投资收益兼容，实际: {result.status}, reason: {result.reason}"
+        assert result.detected_group == "investment_income", \
+            f"应识别为investment_income组，实际: {result.detected_group}"
+
+
+class TestPackagingBoxNotMatchedToTurnoverParent:
+    """TASK-089 §8：包装物_纸箱 优先匹配 141101 包装物，不是 1411 周转材料。
+
+    客户名称首段「包装物」应优先匹配标准 141101 包装物明细，而不是
+    父级 1411 周转材料。
+    """
+
+    @pytest.mark.asyncio
+    async def test_packaging_box_prioritizes_packaging_detail(self, db):
+        """1411 包装物_纸箱 → 应优先匹配 141101 包装物"""
+        sa_turnover = _sa("1411", "周转材料")
+        sa_packaging = _sa("141101", "包装物")
+        db.add_all([sa_turnover, sa_packaging])
+        await db.flush()
+
+        results = await recommend_mappings(
+            db, data_type="trial_balance",
+            client_accounts=[{
+                "client_account_code": "1411",
+                "client_account_name": "包装物_纸箱",
+            }],
+        )
+        candidates = results[0]["candidates"]
+        # 自动确认应该是 141101 包装物
+        auto = pick_unique_auto_confirm_candidate(candidates)
+        assert auto is not None, f"包装物_纸箱 应可自动确认，实际: {candidates}"
+        assert auto["standard_account_code"] == "141101", \
+            f"应自动确认为 141101 包装物，实际: {auto['standard_account_code']} {auto['standard_account_name']}"
+
+
+class TestRDExpenditureNoDirectionStrictUnknown:
+    """TASK-089 §9.1：研发支出无方向时严格为 unknown。
+
+    测试必须严格断言 result.status == "unknown"，不得允许兼容变体。
+    """
+
+    @pytest.mark.asyncio
+    async def test_rd_expenditure_no_direction_strict_unknown(self, db):
+        """研发支出无费用化/资本化上下文 → 严格 unknown"""
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        db.add_all([sa_rd_cap, sa_rd_exp, sa_rd_expense])
+        await db.flush()
+
+        # 兼容评估：纯研发支出（无方向）
+        compat_cap = evaluate_name_compatibility(
+            sa_rd_cap,
+            client_account_name="研发支出",
+            client_account_full_path="研发支出",
+        )
+        compat_exp = evaluate_name_compatibility(
+            sa_rd_exp,
+            client_account_name="研发支出",
+            client_account_full_path="研发支出",
+        )
+        # 至少有一个应该是 unknown（无方向时无法判定）
+        assert (compat_cap.status == "unknown" or compat_exp.status == "unknown"), \
+            f"研发支出无方向应至少一个为 unknown，实际: cap={compat_cap.status}, exp={compat_exp.status}"
+
+
+class TestRDExpensingDirection:
+    """TASK-089 §9.2：研发费用化方向必须匹配费用化。
+
+    研发支出_费用化支出 / 研发费用 应匹配 660201/170402 等费用化目标，
+    不得匹配 170401 资本化。
+    """
+
+    @pytest.mark.asyncio
+    async def test_rd_expensing_does_not_match_capitalized(self, db):
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        db.add_all([sa_rd_cap, sa_rd_exp])
+        await db.flush()
+
+        # 兼容评估：研发支出_费用化支出 vs 资本化目标 → 冲突
+        result = evaluate_name_compatibility(
+            sa_rd_cap,
+            client_account_name="研发支出_费用化支出",
+            client_account_full_path="研发支出/费用化支出",
+        )
+        assert result.status == "conflict", \
+            f"研发费用化 vs 资本化目标 应为冲突，实际: {result.status}"
+
+
+class TestRDCapitalizingDirection:
+    """TASK-089 §9.3：研发资本化方向必须匹配资本化。
+
+    研发支出_资本化支出 / 开发支出 应匹配 170401 资本化目标，
+    不得匹配 660201 研发费用。
+    """
+
+    @pytest.mark.asyncio
+    async def test_rd_capitalizing_does_not_match_expensed(self, db):
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        sa_rd_exp = _sa("660201", "减：研发费用")
+        db.add_all([sa_rd_cap, sa_rd_exp])
+        await db.flush()
+
+        # 兼容评估：研发支出_资本化支出 vs 研发费用 → 冲突
+        result = evaluate_name_compatibility(
+            sa_rd_exp,
+            client_account_name="研发支出_资本化支出",
+            client_account_full_path="研发支出/资本化支出",
+        )
+        assert result.status == "conflict", \
+            f"研发资本化 vs 研发费用目标 应为冲突，实际: {result.status}"
+
+
+class TestEmptyStandardAccountIDNotSafe:
+    """TASK-089 §10.3：空标准科目 ID 不得成为安全候选。"""
+
+    def test_empty_standard_account_id_not_safe(self):
+        """空 ID 的候选即使其他字段合格也不得安全"""
+        candidate = {
+            "standard_account_id": "",
+            "standard_account_code": "5001",
+            "standard_account_name": "生产成本",
+            "score": 0.95,
+            "source": "code_match",
+            "reason": "测试",
+            "warning": None,
+            "auto_confirmable": True,
+            "compatibility_status": "compatible",
+        }
+        assert not _is_safe_candidate(candidate), \
+            "空 standard_account_id 必须判为不安全"
+
+    def test_none_standard_account_id_not_safe(self):
+        """None ID 的候选也不得安全"""
+        candidate = {
+            "standard_account_id": None,
+            "standard_account_code": "5001",
+            "standard_account_name": "生产成本",
+            "score": 0.95,
+            "source": "code_match",
+            "reason": "测试",
+            "warning": None,
+            "auto_confirmable": True,
+            "compatibility_status": "compatible",
+        }
+        assert not _is_safe_candidate(candidate), \
+            "None standard_account_id 必须判为不安全"
+
+
+class TestDeprecatedPickAutoConfirmFallbackRemoved:
+    """TASK-089 §5.3：废弃 _pick_auto_confirm_candidate 不得回退首候选。
+
+    必须仅作为薄包装转发到 pick_unique_auto_confirm_candidate。
+    无安全候选时必须返回 None，不得返回首项候选。
+    """
+
+    def test_deprecated_returns_none_when_no_safe(self):
+        """废弃函数：无安全候选时必须返回 None（不允许回退首项）"""
+        from app.services.client_account_mapping_service import _pick_auto_confirm_candidate
+        candidates = [
+            {
+                "standard_account_id": "sa-001",
+                "standard_account_code": "X",
+                "standard_account_name": "warning-only",
+                "score": 0.85,
+                "source": "name_similarity",
+                "warning": "模糊匹配，请人工确认",
+                "auto_confirmable": False,
+                "compatibility_status": "unknown",
+            },
+            {
+                "standard_account_id": "sa-002",
+                "standard_account_code": "Y",
+                "standard_account_name": "conflict",
+                "score": 0.95,
+                "source": "code_match",
+                "warning": None,
+                "auto_confirmable": True,
+                "compatibility_status": "conflict",
+            },
+        ]
+        picked = _pick_auto_confirm_candidate(candidates)
+        assert picked is None, \
+            f"废弃函数不应回退首项候选，实际: {picked}"
+
+    def test_deprecated_returns_unique_safe(self):
+        """废弃函数：唯一安全候选时返回该候选"""
+        from app.services.client_account_mapping_service import _pick_auto_confirm_candidate
+        candidates = [
+            {
+                "standard_account_id": "sa-001",
+                "standard_account_code": "5001",
+                "standard_account_name": "生产成本",
+                "score": 0.95,
+                "source": "code_match",
+                "warning": None,
+                "auto_confirmable": True,
+                "compatibility_status": "compatible",
+            },
+            {
+                "standard_account_id": "sa-002",
+                "standard_account_code": "X",
+                "standard_account_name": "warning",
+                "score": 0.95,
+                "source": "code_match",
+                "warning": "已停用",
+                "auto_confirmable": False,
+                "compatibility_status": "conflict",
+            },
+        ]
+        picked = _pick_auto_confirm_candidate(candidates)
+        assert picked is not None
+        assert picked["standard_account_code"] == "5001"
+

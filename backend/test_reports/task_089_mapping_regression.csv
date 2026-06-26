@@ -1,0 +1,7 @@
+﻿file,total_rows,effective_accounts,auto_confirm,manual_confirm,no_safe_candidate,multi_target_ambiguous,conflict_candidate_count,unknown_candidate_count,no_candidate,name_exact,semantic_alias,code_match,old_code_crosswalk,parent_inherited,name_prefix,code_prefix_parent,code_category_anchor,name_anchor,name_similarity,warning_auto,fuzzy_auto,multi_safe_auto,disabled_auto,empty_id_auto,conflict_auto,unknown_auto,major_mismatch_count,total_sec,sec_per_1k
+会展中心余额表.xlsx,266,188,168,20,1,19,38,32,0,0,31,9,1,57,1,0,0,69,0,0,0,0,0,0,0,0,0,2.33,12.41
+1-12科目余额表.xls,1011,926,290,636,614,22,512,267,0,11,6,1,187,15,0,0,0,70,0,0,0,0,0,0,0,0,0,6.91,7.46
+205201-2023.xls,48542,331,281,50,27,23,74,103,0,3,90,11,1,83,2,4,0,87,0,0,0,0,0,0,0,0,0,42.05,127.03
+科目余额表2023年导入.xls,181,160,98,62,60,2,9,136,0,13,2,0,12,70,0,0,0,1,0,0,0,0,0,0,0,0,0,1.2,7.5
+医疗3月31日序时账及余额表.xlsx,154,87,75,12,5,7,26,32,0,0,16,4,0,24,0,0,0,31,0,0,0,0,0,0,0,0,0,1.27,14.58
+科目余额表-成都迪康-240930.xls,404,293,110,183,175,8,63,202,0,10,14,8,3,38,0,22,12,3,0,0,0,0,0,0,0,0,0,2.84,9.68
