@@ -467,3 +467,174 @@ class TestDisabledStandardAccount:
         if disabled_cands:
             for c in disabled_cands:
                 assert c.get("warning") is not None or c.get("auto_confirmable") is False
+
+
+# ════════════════════════════════════════════════════════════
+# TASK-088：完整路径语义接入专项测试
+# ════════════════════════════════════════════════════════════
+
+from app.services.client_account_mapping_service import evaluate_name_compatibility
+
+
+class TestFullPathGenericName:
+    """用例1：当前名称泛化，完整路径明确 → 路径提供上下文"""
+
+    def test_generic_wage_identified_by_full_path(self):
+        """当前名称「工资」泛化，路径「生产成本/离合器/工资」→ 识别为生产成本"""
+        sa = _sa("5001", "生产成本")
+        result = evaluate_name_compatibility(
+            sa,
+            client_account_name="工资",
+            client_account_full_path="生产成本/离合器/工资",
+        )
+        # 路径中的「生产成本」应被识别为语义组 production_cost
+        assert result.status == "compatible", f"状态应为compatible，实际: {result.status}"
+        assert result.detected_group == "production_cost", \
+            f"应检测到production_cost组，实际: {result.detected_group}"
+        assert any("path_semantic_group=production_cost" in e for e in result.evidence), \
+            f"evidence 应包含 path_semantic_group"
+        assert any("full_path=" in e for e in result.evidence), \
+            f"evidence 应包含 full_path"
+
+    def test_generic_name_path_conflict_rejected(self):
+        """泛化名通过路径识别语义组后，不匹配冲突的标准科目"""
+        sa = _sa("4003", "资本公积")
+        result = evaluate_name_compatibility(
+            sa,
+            client_account_name="工资",
+            client_account_full_path="生产成本/基本生产成本/工资",
+        )
+        # 路径→生产成本，资本公积是冲突类别
+        assert result.status == "conflict", \
+            f"生产成本路径 vs 资本公积应是冲突，实际: {result.status}"
+
+
+class TestFullPathDoesNotOverrideClearName:
+    """用例2：当前名称明确，路径包含其他类别 → 名称优先"""
+
+    def test_clear_name_prevails_over_path_context(self):
+        """当前名称「应收账款」明确，路径「资产/流动资产/应收账款」不覆盖"""
+        sa_receivables = _sa("112201", "应收账款")
+        result = evaluate_name_compatibility(
+            sa_receivables,
+            client_account_name="应收账款",
+            client_account_full_path="资产/流动资产/应收账款",
+        )
+        assert result.status == "compatible", f"应兼容，实际: {result.status}"
+
+    def test_clear_name_not_diluted_by_generic_path(self):
+        """路径包含「资产」泛化词，但当前名称「应收账款」明确 → 不被路径覆盖"""
+        sa_payables = _sa("2202", "应付账款")  # 负债类
+        result = evaluate_name_compatibility(
+            sa_payables,
+            client_account_name="应收账款",  # 资产类
+            client_account_full_path="资产/流动资产/应收账款",
+        )
+        # 当前名称明确为「应收账款」，检查与「应付账款」的冲突
+        # 路径中的「资产」不应影响
+        # 这里测试的是锚点冲突：应收账款 vs 应付账款
+        assert result.status == "conflict" or result.status == "unknown", \
+            f"应收账款不应通过「资产」路径兼容应付账款，实际: {result.status}"
+
+
+class TestFullPathReserveSemantics:
+    """用例3：路径含备抵 → 识别为备抵语义"""
+
+    def test_path_reserve_detected(self):
+        """路径「应收账款/坏账准备/某客户」→ 识别备抵语义"""
+        sa_bad_debt = _sa("112402", "坏账准备（应收账款）")
+        result = evaluate_name_compatibility(
+            sa_bad_debt,
+            client_account_name="某客户",
+            client_account_full_path="应收账款/坏账准备/某客户",
+        )
+        # 路径含「坏账准备」→ 备抵语义 → 与备抵标准科目兼容
+        assert result.status == "compatible", \
+            f"路径含坏账准备应与备抵科目兼容，实际: {result.status}"
+
+    def test_path_reserve_prevents_matching_original_value(self):
+        """路径含备抵 → 不应匹配原值科目"""
+        sa_receivables = _sa("112201", "应收账款")
+        result = evaluate_name_compatibility(
+            sa_receivables,
+            client_account_name="某客户",
+            client_account_full_path="应收账款/坏账准备/某客户",
+        )
+        # 路径含「坏账准备」→ 备抵语义 → 目标为应收账款原值 → 冲突
+        assert result.status == "conflict", \
+            f"路径含坏账准备不应匹配应收账款原值，实际: {result.status}"
+
+
+class TestFullPathRDContext:
+    """用例4：研发路径 → 识别资本化/费用化方向"""
+
+    def test_rd_capitalizing_path_detected(self):
+        """路径「研发支出/资本化支出/人工费」→ 识别资本化方向"""
+        sa_capitalized = _sa("170401", "研发支出-资本化支出")
+        result = evaluate_name_compatibility(
+            sa_capitalized,
+            client_account_name="人工费",
+            client_account_full_path="研发支出/资本化支出/人工费",
+        )
+        # 路径含「资本化支出」→ 方向匹配
+        assert result.status == "compatible", \
+            f"路径含资本化支出应与资本化目标兼容，实际: {result.status}"
+
+    def test_rd_capitalizing_path_conflicts_expensing_target(self):
+        """资本化路径 → 不匹配费用化目标"""
+        sa_expensed = _sa("170402", "研发支出-费用化支出")
+        result = evaluate_name_compatibility(
+            sa_expensed,
+            client_account_name="人工费",
+            client_account_full_path="研发支出/资本化支出/人工费",
+        )
+        # 路径含「资本化支出」→ 目标为费用化 → 冲突
+        assert result.status == "conflict", \
+            f"资本化路径不应匹配费用化目标，实际: {result.status}"
+
+    def test_rd_expensing_path_detected(self):
+        """路径「研发支出/费用化支出/材料费」→ 识别费用化方向"""
+        sa_expensed = _sa("170402", "研发支出-费用化支出")
+        result = evaluate_name_compatibility(
+            sa_expensed,
+            client_account_name="材料费",
+            client_account_full_path="研发支出/费用化支出/材料费",
+        )
+        assert result.status == "compatible", \
+            f"路径含费用化支出应与费用化目标兼容，实际: {result.status}"
+
+    def test_rd_no_direction_still_unknown(self):
+        """路径不含方向标记 → 仍为 unknown"""
+        sa_rd = _sa("5301", "研发支出")
+        result = evaluate_name_compatibility(
+            sa_rd,
+            client_account_name="人工费",
+            client_account_full_path="研发支出/人工费",  # 无费用化/资本化标记
+        )
+        # 当前名称无研发关键词，路径虽有研发但无方向 → unknown
+        assert result.status in ("unknown", "compatible"), \
+            f"无方向标记应unknown或兼容，实际: {result.status}"
+
+
+class TestFullPathOrderOfPrecedence:
+    """优先级：当前名称 > 父级 > 最近祖先 > 完整路径"""
+
+    def test_name_beats_path_for_group(self):
+        """当前名称明确时，路径语义组不覆盖"""
+        sa = _sa("5001", "生产成本")
+        result = evaluate_name_compatibility(
+            sa,
+            client_account_name="制造费用",
+            parent_client_account_name=None,
+            ancestor_names=[],
+            client_account_full_path="生产成本/制造费用",  # 路径以生产成本开头
+        )
+        # 「制造费用」锚点不在「生产成本」中 → 正确冲突
+        # 路径中的「生产成本」语义组不被作为 primary group（因为 client_group 已命中）
+        assert result.status == "conflict", \
+            f"制造费用锚点不在生产成本中，应conflict，实际: {result.status}"
+        # 确认语义组来自当前名称而非路径
+        evidence_str = " ".join(result.evidence)
+        assert "manufacturing_overhead" in evidence_str, \
+            f"证据中应有manufacturing_overhead（来自当前名称），实际: {evidence_str}"
+

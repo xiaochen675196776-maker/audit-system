@@ -460,17 +460,23 @@ def _detect_semantic_group(client_name: str | None) -> str | None:
                 return group_key
 
     # ── 优先级 3：回退全名 alias 扫描 ──
+    # TASK-088：alias 必须在分词边界上匹配（作为完整 token 或开头），避免 "保证金" 误命中 "其他应付款_保证金"
     for group_key, group_def in _SEMANTIC_ACCOUNT_GROUPS.items():
         for alias in group_def.get("client_aliases", []):
             alias_norm = _normalize_name(alias)
-            if alias_norm and alias_norm in norm:
+            if not alias_norm:
+                continue
+            # 检查是否作为完整 token 出现或出现在名称开头
+            if alias_norm in all_token_norms:
+                return group_key
+            if norm.startswith(alias_norm):
                 return group_key
     return None
 
 
 def _standard_account_matches_semantic_group(sa: StandardAccount, group_key: str) -> bool:
-    """检查标准科目是否命中指定语义组（启用科目 + canonical name 匹配 standard_aliases）。"""
-    if not sa.is_active:
+    """检查标准科目是否命中指定语义组（None/True 视为启用，仅 False 时拒绝）。"""
+    if sa.is_active is False:
         return False
     group_def = _SEMANTIC_ACCOUNT_GROUPS.get(group_key)
     if not group_def:
@@ -524,6 +530,14 @@ def evaluate_name_compatibility(
     parent_norm = _normalize_name(parent_client_account_name)
     ancestor_norms = [_normalize_name(a) for a in (ancestor_names or [])]
     path_norm = _normalize_name(client_account_full_path)
+    # TASK-088：完整路径语义分析（用于辅助判断—当当前名称缺失上下文时提供兜底）
+    path_group = _detect_semantic_group(client_account_full_path) if client_account_full_path else None
+    path_anchor = _detect_name_anchor(client_account_full_path) if client_account_full_path else None
+    path_is_reserve = _has_negative_reserve_semantics(client_account_full_path) if client_account_full_path else False
+    if client_account_full_path:
+        evidence.append(f"full_path={client_account_full_path}")
+    if path_group:
+        evidence.append(f"path_semantic_group={path_group}")
     evidence.append(f"client_name={client_account_name or '(空)'}")
 
     # ── 规则 0：客户端名称缺失 ──
@@ -561,7 +575,8 @@ def evaluate_name_compatibility(
 
     # ── 规则 2：客户名称过于泛化，无法判断 ──
     generic_norm = {_normalize_name(n) for n in _GENERIC_LEAF_NAMES}
-    if client_norm in generic_norm and not parent_norm and not ancestor_norms:
+    # 规则2增强：完整路径可提供上下文，避免泛化名草率退回unknown
+    if client_norm in generic_norm and not parent_norm and not ancestor_norms and not path_group:
         return CompatibilityResult(
             status="unknown",
             reason=f"客户名称「{client_account_name}」过于泛化且无父级上下文，无法判断兼容性",
@@ -579,15 +594,27 @@ def evaluate_name_compatibility(
         if g and g not in ancestor_groups:
             ancestor_groups.append(g)
 
-    effective_group = client_group or parent_group or (ancestor_groups[0] if ancestor_groups else None)
+    effective_group = (
+        client_group
+        or parent_group
+        or (ancestor_groups[0] if ancestor_groups else None)
+        or path_group
+    )
 
     if effective_group:
         evidence.append(f"semantic_group={effective_group}")
+        # TASK-088：标记语义组来源（当前名称 → 父级 → 最近祖先 → 完整路径）
+        nearest_ancestor_group = ancestor_groups[0] if ancestor_groups else None
+        if effective_group == path_group and not (client_group or parent_group or nearest_ancestor_group):
+            evidence.append("semantic_group_from=full_path")
         # 检查标准科目是否属于同一语义组
         if _standard_account_matches_semantic_group(standard_account, effective_group):
+            reason = f"客户科目语义组「{effective_group}」与标准科目一致"
+            if effective_group == path_group and not (client_group or parent_group or nearest_ancestor_group):
+                reason = f"当前名称泛化，依据完整科目路径识别为语义组「{effective_group}」"
             return CompatibilityResult(
                 status="compatible",
-                reason=f"客户科目语义组「{effective_group}」与标准科目一致",
+                reason=reason,
                 evidence=evidence,
                 detected_group=effective_group,
             )
@@ -603,21 +630,38 @@ def evaluate_name_compatibility(
     # ── 规则 4：备抵/减值冲突检测 ──
     sa_is_reserve = _has_negative_reserve_semantics(sa_name)
     client_is_reserve = _has_negative_reserve_semantics(client_account_name)
-    if sa_is_reserve and not client_is_reserve:
+    # TASK-088：完整路径中的备抵语义可作为辅助证据
+    effective_client_is_reserve = client_is_reserve or path_is_reserve
+    if path_is_reserve and not client_is_reserve:
+        evidence.append("reserve_context_from=full_path")
+    if sa_is_reserve and not effective_client_is_reserve:
         return CompatibilityResult(
             status="conflict",
             reason=f"标准科目「{sa_code} {sa_name}」是备抵/减值类，但客户名称无减值语义",
             evidence=evidence,
         )
-    if client_is_reserve and not sa_is_reserve:
+    if effective_client_is_reserve and not sa_is_reserve:
         return CompatibilityResult(
             status="conflict",
             reason=f"客户名称含备抵/减值语义，但标准科目「{sa_code} {sa_name}」是原值/非备抵类",
             evidence=evidence,
         )
+    # TASK-088：双方均有备抵语义（含路径提供）且上下文一致 → 兼容
+    if effective_client_is_reserve and sa_is_reserve:
+        evidence.append("reserve_semantics=match")
+        return CompatibilityResult(
+            status="compatible",
+            reason=f"客户科目与标准科目「{sa_code} {sa_name}」均有备抵/减值语义",
+            evidence=evidence,
+        )
 
     # ── 规则 5：名称锚点冲突检测 ──
     anchor = _detect_name_anchor(client_account_name)
+    # TASK-088：当前名称无锚点时，回退到完整路径中的锚点
+    if not anchor:
+        anchor = path_anchor
+        if anchor:
+            evidence.append(f"path_anchor={anchor}")
     if anchor and sa_canonical:
         anchor_norm = _normalize_name(anchor)
         if anchor_norm and anchor_norm not in sa_canonical:
@@ -629,9 +673,16 @@ def evaluate_name_compatibility(
             )
 
     # ── 规则 6：研发支出方向检测（费用化 vs 资本化） ──
-    client_tokens = _split_name_tokens(client_account_name or "")
-    client_token_norms = [_normalize_name(t) for t in client_tokens]
-    if "研发支出" in client_norm or "研发费用" in client_norm:
+    # TASK-088：完整路径中也参与研发方向判断
+    rd_keyword_in_client = "研发支出" in client_norm or "研发费用" in client_norm
+    rd_keyword_in_path = path_norm and ("研发支出" in path_norm or "研发费用" in path_norm)
+    if rd_keyword_in_client or rd_keyword_in_path:
+        client_tokens = _split_name_tokens(client_account_name or "")
+        client_token_norms = [_normalize_name(t) for t in client_tokens]
+        # 合并路径 token 提供额外上下文
+        if path_norm and client_account_full_path:
+            path_tokens = _split_name_tokens(client_account_full_path)
+            client_token_norms.extend([_normalize_name(t) for t in path_tokens])
         has_expensing = any(t in client_token_norms for t in
                            [_normalize_name("费用化支出"), _normalize_name("费用化")])
         has_capitalizing = any(t in client_token_norms for t in
@@ -656,7 +707,7 @@ def evaluate_name_compatibility(
                 )
         # 研发支出无费用化/资本化上下文时 → unknown
         if not has_expensing and not has_capitalizing:
-            if client_group is None and parent_group is None:
+            if client_group is None and parent_group is None and path_group is None:
                 if "研发支出" in client_norm and client_norm == _normalize_name("研发支出"):
                     return CompatibilityResult(
                         status="unknown",
@@ -912,6 +963,7 @@ async def recommend_mappings(
                     sa, client_name,
                     parent_client_account_name=ca.get("parent_client_account_name"),
                     ancestor_names=ca.get("ancestor_names") or [],
+                    client_account_full_path=ca.get("client_account_full_path"),
                 )
                 entry["candidates"].append(candidate)
 
@@ -951,6 +1003,7 @@ async def recommend_mappings(
                         sa, client_code, client_name, crosswalk_code,
                         parent_client_account_name=ca.get("parent_client_account_name"),
                         ancestor_names=ca.get("ancestor_names") or [],
+                        client_account_full_path=ca.get("client_account_full_path"),
                     )
                     entry["candidates"].append(candidate)
 
@@ -1021,6 +1074,7 @@ async def recommend_mappings(
                         sa, client_code, client_name,
                         parent_code, parent_name, parent_crosswalk,
                         is_generic=is_generic,
+                        client_account_full_path=ca.get("client_account_full_path"),
                     )
                     entry["candidates"].append(candidate)
 
@@ -1873,6 +1927,7 @@ def _build_code_match_candidate(
     client_name: str | None = None,
     parent_client_account_name: str | None = None,
     ancestor_names: list[str] | None = None,
+    client_account_full_path: str | None = None,
 ) -> dict:
     """从代码精确匹配构造候选。
 
@@ -1905,6 +1960,7 @@ def _build_code_match_candidate(
             client_account_name=client_name,
             parent_client_account_name=parent_client_account_name,
             ancestor_names=ancestor_names,
+            client_account_full_path=client_account_full_path,
         )
         if compat.status == "conflict":
             return {
@@ -2267,6 +2323,7 @@ def _is_safe_auto_rollup(sa: StandardAccount, client_name: str | None, context: 
                         compat = evaluate_name_compatibility(
                             sa,
                             client_account_name=client_name,
+                            client_account_full_path=context.get("client_account_full_path") if context else None,
                         )
                         if compat.status == "conflict":
                             return False
@@ -2300,6 +2357,7 @@ def _is_safe_auto_rollup(sa: StandardAccount, client_name: str | None, context: 
                     compat = evaluate_name_compatibility(
                         sa,
                         client_account_name=client_name,
+                        client_account_full_path=context.get("client_account_full_path") if context else None,
                     )
                     if compat.status == "conflict":
                         return False
@@ -2709,6 +2767,7 @@ def _build_crosswalk_candidate(
     target_code: str,
     parent_client_account_name: str | None = None,
     ancestor_names: list[str] | None = None,
+    client_account_full_path: str | None = None,
 ) -> dict:
     """从旧编码 crosswalk 构造候选。
 
@@ -2736,6 +2795,7 @@ def _build_crosswalk_candidate(
             client_account_name=client_name,
             parent_client_account_name=parent_client_account_name,
             ancestor_names=ancestor_names,
+            client_account_full_path=client_account_full_path,
         )
         if compat.status == "conflict":
             base["score"] = 0.60
@@ -2786,6 +2846,7 @@ def _build_parent_inherited_candidate(
     parent_name: str | None,
     target_code: str,
     is_generic: bool = False,
+    client_account_full_path: str | None = None,
 ) -> dict:
     """从父级继承构造候选（通过 crosswalk 或前缀匹配）。
 
@@ -2808,6 +2869,7 @@ def _build_parent_inherited_candidate(
     compat = evaluate_name_compatibility(
         sa,
         client_account_name=parent_name or client_name,
+        client_account_full_path=client_account_full_path,
     )
     if compat.status == "conflict":
         return {
