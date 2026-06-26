@@ -36,6 +36,9 @@ class ClientAccountMapping(Base):
     normalized_client_account_name: Mapped[str | None] = mapped_column(
         String(500), nullable=True, comment="客户科目名称（标准化后）"
     )
+    client_account_full_path: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True, comment="客户科目完整路径（继承式映射用）"
+    )
 
     # 映射到标准科目
     standard_account_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -56,6 +59,10 @@ class ClientAccountMapping(Base):
     scope: Mapped[str] = mapped_column(
         String(50), nullable=False, default="global",
         comment="经验范围: global / company"
+    )
+    mapping_kind: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="anchor",
+        comment="映射类型: anchor(锚点) / override(显式覆盖); 不得用于普通 inherited 行"
     )
 
     # 使用统计

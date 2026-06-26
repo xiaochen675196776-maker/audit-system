@@ -64,6 +64,33 @@ class StandardTrialBalanceRawRow(Base):
         comment="映射状态: pending / mapped / unmapped / ignored"
     )
 
+    # ANCHOR-INHERITANCE-MAPPING：映射角色与追溯字段
+    mapping_role: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+        comment="映射角色: structural_summary/anchor/inherited/breakpoint/explicit_override/unresolved/ignored"
+    )
+    mapping_mode: Mapped[str | None] = mapped_column(
+        String(50), nullable=True,
+        comment="映射模式: direct_auto/direct_confirmed/inherited_ancestor/override_confirmed/none"
+    )
+    mapping_source: Mapped[str | None] = mapped_column(
+        String(80), nullable=True,
+        comment="映射来源: company_history/code_exact/name_exact/semantic_alias/inherited_ancestor/user_override..."
+    )
+    mapping_anchor_raw_row_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("standard_trial_balance_raw_rows.id", ondelete="SET NULL"),
+        nullable=True, comment="追溯继承自哪个原始行"
+    )
+    inheritance_reason: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="为什么允许继承"
+    )
+    inheritance_break_reason: Mapped[str | None] = mapped_column(
+        String(80), nullable=True, comment="为什么中断继承"
+    )
+    requires_manual_confirmation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否需要人工确认"
+    )
+
     # 行级警告
     warnings: Mapped[dict | None] = mapped_column(
         JSON, nullable=True, comment="行级警告信息"

@@ -200,6 +200,9 @@ async def execute(
             "standard_account_id": cm.standard_account_id,
             "standard_account_code": cm.standard_account_code,
             "standard_account_name": cm.standard_account_name,
+            "mapping_action": cm.mapping_action,
+            "apply_to_descendants": cm.apply_to_descendants,
+            "selection_source": cm.selection_source,
         }
         for cm in body.confirmed_mappings
     ]
@@ -213,6 +216,7 @@ async def execute(
             ignored_rows=body.ignored_rows,
             warnings_confirmed=body.warnings_confirmed,
             save_mapping_experience=body.save_mapping_experience,
+            mapping_strategy_version=body.mapping_strategy_version,
         )
         return ExecuteResponse(**result)
     except ValueError as e:

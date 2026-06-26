@@ -2768,6 +2768,8 @@ async def save_mapping(
     source: str = "user_confirmed",
     confidence: float = 1.0,
     allow_overwrite: bool = False,
+    client_account_full_path: str | None = None,
+    mapping_kind: str = "anchor",
 ) -> dict:
     """
     保存或更新客户科目到标准科目的映射经验。
@@ -2783,6 +2785,9 @@ async def save_mapping(
         source: 来源 (user_confirmed / user_corrected)
         confidence: 置信度 0-1
         allow_overwrite: 是否允许覆盖冲突映射（用户显式确认）
+        client_account_full_path: 客户科目完整路径
+        mapping_kind: anchor(锚点) / override(显式覆盖)
+            继承服务调用时只能传 anchor 或 override；不得保存普通 inherited 行。
 
     返回：
         {"status": "created"|"updated"|"conflict", "mapping_id": ..., "conflict_detail": ...}
@@ -2876,11 +2881,13 @@ async def save_mapping(
         client_account_code=client_account_code,
         client_account_name=client_account_name,
         normalized_client_account_name=normalized_name,
+        client_account_full_path=client_account_full_path,
         standard_account_id=standard_account_id,
         standard_account_code_snapshot=standard_account_code,
         standard_account_name_snapshot=standard_account_name,
         confidence=confidence,
         scope=scope,
+        mapping_kind=mapping_kind,
         usage_count=0,
         last_used_at=datetime.now(timezone.utc),
         is_active=True,

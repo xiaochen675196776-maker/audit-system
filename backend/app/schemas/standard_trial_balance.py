@@ -103,11 +103,13 @@ class ClientAccountMappingCreate(BaseModel):
     client_account_code: str | None = Field(None, max_length=100)
     client_account_name: str | None = Field(None, max_length=500)
     normalized_client_account_name: str | None = Field(None, max_length=500)
+    client_account_full_path: str | None = Field(None, max_length=2000)
     standard_account_id: uuid.UUID | None = Field(None)
     standard_account_code_snapshot: str | None = Field(None, max_length=50)
     standard_account_name_snapshot: str | None = Field(None, max_length=200)
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     scope: str = Field("global", description="经验范围")
+    mapping_kind: str = Field("anchor", description="映射类型: anchor / override")
 
     @field_validator("data_type")
     @classmethod
@@ -133,11 +135,13 @@ class ClientAccountMappingResponse(BaseModel):
     client_account_code: str | None
     client_account_name: str | None
     normalized_client_account_name: str | None
+    client_account_full_path: str | None = None
     standard_account_id: uuid.UUID | None
     standard_account_code_snapshot: str | None
     standard_account_name_snapshot: str | None
     confidence: float
     scope: str
+    mapping_kind: str = "anchor"
     usage_count: int
     last_used_at: datetime | None
     is_active: bool
@@ -198,6 +202,14 @@ class RawRowResponse(BaseModel):
     is_leaf: bool
     mapped_standard_account_id: uuid.UUID | None
     mapping_status: str
+    # ANCHOR-INHERITANCE-MAPPING：映射角色与追溯字段
+    mapping_role: str | None = None
+    mapping_mode: str | None = None
+    mapping_source: str | None = None
+    mapping_anchor_raw_row_id: uuid.UUID | None = None
+    inheritance_reason: str | None = None
+    inheritance_break_reason: str | None = None
+    requires_manual_confirmation: bool = False
     warnings: dict | None
     created_at: datetime
 
@@ -239,6 +251,11 @@ class TrialBalanceEntryResponse(BaseModel):
     standard_balance_direction_snapshot: str | None
     client_account_code: str | None
     client_account_name: str | None
+    # ANCHOR-INHERITANCE-MAPPING：映射来源快照
+    mapping_mode_snapshot: str | None = None
+    mapping_source_snapshot: str | None = None
+    mapping_anchor_client_account_code_snapshot: str | None = None
+    mapping_anchor_client_account_name_snapshot: str | None = None
     fiscal_year: int
     period: int
     opening_debit: Decimal
@@ -300,10 +317,32 @@ class MappingRecommendEntry(BaseModel):
     row_index: int | None = Field(None, ge=0, description="原始数据行序号")
     client_account_code: str | None
     client_account_name: str | None
+    client_account_full_path: str | None = None
+    parent_row_index: int | None = None
+    parent_client_account_code: str | None = None
+    parent_client_account_name: str | None = None
     is_leaf: bool | None = Field(None, description="是否为末级客户科目行")
     is_summary: bool | None = Field(None, description="是否为汇总父级行")
     participates_in_entry: bool | None = Field(None, description="是否参与生成标准余额表条目")
-    candidates: list[ClientAccountMappingCandidate]
+    # ANCHOR-INHERITANCE-MAPPING：映射角色与模式
+    mapping_role: str | None = None
+    mapping_mode: str | None = None
+    requires_confirmation: bool = False
+    anchor_row_index: int | None = None
+    anchor_client_account_code: str | None = None
+    anchor_client_account_name: str | None = None
+    resolved_standard_account_id: str | None = None
+    resolved_standard_account_code: str | None = None
+    resolved_standard_account_name: str | None = None
+    resolution_source: str | None = None
+    resolution_reason: str | None = None
+    inheritance_break_reason: str | None = None
+    inheritance_evidence: list[str] = []
+    descendant_leaf_count: int = 0
+    candidates: list[ClientAccountMappingCandidate] = []
+    auto_confirm_candidate: ClientAccountMappingCandidate | None = None
+    auto_confirm_status: str | None = None
+    auto_confirm_reason: str | None = None
 
 
 class ClientAccountMappingRecommendResponse(BaseModel):
@@ -547,6 +586,20 @@ class WarningItem(BaseModel):
     category: str  # parent_amount_mismatch / negative_amount / indent_suggested / disabled_standard_account
 
 
+class MappingPlanSummary(BaseModel):
+    """ANCHOR-INHERITANCE-MAPPING：映射计划统计。"""
+    total_nodes: int = 0
+    structural_summary_count: int = 0
+    anchor_count: int = 0
+    inherited_count: int = 0
+    breakpoint_count: int = 0
+    explicit_override_count: int = 0
+    unresolved_count: int = 0
+    confirmation_required_count: int = 0
+    participating_leaf_count: int = 0
+    resolved_participating_leaf_count: int = 0
+
+
 class AnalyzeResponse(BaseModel):
     """分析响应"""
     batch_id: uuid.UUID
@@ -556,24 +609,44 @@ class AnalyzeResponse(BaseModel):
     amounts: list[AmountInfo]
     errors: list[BlockingError]
     warnings: list[WarningItem]
+    mapping_summary: MappingPlanSummary | None = None
+    mapping_strategy: str = "anchor_inheritance_v1"
 
 
 class ConfirmedMapping(BaseModel):
-    """用户确认的映射"""
+    """用户确认的映射（锚点 / 显式覆盖）。
+
+    新语义：只提交锚点、中断点和显式覆盖；普通继承行不需要提交。
+    """
     row_index: int
     client_account_code: str | None = None
     client_account_name: str | None = None
     standard_account_id: uuid.UUID
     standard_account_code: str
     standard_account_name: str
+    mapping_action: str = Field("anchor", description="anchor / override")
+    apply_to_descendants: bool = Field(True, description="override 时是否向其后代传播")
+    selection_source: str = Field(
+        "user_confirmed",
+        description="auto_confirmed / user_confirmed / user_corrected",
+    )
 
 
 class ExecuteRequest(BaseModel):
-    """执行导入请求"""
-    confirmed_mappings: list[ConfirmedMapping] = Field(..., min_length=0, description="确认的科目映射列表")
+    """执行导入请求
+
+    新语义：confirmed_mappings 只提交锚点 / 中断点 / 显式覆盖；
+    普通 inherited 行不需要提交（execute 自动从树继承解析）。
+    """
+    confirmed_mappings: list[ConfirmedMapping] = Field(
+        ..., min_length=0, description="确认的锚点 / 显式覆盖映射"
+    )
     ignored_rows: list[int] = Field(default_factory=list, description="用户忽略的原始行序号列表")
     warnings_confirmed: bool = Field(False, description="是否确认所有警告，确认后继续")
     save_mapping_experience: bool = Field(True, description="是否保存映射经验")
+    mapping_strategy_version: int = Field(
+        1, description="映射策略版本号；与 analyze 不一致则拒绝"
+    )
 
     @field_validator("ignored_rows")
     @classmethod
@@ -591,6 +664,8 @@ class MappingSavedInfo(BaseModel):
     client_account_code: str | None
     standard_account_code: str
     status: str  # created / updated / conflict
+    mapping_kind: str = "anchor"  # anchor / override
+    client_account_full_path: str | None = None
 
 
 class ExecuteResponse(BaseModel):
@@ -601,3 +676,9 @@ class ExecuteResponse(BaseModel):
     raw_row_count: int
     mapping_saved_count: int
     mapping_saved: list[MappingSavedInfo] = []
+    anchor_count: int = 0
+    breakpoint_count: int = 0
+    inherited_count: int = 0
+    explicit_override_count: int = 0
+    unresolved_leaf_count: int = 0
+    mapping_strategy_version: int = 1

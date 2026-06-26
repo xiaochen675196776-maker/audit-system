@@ -1,9 +1,18 @@
-"""科目余额表标准化导入服务 — TASK-044
+"""科目余额表标准化导入服务 — TASK-044 + ANCHOR-INHERITANCE-MAPPING
 
 完整流程：
   preview → analyze → execute
 
 状态机: previewed → analyzed → blocked → executed → failed
+
+ANCHOR-INHERITANCE-MAPPING：
+- analyze 阶段调用 account_mapping_inheritance_service 决定每行的映射角色
+  （anchor / inherited / breakpoint / explicit_override / unresolved /
+   structural_summary / ignored）
+- execute 阶段复用同一份 build_account_tree + evaluate_inheritance_boundary
+  重新解析映射计划，然后只对 anchor / breakpoint / explicit_override 节点应用
+  用户提交的目标，对 inherited 节点自动沿树传播。
+- 任一参与入库的末级未解析唯一标准科目 → 阻止 execute。
 """
 
 import uuid
@@ -29,6 +38,10 @@ from app.services.trial_balance_transform import (
     AmountConfig,
     transform_rows,
     get_leaf_rows,
+    detect_hierarchy_by_code,
+    detect_hierarchy_by_indent,
+    assign_flat_hierarchy,
+    merge_hierarchy,
     BatchTransformResult,
 )
 from app.services.client_account_mapping_service import (
@@ -36,6 +49,19 @@ from app.services.client_account_mapping_service import (
     save_mapping,
     _pick_auto_confirm_candidate,
     pick_unique_auto_confirm_candidate,
+)
+from app.services.account_mapping_inheritance_service import (
+    AccountTree,
+    AccountTreeNode,
+    AnchorResolution,
+    MappingPlanSummary,
+    build_account_tree,
+    build_mapping_plan as build_anchor_mapping_plan,
+    validate_mapping_plan,
+    resolve_leaf_standard_accounts,
+    is_structural_summary,
+    evaluate_inheritance_boundary,
+    find_strong_direct_signals,
 )
 from app.models.standard_trial_balance_import_batch import StandardTrialBalanceImportBatch
 from app.models.standard_trial_balance_raw_row import StandardTrialBalanceRawRow
@@ -913,6 +939,176 @@ async def analyze_standard_import(
             "category": "missing_amount",
         })
 
+    # ANCHOR-INHERITANCE-MAPPING：构建客户科目树并运行继承映射计划
+    # 1) 准备 rows_meta + row_mapping_meta
+    ca_by_row: dict[int, dict] = {
+        ca.get("row_index"): ca for ca in client_accounts_for_mapping
+        if ca.get("row_index") is not None
+    }
+    rows_meta_for_tree: list[dict] = []
+    for i, ri in enumerate(row_inputs_no_dir):
+        h = merged_hier[i] if i < len(merged_hier) else {}
+        ca = ca_by_row.get(ri.row_index, {})
+        rows_meta_for_tree.append({
+            "row_index": ri.row_index,
+            "client_account_code": ri.client_account_code,
+            "client_account_name": ri.client_account_name,
+            "level": h.get("level"),
+            "parent_key": h.get("parent_key"),
+            "is_leaf": h.get("is_leaf", True),
+            "is_summary": h.get("is_summary", False),
+            "ancestor_codes": ca.get("ancestor_codes") or [],
+            "ancestor_names": ca.get("ancestor_names") or [],
+        })
+
+    tree = build_account_tree(
+        rows_meta=rows_meta_for_tree,
+        row_mapping_meta={
+            h["row_index"]: {
+                "is_leaf": h.get("is_leaf", True),
+                "is_summary": h.get("is_summary", False),
+                "participates_in_entry": row_mapping_meta.get(h["row_index"], {}).get(
+                    "participates_in_entry", True
+                ),
+            }
+            for h in hierarchy
+        },
+    )
+
+    # 2) 准备 per-row recommendation lookup（用 recommend_mappings 已有结果作为锚点推荐源）
+    rec_by_row: dict[int, dict] = {}
+    for rec in mapping_recommendations:
+        ri = rec.get("row_index")
+        if ri is not None:
+            rec_by_row[ri] = rec
+
+    async def _recommend_anchor(node: AccountTreeNode) -> AnchorResolution | None:
+        """对 anchor / breakpoint 节点执行完整推荐（已用 recommend_mappings 跑过）。"""
+        rec = rec_by_row.get(node.row_index)
+        if rec is None:
+            return AnchorResolution(
+                standard_account_id=None,
+                standard_account_code=None,
+                standard_account_name=None,
+                source=None,
+                reason="无推荐结果",
+                is_resolved=False,
+            )
+        # 优先使用后端 auto_confirm_candidate，否则尝试 pick unique safe
+        cand = rec.get("auto_confirm_candidate") or pick_unique_auto_confirm_candidate(
+            rec.get("candidates", [])
+        )
+        if cand:
+            sa_id = cand.get("standard_account_id")
+            return AnchorResolution(
+                standard_account_id=sa_id,
+                standard_account_code=cand.get("standard_account_code"),
+                standard_account_name=cand.get("standard_account_name"),
+                source=cand.get("source") or "auto",
+                reason=cand.get("reason") or "唯一安全候选",
+                is_resolved=True,
+                auto_confirm_status=rec.get("auto_confirm_status") or "unique_safe",
+                auto_confirm_reason=rec.get("auto_confirm_reason"),
+            )
+        # 没有自动确认候选：从已有候选中挑选 score 最高的（不自动确认）
+        cands = rec.get("candidates", [])
+        if cands:
+            best = max(cands, key=lambda c: float(c.get("score", 0) or 0))
+            return AnchorResolution(
+                standard_account_id=best.get("standard_account_id"),
+                standard_account_code=best.get("standard_account_code"),
+                standard_account_name=best.get("standard_account_name"),
+                source=best.get("source"),
+                reason=best.get("reason"),
+                is_resolved=bool(best.get("standard_account_id")),
+                auto_confirm_status=rec.get("auto_confirm_status") or "none",
+                auto_confirm_reason=rec.get("auto_confirm_reason") or "需用户手动选择",
+            )
+        return AnchorResolution(
+            standard_account_id=None,
+            standard_account_code=None,
+            standard_account_name=None,
+            source=None,
+            reason="无候选",
+            is_resolved=False,
+            auto_confirm_status=rec.get("auto_confirm_status") or "none",
+            auto_confirm_reason=rec.get("auto_confirm_reason") or "无候选，需用户手动选择",
+        )
+
+    # 3) 运行继承映射计划
+    tree, mapping_summary = await build_anchor_mapping_plan(
+        tree=tree,
+        db=db,
+        customer_label=customer_label,
+        source_label=source_label,
+        recommend_anchor_fn=_recommend_anchor,
+    )
+
+    # 4) 把映射角色 / 模式合并进 mapping_recommendations
+    for rec in mapping_recommendations:
+        ri = rec.get("row_index")
+        if ri is None:
+            continue
+        node = tree.nodes_by_row.get(ri)
+        if node is None:
+            continue
+        rec["mapping_role"] = node.mapping_role
+        rec["mapping_mode"] = node.mapping_mode
+        rec["requires_confirmation"] = node.requires_confirmation
+        rec["anchor_row_index"] = node.anchor_row_index
+        rec["anchor_client_account_code"] = node.anchor_client_account_code
+        rec["anchor_client_account_name"] = node.anchor_client_account_name
+        rec["resolved_standard_account_id"] = node.resolved_standard_account_id
+        rec["resolved_standard_account_code"] = node.resolved_standard_account_code
+        rec["resolved_standard_account_name"] = node.resolved_standard_account_name
+        rec["resolution_source"] = node.resolution_source
+        rec["resolution_reason"] = node.resolution_reason
+        rec["inheritance_break_reason"] = node.inheritance_break_reason
+        rec["inheritance_evidence"] = list(node.inheritance_evidence)
+        rec["descendant_leaf_count"] = node.descendant_leaf_count
+        rec["auto_confirm_status"] = node.auto_confirm_status
+        rec["auto_confirm_reason"] = node.auto_confirm_reason
+        rec["parent_row_index"] = node.parent_row_index
+        rec["parent_client_account_code"] = (
+            tree.nodes_by_row[node.parent_row_index].client_account_code
+            if node.parent_row_index is not None
+            and node.parent_row_index in tree.nodes_by_row
+            else None
+        )
+        rec["parent_client_account_name"] = (
+            tree.nodes_by_row[node.parent_row_index].client_account_name
+            if node.parent_row_index is not None
+            and node.parent_row_index in tree.nodes_by_row
+            else None
+        )
+        rec["client_account_full_path"] = node.full_path
+        # 普通 inherited 行不显示独立候选（避免被误解为可选）
+        if node.mapping_role == "inherited":
+            rec["candidates"] = []
+            rec["auto_confirm_candidate"] = None
+        elif node.mapping_role in {"structural_summary", "ignored"}:
+            rec["candidates"] = []
+            rec["auto_confirm_candidate"] = None
+
+    # 5) 未解析叶子行单独检查（基于新映射角色）
+    for rec in mapping_recommendations:
+        if not rec.get("participates_in_entry", True):
+            continue
+        if rec.get("mapping_role") in {"inherited", "anchor", "breakpoint", "explicit_override"}:
+            if rec.get("resolved_standard_account_id"):
+                continue
+        if rec.get("mapping_role") == "unresolved":
+            errors.append({
+                "row_index": rec.get("row_index"),
+                "code": rec.get("client_account_code") or "",
+                "message": (
+                    f"客户科目「{rec.get('client_account_code') or '?'} "
+                    f"{rec.get('client_account_name') or '?'}」"
+                    f"未能通过锚点/继承解析唯一标准科目，请手动选择"
+                ),
+                "category": "unmapped_account",
+            })
+
     # 更新批次状态和配置
     batch.status = "analyzed"
     batch.field_mapping = {"mappings": field_mappings}
@@ -930,6 +1126,8 @@ async def analyze_standard_import(
         "mode": hierarchy_mode,
         "parse_config": existing_parse_config,
         "inherited_auxiliary_rows": inherited_auxiliary_rows,
+        "mapping_strategy": "anchor_inheritance_v1",
+        "mapping_strategy_version": 1,
     }
     batch.fiscal_year = fiscal_year
     batch.period = period
@@ -947,6 +1145,24 @@ async def analyze_standard_import(
         "amounts": amounts,
         "errors": errors,
         "warnings": warnings,
+        "mapping_summary": mapping_summary_to_dict(mapping_summary),
+        "mapping_strategy": "anchor_inheritance_v1",
+    }
+
+
+def mapping_summary_to_dict(s: MappingPlanSummary) -> dict:
+    """将 MappingPlanSummary 序列化成 dict。"""
+    return {
+        "total_nodes": s.total_nodes,
+        "structural_summary_count": s.structural_summary_count,
+        "anchor_count": s.anchor_count,
+        "inherited_count": s.inherited_count,
+        "breakpoint_count": s.breakpoint_count,
+        "explicit_override_count": s.explicit_override_count,
+        "unresolved_count": s.unresolved_count,
+        "confirmation_required_count": s.confirmation_required_count,
+        "participating_leaf_count": s.participating_leaf_count,
+        "resolved_participating_leaf_count": s.resolved_participating_leaf_count,
     }
 
 
@@ -961,9 +1177,14 @@ async def execute_standard_import(
     ignored_rows: list[int] | None = None,
     warnings_confirmed: bool = False,
     save_mapping_experience: bool = True,
+    mapping_strategy_version: int = 1,
 ) -> dict:
     """
     执行导入：校验 → 保存原始行 → 生成标准余额表 → 保存映射经验。
+
+    ANCHOR-INHERITANCE-MAPPING：confirmed_mappings 只提交锚点 / 中断点 /
+    显式覆盖。execute 重新构建树和映射计划，对 inherited 节点自动沿树
+    继承解析后的标准科目。任一参与入库的末级未解析唯一标准科目 → 阻止执行。
 
     Returns:
         dict with entry_count, raw_row_count, mapping_saved_count, mapping_saved,
@@ -1085,8 +1306,12 @@ async def execute_standard_import(
     all_sa_ids: set[uuid.UUID] = set()
     for cm in confirmed_mappings:
         sid = cm.get("standard_account_id")
-        if sid:
-            all_sa_ids.add(sid)
+        if not sid:
+            continue
+        try:
+            all_sa_ids.add(sid if isinstance(sid, uuid.UUID) else uuid.UUID(str(sid)))
+        except (ValueError, TypeError):
+            pass
     sa_cache: dict[uuid.UUID, StandardAccount] = {}
     if all_sa_ids:
         sa_result = await db.execute(
@@ -1183,22 +1408,283 @@ async def execute_standard_import(
             f"忽略行只能选择参与入库的末级客户科目行，以下行不可忽略: {detail}"
         )
 
+    # ANCHOR-INHERITANCE-MAPPING：在 execute 阶段重新构建客户科目树，
+    # 应用用户提交的 confirmed_mappings（仅锚点 / 显式覆盖），重新计算
+    # 继承映射计划。普通 inherited 节点会自动沿树继承解析后的标准科目。
+    _t0_tree = _time.time()
+    rows_meta_exec: list[dict] = []
+    code_to_row_idx_exec: dict[str, int] = {}
+    for ri in row_inputs:
+        if ri.client_account_code:
+            code_to_row_idx_exec[ri.client_account_code.strip()] = ri.row_index
+
+    hier_code, _ = detect_hierarchy_by_code(row_inputs)
+    hier_indent, _ = detect_hierarchy_by_indent(row_inputs)
+    hier_flat = assign_flat_hierarchy(row_inputs)
+    if hierarchy_mode == "code":
+        hier_merged_exec = hier_code
+    elif hierarchy_mode == "indent":
+        hier_merged_exec = hier_indent
+    elif hierarchy_mode == "flat":
+        hier_merged_exec = hier_flat
+    else:
+        hier_merged_exec = merge_hierarchy(hier_code, hier_indent, hier_flat)
+
+    hier_by_row_exec = {h.get("row_index"): h for h in hier_merged_exec}
+
+    for ri in row_inputs:
+        h = hier_by_row_exec.get(ri.row_index, {})
+        # 父级 / 祖先
+        parent_key = h.get("parent_key")
+        parent_row_index = None
+        if parent_key:
+            if parent_key in code_to_row_idx_exec:
+                parent_row_index = code_to_row_idx_exec[parent_key]
+            else:
+                try:
+                    parent_row_index = int(parent_key)
+                except (ValueError, TypeError):
+                    parent_row_index = None
+
+        ancestor_codes: list[str] = []
+        ancestor_names: list[str] = []
+        if ri.client_account_code:
+            cur = ri.client_account_code.strip()
+            visited: set[str] = set()
+            while cur and cur not in visited:
+                visited.add(cur)
+                found = None
+                for end in range(len(cur) - 1, 0, -1):
+                    c = cur[:end]
+                    if c in code_to_row_idx_exec and c != cur:
+                        found = c
+                        break
+                if found:
+                    anc_ri = code_to_row_idx_exec[found]
+                    anc_input = next((x for x in row_inputs if x.row_index == anc_ri), None)
+                    if anc_input:
+                        ancestor_codes.append(anc_input.client_account_code)
+                        ancestor_names.append(anc_input.client_account_name or "")
+                    cur = found
+                else:
+                    break
+
+        rows_meta_exec.append({
+            "row_index": ri.row_index,
+            "client_account_code": ri.client_account_code,
+            "client_account_name": ri.client_account_name,
+            "level": h.get("level"),
+            "parent_key": parent_key,
+            "is_leaf": h.get("is_leaf", True),
+            "is_summary": h.get("is_summary", False),
+            "ancestor_codes": ancestor_codes,
+            "ancestor_names": ancestor_names,
+        })
+
+    tree_exec = build_account_tree(
+        rows_meta=rows_meta_exec,
+        row_mapping_meta={
+            ri.row_index: {
+                "is_leaf": hier_by_row_exec.get(ri.row_index, {}).get("is_leaf", True),
+                "is_summary": hier_by_row_exec.get(ri.row_index, {}).get("is_summary", False),
+                "participates_in_entry": (
+                    bool(ri.client_account_code or ri.client_account_name)
+                    and hier_by_row_exec.get(ri.row_index, {}).get("is_leaf", True)
+                    and not hier_by_row_exec.get(ri.row_index, {}).get("is_summary", False)
+                    and ri.row_index not in execute_auto_skip_rows
+                ),
+            }
+            for ri in row_inputs
+        },
+        ignored_rows=ignored_row_set,
+    )
+
+    # 把用户确认的映射（锚点 / 显式覆盖）转成 override 字典
+    explicit_overrides: dict[int, str] = {}
+    override_full_paths: dict[int, str] = {}
+    for cm in confirmed_mappings:
+        ri = cm.get("row_index")
+        if ri is None:
+            continue
+        sa_id = cm.get("standard_account_id")
+        if not sa_id:
+            continue
+        try:
+            sa_id_str = str(uuid.UUID(str(sa_id)))
+        except (ValueError, TypeError):
+            sa_id_str = str(sa_id)
+        explicit_overrides[ri] = sa_id_str
+        # 完整路径
+        node = tree_exec.nodes_by_row.get(ri)
+        if node is not None:
+            override_full_paths[ri] = node.full_path
+
+    # 用户确认的锚点也要补 mapping_role
+    for ri, cm in {cm.get("row_index"): cm for cm in confirmed_mappings}.items():
+        if ri is None:
+            continue
+        node = tree_exec.nodes_by_row.get(ri)
+        if node is None:
+            continue
+        if node.mapping_role not in {"anchor", "breakpoint", "explicit_override"}:
+            # 之前是 inherited/unresolved → 用户确认后转为显式锚点
+            node.mapping_role = "anchor"
+            node.mapping_mode = "direct_confirmed"
+
+    # 对所有用户确认的目标，把目标 ID 应用到对应节点
+    for ri, target_id in explicit_overrides.items():
+        node = tree_exec.nodes_by_row.get(ri)
+        if node is None:
+            continue
+        sa = sa_cache.get(uuid.UUID(target_id)) if isinstance(target_id, str) else None
+        if sa is None:
+            try:
+                sa = sa_cache.get(uuid.UUID(target_id))
+            except (ValueError, TypeError):
+                sa = None
+        if sa is None:
+            # 重新查
+            try:
+                stmt = select(StandardAccount).where(
+                    StandardAccount.id == uuid.UUID(target_id)
+                )
+                sa = (await db.execute(stmt)).scalar_one_or_none()
+                if sa is not None:
+                    sa_cache[sa.id] = sa
+            except Exception:
+                sa = None
+        if sa is not None:
+            node.resolved_standard_account_id = str(sa.id)
+            node.resolved_standard_account_code = sa.account_code
+            node.resolved_standard_account_name = sa.account_name
+
+    # 重新运行继承映射计划（保留用户已应用的目标）
+    # 先把 confirmed_mappings 视为「预设 anchor」，传入
+    def _user_confirmed_anchor_lookup(ri: int) -> dict | None:
+        for cm in confirmed_mappings:
+            if cm.get("row_index") == ri:
+                return cm
+        return None
+
+    # 用 evaluate_inheritance_boundary 沿树重新解析
+    # 第一步：标记所有用户确认的锚点
+    anchor_targets: dict[int, dict] = {}
+    for cm in confirmed_mappings:
+        ri = cm.get("row_index")
+        if ri is None:
+            continue
+        anchor_targets[ri] = cm
+
+    # 第二步：从根到叶传播
+    async def _propagate(ri: int, inherited: dict | None) -> None:
+        node = tree_exec.nodes_by_row[ri]
+        if node.is_ignored:
+            node.mapping_role = "ignored"
+            node.mapping_mode = "none"
+            return
+        if is_structural_summary(node):
+            node.mapping_role = "structural_summary"
+            node.mapping_mode = "none"
+            for ch in tree_exec.children_by_row.get(ri, []):
+                await _propagate(ch, None)
+            return
+        if ri in anchor_targets:
+            cm = anchor_targets[ri]
+            sa = None
+            try:
+                sa = sa_cache.get(uuid.UUID(str(cm["standard_account_id"])))
+            except Exception:
+                sa = None
+            if sa is None:
+                # 强制查询
+                try:
+                    stmt = select(StandardAccount).where(
+                        StandardAccount.id == uuid.UUID(str(cm["standard_account_id"]))
+                    )
+                    sa = (await db.execute(stmt)).scalar_one_or_none()
+                    if sa is not None:
+                        sa_cache[sa.id] = sa
+                except Exception:
+                    sa = None
+            if sa is not None:
+                if cm.get("mapping_action") == "override" or node.mapping_role == "explicit_override":
+                    node.mapping_role = "explicit_override"
+                    node.mapping_mode = "override_confirmed"
+                else:
+                    node.mapping_role = "anchor"
+                    node.mapping_mode = "direct_confirmed"
+                node.resolved_standard_account_id = str(sa.id)
+                node.resolved_standard_account_code = sa.account_code
+                node.resolved_standard_account_name = sa.account_name
+                node.resolution_source = "user_confirmed"
+                node.resolution_reason = cm.get("selection_source") or "用户确认"
+                node.requires_confirmation = False
+                new_inh = {
+                    "sa": sa,
+                    "row_index": ri,
+                }
+                for ch in tree_exec.children_by_row.get(ri, []):
+                    await _propagate(ch, new_inh)
+                return
+            # 找不到标准科目 → 失败
+            node.mapping_role = "unresolved"
+            node.requires_confirmation = True
+            return
+
+        if inherited is None:
+            # 无上级锚点：unresolved（execute 阶段不应有未确认锚点）
+            node.mapping_role = "unresolved"
+            node.requires_confirmation = True
+            return
+
+        anc_sa = inherited["sa"]
+        decision = evaluate_inheritance_boundary(
+            node=node,
+            inherited_standard_account=anc_sa,
+            strong_direct_signal=None,  # execute 不重新查询历史信号，依靠 confirm
+        )
+        if not decision.should_break:
+            node.mapping_role = "inherited"
+            node.mapping_mode = "inherited_ancestor"
+            node.anchor_row_index = inherited["row_index"]
+            anc_node = tree_exec.nodes_by_row.get(inherited["row_index"])
+            if anc_node is not None:
+                node.anchor_client_account_code = anc_node.client_account_code
+                node.anchor_client_account_name = anc_node.client_account_name
+            node.resolved_standard_account_id = str(anc_sa.id)
+            node.resolved_standard_account_code = anc_sa.account_code
+            node.resolved_standard_account_name = anc_sa.account_name
+            node.resolution_source = "inherited_ancestor"
+            node.resolution_reason = decision.reason
+            node.inheritance_evidence = list(decision.evidence)
+            for ch in tree_exec.children_by_row.get(ri, []):
+                await _propagate(ch, inherited)
+            return
+        # 中断：execute 不应再有 unresolved 中断点（应由用户在 analyze 阶段解决）
+        node.mapping_role = "unresolved"
+        node.inheritance_break_reason = decision.reason_code
+        node.inheritance_evidence = list(decision.evidence)
+        node.requires_confirmation = True
+        for ch in tree_exec.children_by_row.get(ri, []):
+            await _propagate(ch, None)
+
+    for root_ri in tree_exec.root_rows:
+        await _propagate(root_ri, None)
+
+    _timings["anchor_plan_rebuild"] = round(_time.time() - _t0_tree, 2)
+
+    # 校验：所有参与入库的末级必须有唯一解析
     unmapped_leaves: list[dict] = []
-    for leaf in leaves:
-        # 无代码且无名称的行不需要映射
-        if not leaf.client_account_code and not leaf.client_account_name:
+    for n in tree_exec.nodes_by_row.values():
+        if n.is_ignored or n.is_summary or not n.participates_in_entry:
             continue
-        if leaf.row_index in ignored_row_set:
+        if n.mapping_role in {"structural_summary", "ignored"}:
             continue
-        # TASK-078：零金额模板行自动跳过，不参与入库也不会产生未映射错误
-        if leaf.row_index in execute_auto_skip_rows:
-            continue
-        cm = confirmed_by_row.get(leaf.row_index)
-        if not cm:
+        if n.mapping_role == "unresolved" or not n.resolved_standard_account_id:
             unmapped_leaves.append({
-                "row_index": leaf.row_index,
-                "client_account_code": leaf.client_account_code,
-                "client_account_name": leaf.client_account_name,
+                "row_index": n.row_index,
+                "client_account_code": n.client_account_code,
+                "client_account_name": n.client_account_name,
             })
 
     if unmapped_leaves:
@@ -1208,35 +1694,42 @@ async def execute_standard_import(
         )
         batch.status = "blocked"
         await db.flush()
-        raise ValueError(f"存在 {len(unmapped_leaves)} 个末级客户科目未映射到启用标准科目: {detail}")
+        raise ValueError(
+            f"存在 {len(unmapped_leaves)} 个末级客户科目无法通过上级锚点、继承规则或用户覆盖确定标准科目: {detail}"
+        )
 
     # 7. 校验：按标准方向拆分的叶子行必须有方向
-    # TASK-084 性能优化：使用预加载的 sa_cache，不再逐行查 DB。
-    for leaf in leaves:
-        if leaf.row_index in ignored_row_set:
+    for n in tree_exec.nodes_by_row.values():
+        if n.is_ignored or n.is_summary or not n.participates_in_entry:
             continue
-        cm = confirmed_by_row.get(leaf.row_index)
-        if cm:
-            sa = sa_cache.get(cm["standard_account_id"])
-            if sa is None or not sa.is_active:
-                batch.status = "blocked"
-                await db.flush()
-                raise ValueError(
-                    f"行 {leaf.row_index} 映射的标准科目「{cm.get('standard_account_code')}」"
-                    f"{'不存在' if sa is None else '已停用'}，请重新选择"
-                )
+        if not n.resolved_standard_account_id:
+            continue
+        sa = sa_cache.get(uuid.UUID(n.resolved_standard_account_id))
+        if sa is None or not sa.is_active:
+            batch.status = "blocked"
+            await db.flush()
+            raise ValueError(
+                f"行 {n.row_index} 映射的标准科目「{n.resolved_standard_account_code}」"
+                f"{'不存在' if sa is None else '已停用'}，请重新选择"
+            )
 
-    # 重新按 row_inputs 检查
+    # 重新按 row_inputs 检查方向
+    leaf_by_row = {leaf.row_index: leaf for leaf in leaves}
     for ri in row_inputs:
         if ri.row_index in ignored_row_set:
             continue
-        cm = confirmed_by_row.get(ri.row_index)
-        if not cm:
+        n = tree_exec.nodes_by_row.get(ri.row_index)
+        if n is None or not n.resolved_standard_account_id:
+            continue
+        try:
+            sa = sa_cache.get(uuid.UUID(n.resolved_standard_account_id))
+        except Exception:
+            sa = None
+        if sa is None:
             continue
         for ac in ri.amount_configs:
             if ac.mode == "single_by_direction":
-                sa = sa_cache.get(cm["standard_account_id"])
-                if sa and not sa.balance_direction:
+                if not sa.balance_direction:
                     batch.status = "blocked"
                     await db.flush()
                     raise ValueError(
@@ -1245,8 +1738,8 @@ async def execute_standard_import(
                     )
 
     # 8. 保存原始行快照（所有行，包括父级和末级）
-    # TASK-084 性能优化：先批量 add 所有 raw rows，再一次性 flush，
-    # 避免逐行 flush（98k 行 → 1 次 flush）。
+    # ANCHOR-INHERITANCE-MAPPING：每行携带 mapping_role / mapping_mode /
+    # mapping_source / mapping_anchor_raw_row_id / inheritance_*
     _t0 = _time.time()
     raw_row_map: dict[int, uuid.UUID] = {}  # row_index → raw_row_id
     raw_row_obj_map: dict[int, StandardTrialBalanceRawRow] = {}  # TASK-085: row_index → ORM object
@@ -1254,23 +1747,47 @@ async def execute_standard_import(
     # TASK-085: 预建 leaf dict 避免 O(n²) 查找
     leaf_by_row = {leaf.row_index: leaf for leaf in leaves}
 
+    # 用 tree_exec 节点来填充 mapping_role / anchor_raw_row_id
     for ri in row_inputs:
         leaf = leaf_by_row.get(ri.row_index)
         is_leaf = leaf is not None
         is_user_ignored = ri.row_index in ignored_row_set
-        cm = None if is_user_ignored else confirmed_by_row.get(ri.row_index)
-        if is_user_ignored or (not ri.client_account_code and not ri.client_account_name):
+        node = tree_exec.nodes_by_row.get(ri.row_index)
+        resolved_sa_id = node.resolved_standard_account_id if node else None
+
+        if is_user_ignored:
             mapping_status = "ignored"
-        elif cm:
+        elif resolved_sa_id:
             mapping_status = "mapped"
-        else:
+        elif node and node.mapping_role in {"structural_summary", "ignored"}:
+            mapping_status = "ignored"
+        elif ri.client_account_code or ri.client_account_name:
             mapping_status = "unmapped"
+        else:
+            mapping_status = "ignored"
 
         # 优先用 transform_result 的层级信息（覆盖所有行，不仅叶子）
         tr = result_by_row.get(ri.row_index)
         detected_level = tr.level if tr else (leaf.level if leaf else None)
         raw_is_leaf = bool(tr and tr.is_leaf and not tr.is_summary) if tr else is_leaf
         row_warnings = {"warnings": leaf.warnings, "errors": leaf.errors} if leaf else None
+
+        # ANCHOR-INHERITANCE-MAPPING：追溯字段
+        anchor_row_id = None
+        if node and node.anchor_row_index is not None:
+            anchor_row_id = raw_row_map.get(node.anchor_row_index)
+        if node and node.mapping_role in {"anchor", "breakpoint", "explicit_override"}:
+            anchor_row_id_for_self = None  # self, will be set after flush
+        else:
+            anchor_row_id_for_self = anchor_row_id
+
+        # mapped_standard_account_id 需要 UUID 对象（ORM Mapped[uuid.UUID|None]）
+        resolved_sa_uuid = None
+        if resolved_sa_id:
+            try:
+                resolved_sa_uuid = uuid.UUID(resolved_sa_id)
+            except (ValueError, TypeError):
+                resolved_sa_uuid = None
 
         raw_row = StandardTrialBalanceRawRow(
             batch_id=batch_id,
@@ -1280,14 +1797,33 @@ async def execute_standard_import(
             client_account_name=ri.client_account_name,
             detected_level=detected_level,
             is_leaf=raw_is_leaf,
-            mapped_standard_account_id=cm["standard_account_id"] if cm else None,
+            mapped_standard_account_id=resolved_sa_uuid,
             mapping_status=mapping_status,
+            mapping_role=node.mapping_role if node else None,
+            mapping_mode=node.mapping_mode if node else None,
+            mapping_source=node.resolution_source if node else None,
+            mapping_anchor_raw_row_id=anchor_row_id_for_self,
+            inheritance_reason=node.resolution_reason if node else None,
+            inheritance_break_reason=node.inheritance_break_reason if node else None,
+            requires_manual_confirmation=bool(node.requires_confirmation) if node else False,
             warnings=row_warnings,
         )
         db.add(raw_row)
         raw_row_map[ri.row_index] = raw_row.id
         # TASK-085：同时保留 ORM 对象引用，供后续 parent_assign 直接使用
         raw_row_obj_map[ri.row_index] = raw_row
+
+    # flush 一次后，再次扫描：把 anchor/breakpoint 节点的 anchor_raw_row_id
+    # 设为 self（继承行已经指向它们了）
+    await db.flush()
+    for ri in row_inputs:
+        node = tree_exec.nodes_by_row.get(ri.row_index)
+        if node is None:
+            continue
+        if node.mapping_role in {"anchor", "breakpoint", "explicit_override"}:
+            self_id = raw_row_map.get(ri.row_index)
+            if self_id is not None:
+                raw_row_obj_map[ri.row_index].mapping_anchor_raw_row_id = self_id
 
     # 一次性 flush 所有 raw rows，获取数据库分配的 id
     await db.flush()
@@ -1322,6 +1858,7 @@ async def execute_standard_import(
     _timings["parent_assign"] = round(_time.time() - _t0, 2)
 
     # 10. 生成标准科目余额表明细（只写叶子行）
+    # ANCHOR-INHERITANCE-MAPPING：使用 tree_exec 的解析结果，不依赖逐行 confirmed_by_row。
     # TASK-084 性能优化：使用预加载的 sa_cache，不再逐行查 DB。
     _t0 = _time.time()
     # 构建叶子行 set 加速查找
@@ -1330,14 +1867,24 @@ async def execute_standard_import(
     for leaf in leaves:
         if leaf.row_index in ignored_row_set:
             continue
-        cm = confirmed_by_row.get(leaf.row_index)
-        if not cm:
+        node = tree_exec.nodes_by_row.get(leaf.row_index)
+        if node is None or not node.resolved_standard_account_id:
             continue
 
         # 从缓存获取标准科目快照
-        sa = sa_cache.get(cm["standard_account_id"])
+        try:
+            sa = sa_cache.get(uuid.UUID(node.resolved_standard_account_id))
+        except Exception:
+            sa = None
         if sa is None:
             continue
+
+        # ANCHOR-INHERITANCE-MAPPING：entry 携带映射来源快照
+        anc_node = (
+            tree_exec.nodes_by_row.get(node.anchor_row_index)
+            if node.anchor_row_index is not None
+            else None
+        )
 
         entry = StandardTrialBalanceEntry(
             batch_id=batch_id,
@@ -1349,6 +1896,14 @@ async def execute_standard_import(
             standard_balance_direction_snapshot=sa.balance_direction,
             client_account_code=leaf.client_account_code,
             client_account_name=leaf.client_account_name,
+            mapping_mode_snapshot=node.mapping_mode,
+            mapping_source_snapshot=node.resolution_source,
+            mapping_anchor_client_account_code_snapshot=(
+                anc_node.client_account_code if anc_node else node.anchor_client_account_code
+            ),
+            mapping_anchor_client_account_name_snapshot=(
+                anc_node.client_account_name if anc_node else node.anchor_client_account_name
+            ),
             fiscal_year=fiscal_year,
             period=period,
             opening_debit=leaf.opening_debit,
@@ -1364,59 +1919,87 @@ async def execute_standard_import(
     await db.flush()
     _timings["entry_insert"] = round(_time.time() - _t0, 2)
 
-    # 11. 保存映射经验
-    # TASK-085 性能优化：按 (code, name, standard_account_id) 去重，
-    # 18k 叶子行中大量重复（如 220206 出现 92 次），只需保存一次。
+    # 11. 保存映射经验 — ANCHOR-INHERITANCE-MAPPING：
+    # 只保存 anchor / breakpoint / explicit_override 行；
+    # 普通 inherited 行不进入经验库（防止经验污染）。
+    # TASK-085 性能优化：按 (code, name, standard_account_id) 去重。
     _t0 = _time.time()
     mapping_saved: list[dict] = []
     if save_mapping_experience:
         seen_keys: set[tuple] = set()
-        for leaf in leaves:
-            if leaf.row_index in ignored_row_set:
+        for n in tree_exec.nodes_by_row.values():
+            if n.is_ignored:
                 continue
-            cm = confirmed_by_row.get(leaf.row_index)
-            if not cm:
+            if n.mapping_role not in {"anchor", "breakpoint", "explicit_override"}:
                 continue
-            if not leaf.client_account_code and not leaf.client_account_name:
+            if not n.resolved_standard_account_id:
+                continue
+            if n.is_summary and not n.participates_in_entry:
+                # 非参与父级锚点：仍可保存映射经验（用于跨批次）
+                pass
+            if not n.client_account_code and not n.client_account_name:
+                continue
+            try:
+                sa = sa_cache.get(uuid.UUID(n.resolved_standard_account_id))
+            except Exception:
+                sa = None
+            if sa is None:
                 continue
 
             # 去重：同 (code, name, sa_id) 只保存一次
             dedup_key = (
-                (leaf.client_account_code or "").strip(),
-                (leaf.client_account_name or "").strip(),
-                cm["standard_account_id"],
+                (n.client_account_code or "").strip(),
+                (n.client_account_name or "").strip(),
+                n.resolved_standard_account_id,
             )
             if dedup_key in seen_keys:
                 continue
             seen_keys.add(dedup_key)
 
+            mapping_kind = (
+                "override" if n.mapping_role == "explicit_override" else "anchor"
+            )
             try:
                 result = await save_mapping(
                     db=db,
                     data_type="trial_balance",
                     customer_label=customer_label,
-                    client_account_code=leaf.client_account_code,
-                    client_account_name=leaf.client_account_name,
-                    standard_account_id=cm["standard_account_id"],
-                    standard_account_code=cm["standard_account_code"],
-                    standard_account_name=cm["standard_account_name"],
-                    source="user_confirmed",
+                    client_account_code=n.client_account_code,
+                    client_account_name=n.client_account_name,
+                    standard_account_id=sa.id,
+                    standard_account_code=sa.account_code,
+                    standard_account_name=sa.account_name,
+                    source=(
+                        "user_confirmed"
+                        if n.mapping_mode in {"direct_confirmed", "override_confirmed"}
+                        else "user_corrected"
+                    ),
                     confidence=1.0,
                     allow_overwrite=True,
+                    client_account_full_path=n.full_path or None,
+                    mapping_kind=mapping_kind,
                 )
                 mapping_saved.append({
-                    "client_account_code": leaf.client_account_code,
-                    "standard_account_code": cm.get("standard_account_code", ""),
+                    "client_account_code": n.client_account_code,
+                    "standard_account_code": sa.account_code,
                     "status": result.get("status", "unknown"),
+                    "mapping_kind": mapping_kind,
+                    "client_account_full_path": n.full_path or None,
                 })
             except Exception as e:
                 logger.warning(f"保存映射经验失败: {e}")
 
     _timings["save_mapping"] = round(_time.time() - _t0, 2)
 
-    # 12. 更新批次状态
+    # 12. 更新批次状态 + 统计
     batch.status = "executed"
     await db.flush()
+
+    # ANCHOR-INHERITANCE-MAPPING：映射角色统计
+    role_count = {"anchor": 0, "inherited": 0, "breakpoint": 0,
+                  "explicit_override": 0, "unresolved": 0, "structural_summary": 0, "ignored": 0}
+    for n in tree_exec.nodes_by_row.values():
+        role_count[n.mapping_role] = role_count.get(n.mapping_role, 0) + 1
 
     return {
         "batch_id": str(batch.id),
@@ -1425,6 +2008,16 @@ async def execute_standard_import(
         "raw_row_count": len(row_inputs),
         "mapping_saved_count": len(mapping_saved),
         "mapping_saved": mapping_saved,
+        "anchor_count": role_count["anchor"],
+        "breakpoint_count": role_count["breakpoint"],
+        "inherited_count": role_count["inherited"],
+        "explicit_override_count": role_count["explicit_override"],
+        "unresolved_leaf_count": sum(
+            1
+            for n in tree_exec.nodes_by_row.values()
+            if n.mapping_role == "unresolved" and n.participates_in_entry
+        ),
+        "mapping_strategy_version": mapping_strategy_version,
         "debug_timings": _timings,
     }
 

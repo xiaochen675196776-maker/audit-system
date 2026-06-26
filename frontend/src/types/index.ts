@@ -299,14 +299,58 @@ export interface MappingRecommendEntry {
   row_index: number
   client_account_code: string | null
   client_account_name: string | null
+  client_account_full_path?: string | null
+  parent_row_index?: number | null
+  parent_client_account_code?: string | null
+  parent_client_account_name?: string | null
   is_leaf?: boolean
   is_summary?: boolean
   participates_in_entry?: boolean
+  // ANCHOR-INHERITANCE-MAPPING
+  mapping_role?:
+    | 'structural_summary'
+    | 'anchor'
+    | 'inherited'
+    | 'breakpoint'
+    | 'explicit_override'
+    | 'unresolved'
+    | 'ignored'
+  mapping_mode?:
+    | 'direct_auto'
+    | 'direct_confirmed'
+    | 'inherited_ancestor'
+    | 'override_confirmed'
+    | 'none'
+  requires_confirmation?: boolean
+  anchor_row_index?: number | null
+  anchor_client_account_code?: string | null
+  anchor_client_account_name?: string | null
+  resolved_standard_account_id?: string | null
+  resolved_standard_account_code?: string | null
+  resolved_standard_account_name?: string | null
+  resolution_source?: string | null
+  resolution_reason?: string | null
+  inheritance_break_reason?: string | null
+  inheritance_evidence?: string[]
+  descendant_leaf_count?: number
   candidates: MappingCandidate[]
   // TASK-087：后端自动确认决策
   auto_confirm_candidate?: MappingCandidate | null
   auto_confirm_status?: 'unique_safe' | 'ambiguous' | 'none'
   auto_confirm_reason?: string
+}
+
+export interface MappingPlanSummary {
+  total_nodes: number
+  structural_summary_count: number
+  anchor_count: number
+  inherited_count: number
+  breakpoint_count: number
+  explicit_override_count: number
+  unresolved_count: number
+  confirmation_required_count: number
+  participating_leaf_count: number
+  resolved_participating_leaf_count: number
 }
 
 export interface StdAnalyzeResponse {
@@ -317,6 +361,8 @@ export interface StdAnalyzeResponse {
   amounts: AmountInfo[]
   errors: BlockingError[]
   warnings: WarningItem[]
+  mapping_summary?: MappingPlanSummary
+  mapping_strategy?: string
 }
 
 export interface ConfirmedMapping {
@@ -326,6 +372,10 @@ export interface ConfirmedMapping {
   standard_account_id: string
   standard_account_code: string
   standard_account_name: string
+  // ANCHOR-INHERITANCE-MAPPING
+  mapping_action?: 'anchor' | 'override'
+  apply_to_descendants?: boolean
+  selection_source?: 'auto_confirmed' | 'user_confirmed' | 'user_corrected'
 }
 
 export interface StdExecuteRequest {
@@ -333,12 +383,15 @@ export interface StdExecuteRequest {
   ignored_rows: number[]
   warnings_confirmed: boolean
   save_mapping_experience: boolean
+  mapping_strategy_version?: number
 }
 
 export interface MappingSavedInfo {
   client_account_code: string | null
   standard_account_code: string
   status: string
+  mapping_kind?: string
+  client_account_full_path?: string | null
 }
 
 export interface StdExecuteResponse {
@@ -348,4 +401,10 @@ export interface StdExecuteResponse {
   raw_row_count: number
   mapping_saved_count: number
   mapping_saved: MappingSavedInfo[]
+  anchor_count?: number
+  breakpoint_count?: number
+  inherited_count?: number
+  explicit_override_count?: number
+  unresolved_leaf_count?: number
+  mapping_strategy_version?: number
 }

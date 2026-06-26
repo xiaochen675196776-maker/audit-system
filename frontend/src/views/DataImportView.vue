@@ -184,8 +184,8 @@
             <div class="std-match-review">
               <div class="std-match-header">
                 <div>
-                  <h3 class="panel-title">层级与科目匹配</h3>
-                  <p class="panel-desc">按客户科目余额表原始行顺序确认层级、金额和标准科目。父级行不入库，忽略行不导入。</p>
+                  <h3 class="panel-title">层级与科目匹配（上级锚点 + 下级继承式映射）</h3>
+                  <p class="panel-desc">普通二级、三级及以下明细默认继承最近锚点。会计性质变化时（如费用化/资本化、原值/备抵、应收/应付）建立新锚点。可对继承行单独映射为显式覆盖。</p>
                 </div>
                 <div class="std-match-header-actions">
                   <el-button size="small" @click="stdStepBack">上一步：字段映射</el-button>
@@ -196,6 +196,38 @@
                     <el-radio-button value="ignored">已忽略 {{ stdIgnoredRowIndexes.length }}</el-radio-button>
                     <el-radio-button value="warning">有警告 {{ stdWarningRowCount }}</el-radio-button>
                   </el-radio-group>
+                </div>
+              </div>
+
+              <!-- ANCHOR-INHERITANCE-MAPPING：映射计划统计 -->
+              <div v-if="stdMappingSummary" class="std-anchor-stats">
+                <div class="std-anchor-stat">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.anchor_count }}</div>
+                  <div class="std-anchor-stat-label">映射锚点</div>
+                </div>
+                <div class="std-anchor-stat success">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.inherited_count }}</div>
+                  <div class="std-anchor-stat-label">自动继承</div>
+                </div>
+                <div class="std-anchor-stat warning">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.breakpoint_count }}</div>
+                  <div class="std-anchor-stat-label">继承中断点</div>
+                </div>
+                <div class="std-anchor-stat info">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.explicit_override_count }}</div>
+                  <div class="std-anchor-stat-label">显式覆盖</div>
+                </div>
+                <div class="std-anchor-stat muted">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.structural_summary_count }}</div>
+                  <div class="std-anchor-stat-label">结构汇总</div>
+                </div>
+                <div class="std-anchor-stat danger">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.unresolved_count }}</div>
+                  <div class="std-anchor-stat-label">未解决</div>
+                </div>
+                <div class="std-anchor-stat emphasis">
+                  <div class="std-anchor-stat-value">{{ stdMappingSummary.resolved_participating_leaf_count }}/{{ stdMappingSummary.participating_leaf_count }}</div>
+                  <div class="std-anchor-stat-label">已解析/参与末级</div>
                 </div>
               </div>
 
@@ -263,16 +295,33 @@
                   </el-table-column>
                   <el-table-column label="匹配状态" width="110" align="center">
                     <template #default="{ row }">
-                      <el-tag size="small" :type="stdRowStatus(row).type">{{ stdRowStatus(row).label }}</el-tag>
+                      <el-tag size="small" :type="stdMappingRoleTagType(stdMappingRole(row))">
+                        {{ stdMappingRoleLabel(stdMappingRole(row)) }}
+                      </el-tag>
                       <div v-if="stdRowWarningMessages(row).length" class="std-row-warning-count">
                         {{ stdRowWarningMessages(row).length }} 条警告
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="当前标准科目" width="260">
+                  <el-table-column label="当前标准科目" width="320">
                     <template #default="{ row }">
                       <div v-if="stdIsIgnored(row.row_index)" class="std-current-account ignored">已忽略，不导入</div>
                       <div v-else-if="!stdRowParticipates(row)" class="std-current-account muted">父级不入库</div>
+                      <div v-else-if="stdMappingRole(row) === 'inherited' && !stdSelectedMapping(row.row_index)" class="std-current-account inherited">
+                        <div>
+                          <code>{{ row.rec?.resolved_standard_account_code }}</code>
+                          <span>{{ row.rec?.resolved_standard_account_name }}</span>
+                        </div>
+                        <div class="std-inherit-meta" v-if="row.rec?.anchor_row_index !== null && row.rec?.anchor_row_index !== undefined">
+                          继承自：
+                          <code>{{ row.rec?.anchor_client_account_code || '?' }}</code>
+                          {{ row.rec?.anchor_client_account_name || '?' }}
+                        </div>
+                        <div class="std-inherit-meta">自动继承，无需逐行确认</div>
+                      </div>
+                      <div v-else-if="stdMappingRole(row) === 'structural_summary'" class="std-current-account muted">
+                        结构汇总节点，不参与映射
+                      </div>
                       <div v-else-if="stdSelectedMapping(row.row_index)" class="std-current-account">
                         <div>
                           <code>{{ stdSelectedMapping(row.row_index)!.standard_account_code }}</code>
@@ -281,6 +330,9 @@
                         <div class="std-current-meta">
                           {{ matchSourceLabel(stdSelectedMapping(row.row_index)!.source) }} · 置信度 {{ stdConfidenceText(stdSelectedMapping(row.row_index)!.score) }}
                         </div>
+                        <div v-if="stdMappingRole(row) === 'explicit_override'" class="std-inherit-meta">
+                          显式覆盖继承
+                        </div>
                         <div v-if="stdSelectedMapping(row.row_index)!.warning" class="std-current-warning">
                           {{ stdSelectedMapping(row.row_index)!.warning }}
                         </div>
@@ -288,13 +340,76 @@
                       <div v-else class="std-current-account unmapped">
                         未匹配
                         <span v-if="row.rec?.candidates.length">，有 {{ row.rec.candidates.length }} 个推荐候选</span>
+                        <span v-else-if="row.rec?.resolved_standard_account_code">自动解析：{{ row.rec.resolved_standard_account_code }}</span>
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="匹配操作" width="110" align="center">
+                  <el-table-column label="匹配操作" width="180" align="center">
                     <template #default="{ row }">
                       <template v-if="stdIsIgnored(row.row_index)">
                         <span class="std-action-muted">—</span>
+                      </template>
+                      <template v-else-if="stdMappingRole(row) === 'inherited' && !stdSelectedMapping(row.row_index)">
+                        <el-button size="small" type="primary" plain @click="stdSetOverride(row.row_index)">单独映射</el-button>
+                      </template>
+                      <template v-else-if="stdMappingRole(row) === 'explicit_override' && stdSelectedMapping(row.row_index)">
+                        <el-button size="small" @click="stdRestoreInheritance(row.row_index)">恢复继承</el-button>
+                        <el-popover placement="left-start" trigger="click" width="360">
+                          <template #reference>
+                            <el-button size="small" type="primary" plain style="margin-left: 4px">更换</el-button>
+                          </template>
+                          <div class="std-account-picker">
+                            <div class="std-picker-title">推荐候选</div>
+                            <div v-if="row.rec?.candidates.length" class="std-candidate-list">
+                              <button
+                                v-for="c in row.rec.candidates.slice(0, 6)"
+                                :key="c.standard_account_id"
+                                type="button"
+                                class="std-candidate-option"
+                                :class="{
+                                  selected: stdSelectedMapping(row.row_index)?.standard_account_id === c.standard_account_id,
+                                  warning: !!c.warning
+                                }"
+                                @click="stdSelectCandidate(row.row_index, c)"
+                              >
+                                <span>
+                                  <code>{{ c.standard_account_code }}</code>
+                                  {{ c.standard_account_name }}
+                                </span>
+                                <span class="std-candidate-meta">
+                                  {{ matchSourceLabel(c.source) }} · {{ stdConfidenceText(c.score) }}
+                                </span>
+                                <span v-if="c.warning" class="std-candidate-warning">{{ c.warning }}</span>
+                              </button>
+                            </div>
+                            <div v-else class="std-picker-empty">暂无推荐候选，请搜索标准科目。</div>
+                            <div class="std-picker-search">
+                              <el-input
+                                v-model="stdSearchQueries[row.row_index]"
+                                size="small"
+                                placeholder="搜索标准科目代码或名称"
+                                clearable
+                                @input="stdSearchAccounts(row.row_index)"
+                              />
+                              <div v-if="stdSearchResults[row.row_index]?.length" class="std-search-result-list">
+                                <button
+                                  v-for="sr in stdSearchResults[row.row_index].slice(0, 8)"
+                                  :key="sr.id"
+                                  type="button"
+                                  class="std-search-result-item"
+                                  :class="{ disabled: !sr.is_active }"
+                                  @click="stdSelectSearchedAccount(row.row_index, sr)"
+                                >
+                                  <span>{{ sr.account_code }} {{ sr.account_name }}</span>
+                                  <el-tag v-if="!sr.is_active" size="small" type="danger">停用</el-tag>
+                                </button>
+                              </div>
+                            </div>
+                            <el-button v-if="stdSelectedMapping(row.row_index)" size="small" type="danger" text @click="stdClearMapping(row.row_index)">
+                              清除当前匹配
+                            </el-button>
+                          </div>
+                        </el-popover>
                       </template>
                       <template v-else-if="stdRowParticipates(row)">
                         <el-popover placement="left-start" trigger="click" width="360">
@@ -1600,6 +1715,7 @@ const stdCanAnalyze = computed(() => {
 const stdAnalyzing = ref(false)
 const stdHierarchy = ref<import('@/types').HierarchyInfo[]>([])
 const stdMappingRecs = ref<import('@/types').MappingRecommendEntry[]>([])
+const stdAnalyzeResult = ref<import('@/types').StdAnalyzeResponse | null>(null)
 const stdAmounts = ref<import('@/types').AmountInfo[]>([])
 const stdErrors = ref<import('@/types').BlockingError[]>([])
 const stdWarnings = ref<import('@/types').WarningItem[]>([])
@@ -1696,6 +1812,7 @@ async function stdGoAnalyze() {
     stdAmounts.value = data.amounts
     stdErrors.value = data.errors
     stdWarnings.value = data.warnings
+    stdAnalyzeResult.value = data
 
     // TASK-087：使用后端 auto_confirm_candidate 进行安全自动选中
     stdConfirmedMap.value = {}
@@ -1978,6 +2095,65 @@ function stdClearMapping(ri: number) {
   stdSearchResults.value[ri] = []
 }
 
+// ANCHOR-INHERITANCE-MAPPING：映射角色辅助函数
+function stdMappingRole(row: any): string {
+  return row?.rec?.mapping_role || 'unresolved'
+}
+
+function stdMappingRoleLabel(role: string): string {
+  const map: Record<string, { label: string; type: string }> = {
+    anchor: { label: '映射锚点', type: 'primary' },
+    inherited: { label: '自动继承', type: 'success' },
+    breakpoint: { label: '继承中断点', type: 'warning' },
+    explicit_override: { label: '显式覆盖', type: 'info' },
+    structural_summary: { label: '结构汇总', type: 'info' },
+    unresolved: { label: '未解决', type: 'danger' },
+    ignored: { label: '已忽略', type: 'info' },
+  }
+  return map[role]?.label || role
+}
+
+function stdMappingRoleTagType(role: string): string {
+  const map: Record<string, string> = {
+    anchor: 'primary',
+    inherited: 'success',
+    breakpoint: 'warning',
+    explicit_override: 'info',
+    structural_summary: 'info',
+    unresolved: 'danger',
+    ignored: 'info',
+  }
+  return map[role] || ''
+}
+
+// ANCHOR-INHERITANCE-MAPPING：是否允许"单独映射"（普通继承行）
+function stdCanOverride(row: any): boolean {
+  const role = stdMappingRole(row)
+  return role === 'inherited' || role === 'anchor' || role === 'breakpoint'
+}
+
+// ANCHOR-INHERITANCE-MAPPING：恢复继承（清除单独映射）
+function stdRestoreInheritance(rowIndex: number) {
+  delete stdConfirmedMap.value[rowIndex]
+  stdSearchQueries.value[rowIndex] = ''
+  stdSearchResults.value[rowIndex] = []
+  if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
+}
+
+// ANCHOR-INHERITANCE-MAPPING：单独映射（继承行变 explicit_override）
+function stdSetOverride(rowIndex: number) {
+  const row = stdReviewRowByIndex(rowIndex)
+  if (!row) return
+  // 给当前行设为「显式覆盖」锚点标记
+  // 这里通过在 stdConfirmedMap 中加入一行并标记 source
+  // 后端会在 execute 阶段把它当作 explicit_override 处理
+  // 弹窗让用户选标准科目
+  stdSearchQueries.value[rowIndex] = ''
+  stdSearchResults.value[rowIndex] = []
+  // 标记为待用户选择：保留 rec 候选即可
+  // 实际由用户点击「选择」后走 stdSelectCandidate
+}
+
 // 忽略行：只能忽略参与入库的末级行
 function stdIgnoreRow(rowIndex: number) {
   const row = stdReviewRowByIndex(rowIndex)
@@ -2061,6 +2237,73 @@ const stdConfirmedMappingSummary = computed(() => {
   return summary
 })
 
+// ANCHOR-INHERITANCE-MAPPING：映射计划统计
+const stdMappingSummary = computed(() => {
+  return (stdAnalyzeResult.value as any)?.mapping_summary
+})
+
+// ANCHOR-INHERITANCE-MAPPING：仅提交锚点 / 显式覆盖
+// 普通 inherited 行不进入提交，让后端通过继承映射计划自动解析
+function stdBuildAnchorOnlyConfirmedMappings(): import('@/types').ConfirmedMapping[] {
+  const out: import('@/types').ConfirmedMapping[] = []
+  for (const row of stdReviewRows.value) {
+    if (stdIsIgnored(row.row_index)) continue
+    if (!stdRowParticipates(row)) continue
+    const role = stdMappingRole(row)
+    // 普通继承行不提交（execute 自动沿树继承）
+    if (role === 'inherited') continue
+    if (role === 'structural_summary') continue
+    if (role === 'ignored') continue
+    // 锚点 / 显式覆盖 / 中断点：必须提交
+    const cm = stdSelectedMapping(row.row_index)
+    if (!cm) {
+      // 自动确认的锚点（mapping_mode=direct_auto）也可能没有 selectedMapping
+      // 从 rec.candidates / auto_confirm_candidate 提取
+      if (row.rec?.resolved_standard_account_id) {
+        out.push({
+          row_index: row.row_index,
+          client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
+          client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
+          standard_account_id: row.rec.resolved_standard_account_id,
+          standard_account_code: row.rec.resolved_standard_account_code || '',
+          standard_account_name: row.rec.resolved_standard_account_name || '',
+          mapping_action: role === 'explicit_override' ? 'override' : 'anchor',
+          apply_to_descendants: true,
+          selection_source: 'auto_confirmed',
+        })
+      } else if (role === 'anchor' || role === 'breakpoint' || role === 'explicit_override') {
+        // 未解析的锚点 = unresolved
+        // 这种行 execute 会阻断
+      }
+      continue
+    }
+    out.push({
+      row_index: row.row_index,
+      client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
+      client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
+      standard_account_id: cm.standard_account_id,
+      standard_account_code: cm.standard_account_code,
+      standard_account_name: cm.standard_account_name,
+      mapping_action: role === 'explicit_override' ? 'override' : 'anchor',
+      apply_to_descendants: true,
+      selection_source: 'user_confirmed',
+    })
+  }
+  return out
+}
+
+// ANCHOR-INHERITANCE-MAPPING：未解决末级数量
+const stdUnresolvedLeafCount = computed(() => {
+  if (!stdMappingSummary.value) return 0
+  return stdMappingSummary.value.unresolved_count
+})
+
+// ANCHOR-INHERITANCE-MAPPING：参与入库末级 = 已解析 + 未解析
+const stdParticipatingLeafCount = computed(() => {
+  if (!stdMappingSummary.value) return 0
+  return stdMappingSummary.value.participating_leaf_count
+})
+
 // 步骤 2 → 步骤 3 的启用条件：全部末级已映射、无阻止项
 const stdCanConfirm = computed(() => {
   if (stdBlockingErrors.value.length > 0) return false
@@ -2074,11 +2317,13 @@ const stdConfirmHint = computed(() => {
   return ''
 })
 
-// 步骤 3 最终执行启用条件：无阻止项、无未映射、警告已确认（如有）
+// 步骤 3 最终执行启用条件：无阻止项、无未映射、无未解析末级、警告已确认（如有）
 const stdCanExecute = computed(() => {
   if (stdBlockingErrors.value.length > 0) return false
   if (stdUnmappedCount.value > 0) return false
   if (stdExecuting.value) return false
+  // ANCHOR-INHERITANCE-MAPPING：未解析末级必须为 0
+  if (stdUnresolvedLeafCount.value > 0) return false
   // 有警告但未确认时，禁止执行
   if (stdWarnings.value.length > 0 && !stdWarningsConfirmed.value) return false
   return true
@@ -2087,6 +2332,7 @@ const stdCanExecute = computed(() => {
 const stdExecuteHint = computed(() => {
   if (stdBlockingErrors.value.length > 0) return `还有 ${stdBlockingErrors.value.length} 条错误需要处理`
   if (stdUnmappedCount.value > 0) return `还有 ${stdUnmappedCount.value} 个科目未映射，请返回上一步完成映射`
+  if (stdUnresolvedLeafCount.value > 0) return `还有 ${stdUnresolvedLeafCount.value} 个未解决末级，请完成对应锚点确认`
   if (stdWarnings.value.length > 0 && !stdWarningsConfirmed.value) return `请先勾选确认以上 ${stdWarnings.value.length} 条警告`
   return ''
 })
@@ -2168,29 +2414,16 @@ async function stdGoExecute() {
   const timer = setInterval(() => { progress.value = Math.min(92, progress.value + Math.floor(Math.random() * 8 + 3)) }, 400)
 
   try {
-    const confirmedMappings: import('@/types').ConfirmedMapping[] = []
-    // 基于 stdReviewRows 按 row_index 提交，使用行级 rec/client_account_code/client_account_name，
-    // 不靠代码名称回找 hierarchy。已忽略行不进入提交。
-    for (const row of stdReviewRows.value) {
-      if (stdIsIgnored(row.row_index)) continue
-      if (!stdRowParticipates(row)) continue
-      const cm = stdSelectedMapping(row.row_index)
-      if (!cm) continue
-      confirmedMappings.push({
-        row_index: row.row_index,
-        client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
-        client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
-        standard_account_id: cm.standard_account_id,
-        standard_account_code: cm.standard_account_code,
-        standard_account_name: cm.standard_account_name,
-      })
-    }
+    // ANCHOR-INHERITANCE-MAPPING：只提交锚点 / 中断点 / 显式覆盖
+    // 普通 inherited 行不提交，由后端通过继承映射计划自动解析
+    const confirmedMappings = stdBuildAnchorOnlyConfirmedMappings()
 
     const req: import('@/types').StdExecuteRequest = {
       confirmed_mappings: confirmedMappings,
       ignored_rows: stdIgnoredRowIndexes.value,
       warnings_confirmed: stdWarningsConfirmed.value,
       save_mapping_experience: true,
+      mapping_strategy_version: 1,
     }
 
     const { data } = await api.post<import('@/types').StdExecuteResponse>(
@@ -2229,6 +2462,7 @@ function stdResetImport() {
   stdAmounts.value = []
   stdErrors.value = []
   stdWarnings.value = []
+  stdAnalyzeResult.value = null
   stdConfirmedMap.value = {}
   stdSearchQueries.value = {}
   stdSearchResults.value = {}
@@ -2963,6 +3197,63 @@ watch(dataType, (newVal, oldVal) => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
+}
+
+/* ANCHOR-INHERITANCE-MAPPING：映射计划统计 */
+.std-anchor-stats {
+  display: flex;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  padding: var(--spacing-3);
+  background: var(--color-bg-soft, #f5f7fa);
+  border-radius: var(--radius-md, 6px);
+  margin-bottom: var(--spacing-3);
+}
+
+.std-anchor-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--color-bg-primary, #fff);
+  border: 1px solid var(--color-border, #ebeef5);
+  border-radius: var(--radius-sm, 4px);
+  min-width: 80px;
+}
+
+.std-anchor-stat.success { border-color: var(--color-success, #67c23a); }
+.std-anchor-stat.warning { border-color: var(--color-warning, #e6a23c); }
+.std-anchor-stat.info { border-color: var(--color-info, #909399); }
+.std-anchor-stat.muted { border-color: var(--color-border, #ebeef5); opacity: 0.7; }
+.std-anchor-stat.danger { border-color: var(--color-danger, #f56c6c); }
+.std-anchor-stat.emphasis {
+  border-color: var(--color-primary, #409eff);
+  background: var(--color-primary-light-9, #ecf5ff);
+}
+
+.std-anchor-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.std-anchor-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* 继承展示行 */
+.std-inherit-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.std-current-account.inherited {
+  background: var(--color-success-light-9, #f0f9eb);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 .std-match-table-wrap {

@@ -314,7 +314,7 @@ class TestUnmappedBlocksExecute:
                 },
             ]
 
-            with pytest.raises(ValueError, match="未映射"):
+            with pytest.raises(ValueError, match="末级客户科目无法通过上级锚点"):
                 await execute_standard_import(
                     db, batch_id, file_path,
                     confirmed_mappings=confirmed,
@@ -583,7 +583,7 @@ class TestIgnoredRows:
                 "standard_account_name": "库存现金",
             }]
 
-            with pytest.raises(ValueError, match="未映射"):
+            with pytest.raises(ValueError, match="末级客户科目无法通过上级锚点"):
                 await execute_standard_import(
                     db, batch_id, file_path,
                     confirmed_mappings=confirmed,

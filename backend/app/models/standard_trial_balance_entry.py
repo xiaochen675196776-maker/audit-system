@@ -51,6 +51,20 @@ class StandardTrialBalanceEntry(Base):
         String(500), nullable=True, comment="客户科目名称"
     )
 
+    # ANCHOR-INHERITANCE-MAPPING：映射来源快照
+    mapping_mode_snapshot: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="映射模式快照"
+    )
+    mapping_source_snapshot: Mapped[str | None] = mapped_column(
+        String(80), nullable=True, comment="映射来源快照"
+    )
+    mapping_anchor_client_account_code_snapshot: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="继承自的锚点客户科目代码"
+    )
+    mapping_anchor_client_account_name_snapshot: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="继承自的锚点客户科目名称"
+    )
+
     # 期间信息
     fiscal_year: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="会计年度"
