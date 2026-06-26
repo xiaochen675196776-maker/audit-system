@@ -486,18 +486,60 @@ def _standard_account_conflicts_semantic_group(sa: StandardAccount, group_key: s
     return False
 
 
+# ── TASK-085：标准科目内存索引 ──────────────────────────
+# 避免大文件（如 205201 18984 唯一科目）逐次 select(StandardAccount) 全表扫描。
+# recommend_mappings 入口一次性加载全部标准科目到内存，后续 _query_* 用纯 Python 过滤。
+# 过滤逻辑与原 DB 查询完全等价，仅把"DB 全表扫描 + Python 过滤"换成"内存列表过滤"。
+
+
+class _StandardAccountIndex:
+    """标准科目内存索引：一次性加载后供各 _query_* 函数复用。
+
+    索引维度（与各 _query_* 的过滤逻辑一一对应）：
+      - all_accounts: 全部标准科目（含停用），供 code/name 精确、anchor、similarity、prefix 遍历
+      - all_active: 仅启用标准科目，供 semantic_alias、name_prefix 遍历
+      - by_norm_code: {normalized_code: [StandardAccount]}
+      - by_norm_name: {normalized_name: [StandardAccount]}
+    """
+
+    __slots__ = ("all_accounts", "all_active", "by_norm_code", "by_norm_name")
+
+    def __init__(self, all_accounts: list[StandardAccount]):
+        self.all_accounts = list(all_accounts)
+        self.all_active = [sa for sa in all_accounts if sa.is_active]
+        self.by_norm_code: dict[str, list[StandardAccount]] = {}
+        self.by_norm_name: dict[str, list[StandardAccount]] = {}
+        for sa in all_accounts:
+            nc = _normalize_code(sa.account_code)
+            if nc:
+                self.by_norm_code.setdefault(nc, []).append(sa)
+            nn = _normalize_name(sa.account_name)
+            if nn:
+                self.by_norm_name.setdefault(nn, []).append(sa)
+
+
+async def _load_standard_account_index(db: AsyncSession) -> _StandardAccountIndex:
+    """一次性加载全部标准科目到内存索引。"""
+    result = await db.execute(select(StandardAccount))
+    return _StandardAccountIndex(list(result.scalars().all()))
+
+
 async def _query_semantic_alias_match(
     db: AsyncSession,
     group_key: str,
+    sa_index: _StandardAccountIndex | None = None,
 ) -> list[StandardAccount]:
     """在标准科目表中查询命中语义组 standard_aliases 的启用科目。"""
     group_def = _SEMANTIC_ACCOUNT_GROUPS.get(group_key)
     if not group_def:
         return []
     # 查询所有启用标准科目，按名称 canonical 匹配
-    stmt = select(StandardAccount).where(StandardAccount.is_active == True)
-    result = await db.execute(stmt)
-    all_active = result.scalars().all()
+    if sa_index is not None:
+        all_active = sa_index.all_active
+    else:
+        stmt = select(StandardAccount).where(StandardAccount.is_active == True)
+        result = await db.execute(stmt)
+        all_active = result.scalars().all()
 
     matches: list[StandardAccount] = []
     conflicts: list[StandardAccount] = []
@@ -574,6 +616,9 @@ async def recommend_mappings(
     """
     results: list[dict] = []
 
+    # TASK-085：一次性加载全部标准科目到内存索引，避免逐次全表扫描
+    sa_index = await _load_standard_account_index(db)
+
     for ca in client_accounts:
         client_code = ca.get("client_account_code", "") or ""
         client_name = ca.get("client_account_name", "") or ""
@@ -618,7 +663,7 @@ async def recommend_mappings(
 
         # ── 优先级 3a：标准科目代码精确匹配 ────
         if normalized_client_code:
-            code_matches = await _query_code_match(db, client_code)
+            code_matches = await _query_code_match(db, client_code, sa_index=sa_index)
             existing_ids = {c.get("standard_account_id") for c in entry["candidates"]}
             for sa in code_matches:
                 if str(sa.id) in existing_ids:
@@ -628,7 +673,7 @@ async def recommend_mappings(
 
         # ── 优先级 3b：标准科目名称精确匹配 ────
         if normalized_client_name:
-            name_exact_matches = await _query_name_exact_match(db, client_name)
+            name_exact_matches = await _query_name_exact_match(db, client_name, sa_index=sa_index)
             existing_ids = {c.get("standard_account_id") for c in entry["candidates"]}
             for sa in name_exact_matches:
                 if str(sa.id) in existing_ids:
@@ -642,7 +687,7 @@ async def recommend_mappings(
         if normalized_client_name:
             group_key = _detect_semantic_group(client_name)
             if group_key:
-                semantic_matches = await _query_semantic_alias_match(db, group_key)
+                semantic_matches = await _query_semantic_alias_match(db, group_key, sa_index=sa_index)
                 existing_ids = {c.get("standard_account_id") for c in entry["candidates"]}
                 for sa in semantic_matches:
                     if str(sa.id) in existing_ids:
@@ -704,7 +749,7 @@ async def recommend_mappings(
             # 如果 crosswalk 没找到，尝试按代码前缀在标准科目中查找
             if not parent_crosswalk and parent_codes_to_try:
                 for pc in parent_codes_to_try:
-                    prefix_matches = await _query_code_prefix_parent(db, pc)
+                    prefix_matches = await _query_code_prefix_parent(db, pc, sa_index=sa_index)
                     if prefix_matches:
                         sa = prefix_matches[0]
                         parent_crosswalk = sa.account_code
@@ -712,7 +757,7 @@ async def recommend_mappings(
                     # 也尝试第一段
                     parts = pc.replace(".", " ").replace("-", " ").split()
                     if parts:
-                        prefix_matches = await _query_code_prefix_parent(db, parts[0])
+                        prefix_matches = await _query_code_prefix_parent(db, parts[0], sa_index=sa_index)
                         if prefix_matches:
                             sa = prefix_matches[0]
                             parent_crosswalk = sa.account_code
@@ -733,7 +778,7 @@ async def recommend_mappings(
 
         # ── 优先级 3d：标准科目名称相似度 ─────
         if normalized_client_name:
-            name_matches = await _query_name_similarity(db, client_name, threshold=0.6)
+            name_matches = await _query_name_similarity(db, client_name, threshold=0.6, sa_index=sa_index)
             existing_ids = {c.get("standard_account_id") for c in entry["candidates"]}
             for sa, sim in name_matches:
                 if str(sa.id) in existing_ids:
@@ -746,7 +791,7 @@ async def recommend_mappings(
         # 匹配到上级标准科目（如 1002 银行存款）。这是兜底候选，带 warning 不自动确认。
         # 兜底候选优先于普通 name_similarity 候选（替换弱相似候选，保留精确/历史候选）。
         if normalized_client_code:
-            prefix_match = await _query_code_prefix_parent(db, client_code)
+            prefix_match = await _query_code_prefix_parent(db, client_code, sa_index=sa_index)
             for sa in prefix_match:
                 _add_fallback_candidate(
                     entry, _build_code_prefix_parent_candidate(sa, client_code, client_name, ca)
@@ -756,7 +801,7 @@ async def recommend_mappings(
         # 客户用 6604 表示研发费用，但标准科目库无 6604，只有「660201 减：研发费用」时，
         # 按 6604→研发费用 的类别锚点去标准科目表按名称匹配。兜底候选，带 warning 不自动确认。
         if normalized_client_code:
-            category_matches = await _query_code_category_anchor(db, client_code)
+            category_matches = await _query_code_category_anchor(db, client_code, sa_index=sa_index)
             for sa in category_matches:
                 _add_fallback_candidate(
                     entry, _build_code_category_anchor_candidate(sa, client_code, client_name, ca)
@@ -769,7 +814,7 @@ async def recommend_mappings(
         if normalized_client_name:
             anchor = _detect_name_anchor(client_name)
             if anchor:
-                anchor_matches = await _query_name_anchor_match(db, anchor)
+                anchor_matches = await _query_name_anchor_match(db, anchor, sa_index=sa_index)
                 for sa in anchor_matches:
                     _add_fallback_candidate(
                         entry, _build_name_anchor_candidate(sa, anchor, client_name, ca)
@@ -781,7 +826,7 @@ async def recommend_mappings(
         # code_match_conflict（warning 非空、score<0.9），不得作为安全自动确认候选。
         # 详见 TASK-068 / TASK-070。
         if normalized_client_name:
-            await _resolve_exact_code_vs_exact_name_conflict(db, entry, client_name)
+            await _resolve_exact_code_vs_exact_name_conflict(db, entry, client_name, sa_index=sa_index)
 
         # ── 统一候选排序（TASK-077）：所有候选构造、冲突降级、兜底补充完成后，
         # 用 _sort_candidates 重排，保证安全候选（warning is None 且 score >= 0.9）
@@ -959,6 +1004,7 @@ async def _resolve_exact_code_vs_exact_name_conflict(
     db: AsyncSession,
     entry: dict,
     client_name: str,
+    sa_index: _StandardAccountIndex | None = None,
 ) -> None:
     """当 exact code 命中与「名称强语义」命中（name_exact / name_prefix）指向不同标准
     科目时，让名称强语义命中优先，并把代码精确命中降级为 code_match_conflict
@@ -995,7 +1041,7 @@ async def _resolve_exact_code_vs_exact_name_conflict(
     existing_ids = {c.get("standard_account_id") for c in candidates}
     code_ids = {c.get("standard_account_id") for c in code_candidates}
 
-    prefix_matches = await _query_name_prefix_match(db, client_name)
+    prefix_matches = await _query_name_prefix_match(db, client_name, sa_index=sa_index)
     if not prefix_matches:
         return
     # 取最具体（canonical 名最长）的命中标准科目
@@ -1083,23 +1129,33 @@ async def _query_history_mapping(
     return [cam for _, cam in matched]
 
 
-async def _query_code_match(db: AsyncSession, client_code: str) -> list[StandardAccount]:
+async def _query_code_match(
+    db: AsyncSession, client_code: str,
+    sa_index: _StandardAccountIndex | None = None,
+) -> list[StandardAccount]:
     """查询标准科目代码精确匹配"""
     normalized_code = _normalize_code(client_code)
     if not normalized_code:
         return []
 
-    stmt = select(StandardAccount)
-    result = await db.execute(stmt)
+    if sa_index is not None:
+        all_accounts = sa_index.all_accounts
+    else:
+        stmt = select(StandardAccount)
+        result = await db.execute(stmt)
+        all_accounts = result.scalars().all()
     matches = [
-        sa for sa in result.scalars().all()
+        sa for sa in all_accounts
         if _normalize_code(sa.account_code) == normalized_code
     ]
     matches.sort(key=lambda sa: (not sa.is_active, sa.account_code))
     return matches[:3]
 
 
-async def _query_name_exact_match(db: AsyncSession, client_name: str) -> list[StandardAccount]:
+async def _query_name_exact_match(
+    db: AsyncSession, client_name: str,
+    sa_index: _StandardAccountIndex | None = None,
+) -> list[StandardAccount]:
     """查询标准科目名称规范化后的精确匹配。
 
     注意：此处用 _normalize_name（不去「减：/加：/其中：」显示前缀）。
@@ -1110,17 +1166,24 @@ async def _query_name_exact_match(db: AsyncSession, client_name: str) -> list[St
     if not normalized_name:
         return []
 
-    stmt = select(StandardAccount)
-    result = await db.execute(stmt)
+    if sa_index is not None:
+        all_accounts = sa_index.all_accounts
+    else:
+        stmt = select(StandardAccount)
+        result = await db.execute(stmt)
+        all_accounts = result.scalars().all()
     matches = [
-        sa for sa in result.scalars().all()
+        sa for sa in all_accounts
         if _normalize_name(sa.account_name) == normalized_name
     ]
     matches.sort(key=lambda sa: (not sa.is_active, sa.account_code))
     return matches[:5]
 
 
-async def _query_name_anchor_match(db: AsyncSession, anchor: str) -> list[StandardAccount]:
+async def _query_name_anchor_match(
+    db: AsyncSession, anchor: str,
+    sa_index: _StandardAccountIndex | None = None,
+) -> list[StandardAccount]:
     """按名称锚点匹配标准科目（剥离显示前缀后比较）。
 
     优先级：
@@ -1133,9 +1196,12 @@ async def _query_name_anchor_match(db: AsyncSession, anchor: str) -> list[Standa
     if not canonical_anchor:
         return []
 
-    stmt = select(StandardAccount)
-    result = await db.execute(stmt)
-    all_accounts = list(result.scalars().all())
+    if sa_index is not None:
+        all_accounts = sa_index.all_accounts
+    else:
+        stmt = select(StandardAccount)
+        result = await db.execute(stmt)
+        all_accounts = list(result.scalars().all())
 
     exact: list[StandardAccount] = []
     contains: list[StandardAccount] = []
@@ -1155,7 +1221,8 @@ async def _query_name_anchor_match(db: AsyncSession, anchor: str) -> list[Standa
 
 
 async def _query_name_similarity(
-    db: AsyncSession, client_name: str, threshold: float = 0.6
+    db: AsyncSession, client_name: str, threshold: float = 0.6,
+    sa_index: _StandardAccountIndex | None = None,
 ) -> list[tuple[StandardAccount, float]]:
     """查询标准科目名称相似度（数据库层粗筛后用 Python 精算）。
 
@@ -1166,9 +1233,12 @@ async def _query_name_similarity(
     if not normalized_input or len(normalized_input) < 2:
         return []
 
-    stmt = select(StandardAccount)
-    result = await db.execute(stmt)
-    all_accounts = list(result.scalars().all())
+    if sa_index is not None:
+        all_accounts = sa_index.all_accounts
+    else:
+        stmt = select(StandardAccount)
+        result = await db.execute(stmt)
+        all_accounts = list(result.scalars().all())
 
     matches: list[tuple[StandardAccount, float]] = []
     for sa in all_accounts:
@@ -1181,7 +1251,10 @@ async def _query_name_similarity(
     return matches[:5]
 
 
-async def _query_code_prefix_parent(db: AsyncSession, client_code: str) -> list[StandardAccount]:
+async def _query_code_prefix_parent(
+    db: AsyncSession, client_code: str,
+    sa_index: _StandardAccountIndex | None = None,
+) -> list[StandardAccount]:
     """按最长标准科目代码前缀匹配上级标准科目。
 
     客户明细科目代码（如 10020108）没有精确匹配时，找到标准科目表中
@@ -1193,9 +1266,12 @@ async def _query_code_prefix_parent(db: AsyncSession, client_code: str) -> list[
         # 代码太短时前缀匹配噪声大，不做
         return []
 
-    stmt = select(StandardAccount)
-    result = await db.execute(stmt)
-    all_accounts = list(result.scalars().all())
+    if sa_index is not None:
+        all_accounts = sa_index.all_accounts
+    else:
+        stmt = select(StandardAccount)
+        result = await db.execute(stmt)
+        all_accounts = list(result.scalars().all())
 
     candidates: list[tuple[int, StandardAccount]] = []  # (前缀长度, sa)
     for sa in all_accounts:
@@ -1276,7 +1352,10 @@ def _detect_code_category_anchor(client_code: str) -> str | None:
     return None
 
 
-async def _query_code_category_anchor(db: AsyncSession, client_code: str) -> list[StandardAccount]:
+async def _query_code_category_anchor(
+    db: AsyncSession, client_code: str,
+    sa_index: _StandardAccountIndex | None = None,
+) -> list[StandardAccount]:
     """按客户代码类别锚点查询标准科目。
 
     客户代码体系与标准不一致时（如客户 6604 研发费用，标准无 6604），
@@ -1286,7 +1365,7 @@ async def _query_code_category_anchor(db: AsyncSession, client_code: str) -> lis
     anchor = _detect_code_category_anchor(client_code)
     if not anchor:
         return []
-    return await _query_name_anchor_match(db, anchor)
+    return await _query_name_anchor_match(db, anchor, sa_index=sa_index)
 
 
 
@@ -1557,6 +1636,7 @@ def _client_name_starts_with_standard_name(
 async def _query_name_prefix_match(
     db: AsyncSession,
     client_name: str,
+    sa_index: _StandardAccountIndex | None = None,
 ) -> list[StandardAccount]:
     """查询客户名称首段/开头明确命中的、更精确的标准科目（强名称前缀候选）。
 
@@ -1572,14 +1652,15 @@ async def _query_name_prefix_match(
     if not client_canonical or len(client_canonical) < 2:
         return []
 
-    stmt = select(StandardAccount)
-    result = await db.execute(stmt)
-    all_accounts = list(result.scalars().all())
+    if sa_index is not None:
+        all_active = sa_index.all_active
+    else:
+        stmt = select(StandardAccount)
+        result = await db.execute(stmt)
+        all_active = [sa for sa in result.scalars().all() if sa.is_active]
 
     matches: list[StandardAccount] = []
-    for sa in all_accounts:
-        if not sa.is_active:
-            continue
+    for sa in all_active:
         sa_canonical = _canonical_name(sa.account_name)
         if _standard_name_is_generic(sa_canonical):
             continue
@@ -1999,6 +2080,7 @@ async def save_mapping(
         "mapping_id": str(new_mapping.id),
         "conflict_detail": None,
     }
+
 
 
 # ── TASK-081：性能缓存 ──────────────────────────────
