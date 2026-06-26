@@ -28,6 +28,7 @@ from app.services.client_account_mapping_service import (
     recommend_mappings,
     pick_unique_auto_confirm_candidate,
     _is_safe_candidate,
+    evaluate_name_compatibility,
 )
 
 
@@ -473,8 +474,6 @@ class TestDisabledStandardAccount:
 # TASK-088：完整路径语义接入专项测试
 # ════════════════════════════════════════════════════════════
 
-from app.services.client_account_mapping_service import evaluate_name_compatibility
-
 
 class TestFullPathGenericName:
     """用例1：当前名称泛化，完整路径明确 → 路径提供上下文"""
@@ -825,21 +824,26 @@ class TestPackagingBoxNotMatchedToTurnoverParent:
 
 
 class TestRDExpenditureNoDirectionStrictUnknown:
-    """TASK-089 §9.1：研发支出无方向时严格为 unknown。
+    """TASK-090 §8：研发支出无方向时三个目标均严格为 unknown。
 
-    测试必须严格断言 result.status == "unknown"，不得允许兼容变体。
+    客户名称:研发支出（无费用化/资本化上下文）
+    标准目标:
+      170401 研发支出-资本化支出
+      170402 研发支出-费用化支出
+      660201 减：研发费用
+    必须严格断言三个目标的 compatibility_status == "unknown"，
+    不得使用"或"宽松断言。不得自动确认任何目标。
     """
 
     @pytest.mark.asyncio
-    async def test_rd_expenditure_no_direction_strict_unknown(self, db):
-        """研发支出无费用化/资本化上下文 → 严格 unknown"""
+    async def test_rd_expenditure_no_direction_all_three_unknown(self, db):
+        """研发支出无方向 → 170401 / 170402 / 660201 均 unknown"""
         sa_rd_cap = _sa("170401", "研发支出-资本化支出")
         sa_rd_exp = _sa("170402", "研发支出-费用化支出")
         sa_rd_expense = _sa("660201", "减：研发费用")
         db.add_all([sa_rd_cap, sa_rd_exp, sa_rd_expense])
         await db.flush()
 
-        # 兼容评估：纯研发支出（无方向）
         compat_cap = evaluate_name_compatibility(
             sa_rd_cap,
             client_account_name="研发支出",
@@ -850,57 +854,206 @@ class TestRDExpenditureNoDirectionStrictUnknown:
             client_account_name="研发支出",
             client_account_full_path="研发支出",
         )
-        # 至少有一个应该是 unknown（无方向时无法判定）
-        assert (compat_cap.status == "unknown" or compat_exp.status == "unknown"), \
-            f"研发支出无方向应至少一个为 unknown，实际: cap={compat_cap.status}, exp={compat_exp.status}"
+        compat_expense = evaluate_name_compatibility(
+            sa_rd_expense,
+            client_account_name="研发支出",
+            client_account_full_path="研发支出",
+        )
+
+        # TASK-090 严格断言：三个目标均为 unknown
+        assert compat_cap.status == "unknown", \
+            f"170401 资本化 应为 unknown，实际: {compat_cap.status} ({compat_cap.reason})"
+        assert compat_exp.status == "unknown", \
+            f"170402 费用化 应为 unknown，实际: {compat_exp.status} ({compat_exp.reason})"
+        assert compat_expense.status == "unknown", \
+            f"660201 研发费用 应为 unknown，实际: {compat_expense.status} ({compat_expense.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_expenditure_no_direction_no_auto_confirm(self, db):
+        """研发支出无方向 → recommend_mappings 不得自动确认任何目标"""
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        db.add_all([sa_rd_cap, sa_rd_exp, sa_rd_expense])
+        await db.flush()
+
+        results = await recommend_mappings(
+            db, data_type="trial_balance",
+            client_accounts=[{"client_account_code": "", "client_account_name": "研发支出"}],
+        )
+        candidates = results[0]["candidates"]
+        # 无安全候选 → 自动确认必须为 None
+        assert pick_unique_auto_confirm_candidate(candidates) is None, \
+            f"研发支出无方向不应自动确认，实际: {[c for c in candidates if _is_safe_candidate(c)]}"
+        # 验证后端返回的 auto_confirm_candidate 也为 None
+        assert results[0].get("auto_confirm_candidate") is None, \
+            f"后端 auto_confirm_candidate 应为 None，实际: {results[0].get('auto_confirm_candidate')}"
 
 
 class TestRDExpensingDirection:
-    """TASK-089 §9.2：研发费用化方向必须匹配费用化。
+    """TASK-090 §9：研发费用化方向正确分流。
 
-    研发支出_费用化支出 / 研发费用 应匹配 660201/170402 等费用化目标，
-    不得匹配 170401 资本化。
+    客户名称包含"费用化"语义（研发支出_费用化支出 / 研发支出/费用化支出/人工费 / 研发费用），
+    应匹配费用化目标（170402 费用化支出 / 660201 研发费用），
+    不得匹配资本化目标（170401 资本化支出）。
     """
 
     @pytest.mark.asyncio
-    async def test_rd_expensing_does_not_match_capitalized(self, db):
+    async def test_rd_expensing_vs_capitalized_is_conflict(self, db):
+        """研发支出_费用化支出 vs 170401 资本化 → conflict"""
         sa_rd_cap = _sa("170401", "研发支出-资本化支出")
         sa_rd_exp = _sa("170402", "研发支出-费用化支出")
-        db.add_all([sa_rd_cap, sa_rd_exp])
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        db.add_all([sa_rd_cap, sa_rd_exp, sa_rd_expense])
         await db.flush()
 
-        # 兼容评估：研发支出_费用化支出 vs 资本化目标 → 冲突
         result = evaluate_name_compatibility(
             sa_rd_cap,
             client_account_name="研发支出_费用化支出",
             client_account_full_path="研发支出/费用化支出",
         )
         assert result.status == "conflict", \
-            f"研发费用化 vs 资本化目标 应为冲突，实际: {result.status}"
+            f"研发费用化 vs 170401 资本化 应为 conflict，实际: {result.status} ({result.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_expensing_vs_expensed_compatible(self, db):
+        """研发支出_费用化支出 vs 170402 费用化 → compatible"""
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        db.add_all([sa_rd_exp, sa_rd_cap])
+        await db.flush()
+
+        result = evaluate_name_compatibility(
+            sa_rd_exp,
+            client_account_name="研发支出_费用化支出",
+            client_account_full_path="研发支出/费用化支出",
+        )
+        assert result.status == "compatible", \
+            f"研发费用化 vs 170402 费用化 应为 compatible，实际: {result.status} ({result.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_expense_name_vs_expensed_compatible(self, db):
+        """研发费用 vs 660201 研发费用 → compatible"""
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        db.add_all([sa_rd_expense, sa_rd_exp])
+        await db.flush()
+
+        result = evaluate_name_compatibility(
+            sa_rd_expense,
+            client_account_name="研发费用",
+            client_account_full_path="研发费用",
+        )
+        assert result.status == "compatible", \
+            f"研发费用 vs 660201 研发费用 应为 compatible，实际: {result.status} ({result.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_expense_path_expense_subpath_compatible(self, db):
+        """研发支出/费用化支出/人工费 vs 170402 费用化 → compatible"""
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        db.add_all([sa_rd_exp, sa_rd_expense, sa_rd_cap])
+        await db.flush()
+
+        # 170402 应兼容
+        result_170402 = evaluate_name_compatibility(
+            sa_rd_exp,
+            client_account_name="人工费",
+            client_account_full_path="研发支出/费用化支出/人工费",
+        )
+        assert result_170402.status == "compatible", \
+            f"研发支出/费用化支出/人工费 vs 170402 应为 compatible，实际: {result_170402.status}"
+
+        # 170401 应冲突
+        result_170401 = evaluate_name_compatibility(
+            sa_rd_cap,
+            client_account_name="人工费",
+            client_account_full_path="研发支出/费用化支出/人工费",
+        )
+        assert result_170401.status == "conflict", \
+            f"研发支出/费用化支出/人工费 vs 170401 应为 conflict，实际: {result_170401.status}"
 
 
 class TestRDCapitalizingDirection:
-    """TASK-089 §9.3：研发资本化方向必须匹配资本化。
+    """TASK-090 §10：研发资本化方向正确分流。
 
-    研发支出_资本化支出 / 开发支出 应匹配 170401 资本化目标，
-    不得匹配 660201 研发费用。
+    客户名称包含"资本化"语义（研发支出_资本化支出 / 研发支出/资本化支出/人工费 / 开发支出），
+    应匹配资本化目标（170401 资本化支出），
+    不得匹配费用化目标（170402 费用化支出 / 660201 研发费用）。
     """
 
     @pytest.mark.asyncio
-    async def test_rd_capitalizing_does_not_match_expensed(self, db):
+    async def test_rd_capitalizing_vs_capitalized_compatible(self, db):
+        """研发支出_资本化支出 vs 170401 资本化 → compatible"""
         sa_rd_cap = _sa("170401", "研发支出-资本化支出")
-        sa_rd_exp = _sa("660201", "减：研发费用")
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
         db.add_all([sa_rd_cap, sa_rd_exp])
         await db.flush()
 
-        # 兼容评估：研发支出_资本化支出 vs 研发费用 → 冲突
+        result = evaluate_name_compatibility(
+            sa_rd_cap,
+            client_account_name="研发支出_资本化支出",
+            client_account_full_path="研发支出/资本化支出",
+        )
+        assert result.status == "compatible", \
+            f"研发资本化 vs 170401 资本化 应为 compatible，实际: {result.status} ({result.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_capitalizing_vs_expensed_conflict(self, db):
+        """研发支出_资本化支出 vs 170402 费用化 → conflict"""
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        db.add_all([sa_rd_exp, sa_rd_cap])
+        await db.flush()
+
         result = evaluate_name_compatibility(
             sa_rd_exp,
             client_account_name="研发支出_资本化支出",
             client_account_full_path="研发支出/资本化支出",
         )
         assert result.status == "conflict", \
-            f"研发资本化 vs 研发费用目标 应为冲突，实际: {result.status}"
+            f"研发资本化 vs 170402 费用化 应为 conflict，实际: {result.status} ({result.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_capitalizing_vs_rd_expense_conflict(self, db):
+        """研发支出_资本化支出 vs 660201 研发费用 → conflict"""
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        db.add_all([sa_rd_expense, sa_rd_cap])
+        await db.flush()
+
+        result = evaluate_name_compatibility(
+            sa_rd_expense,
+            client_account_name="研发支出_资本化支出",
+            client_account_full_path="研发支出/资本化支出",
+        )
+        assert result.status == "conflict", \
+            f"研发资本化 vs 660201 研发费用 应为 conflict，实际: {result.status} ({result.reason})"
+
+    @pytest.mark.asyncio
+    async def test_rd_capitalizing_no_safe_expense_target(self, db):
+        """研发资本化推荐结果中,不得出现费用化方向安全候选"""
+        sa_rd_cap = _sa("170401", "研发支出-资本化支出")
+        sa_rd_exp = _sa("170402", "研发支出-费用化支出")
+        sa_rd_expense = _sa("660201", "减：研发费用")
+        db.add_all([sa_rd_cap, sa_rd_exp, sa_rd_expense])
+        await db.flush()
+
+        results = await recommend_mappings(
+            db, data_type="trial_balance",
+            client_accounts=[{
+                "client_account_code": "",
+                "client_account_name": "研发支出_资本化支出",
+            }],
+        )
+        candidates = results[0]["candidates"]
+        safe_codes = [c["standard_account_code"] for c in candidates if _is_safe_candidate(c)]
+        # 不应出现 170402 / 660201 费用化安全候选
+        assert "170402" not in safe_codes, \
+            f"研发资本化不应有 170402 费用化安全候选，实际: {safe_codes}"
+        assert "660201" not in safe_codes, \
+            f"研发资本化不应有 660201 研发费用安全候选，实际: {safe_codes}"
 
 
 class TestEmptyStandardAccountIDNotSafe:

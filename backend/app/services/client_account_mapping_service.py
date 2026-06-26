@@ -686,7 +686,15 @@ def evaluate_name_compatibility(
         anchor = path_anchor
         if anchor:
             evidence.append(f"path_anchor={anchor}")
-    if anchor and sa_canonical:
+    # TASK-090：纯研发支出（无费用化/资本化方向）豁免锚点冲突，
+    # 交给规则 6 的 unknown 分支处理（660201 研发费用是研发费用化的
+    # 目标集合，不应被锚点冲突拦截）。
+    rd_pure_no_direction = (
+        "研发支出" in client_norm
+        and client_norm == _normalize_name("研发支出")
+        and ("660201" in sa_code or "研发费用" in sa_name)
+    )
+    if anchor and sa_canonical and not rd_pure_no_direction:
         anchor_norm = _normalize_name(anchor)
         if anchor_norm and anchor_norm not in sa_canonical:
             # TASK-089：检查所有 token 的锚点匹配，不仅第一个。

@@ -1,4 +1,6 @@
-/** TASK-087：前端候选安全判定和自动选中工具函数 */
+/** TASK-087：前端候选安全判定和自动选中工具函数
+ *  TASK-090：补强空 standard_account_id 与非有限 score 保护
+ */
 
 import type { MappingCandidate } from '@/types'
 
@@ -9,17 +11,22 @@ const SAFE_CANDIDATE_MIN_SCORE = 0.9
  * 判定是否为安全候选。
  *
  * 必须同时满足：
+ * - standard_account_id 非空（TASK-090：空 ID 一律视为不安全，前后端规则一致）
  * - auto_confirmable === true（显式标记）
  * - warning 为空
- * - score >= 0.9
+ * - score 为有限数（Number.isFinite）且 score >= 0.9（TASK-090：拒绝 NaN / Infinity）
  * - compatibility_status === 'compatible'
  *
  * 缺少 auto_confirmable 字段的旧候选按保守方式处理（视为不安全）。
  */
 export function isSafeCandidate(c: MappingCandidate): boolean {
+  // TASK-090：空标准科目 ID 一律视为不安全，避免脏候选被前端自动确认
+  if (!c.standard_account_id) return false
   if (c.warning) return false
   if (c.auto_confirmable !== true) return false
   if (c.compatibility_status !== 'compatible') return false
+  // TASK-090：非有限 score（NaN / Infinity）必须判为不安全
+  if (!Number.isFinite(c.score)) return false
   return c.score >= SAFE_CANDIDATE_MIN_SCORE
 }
 
