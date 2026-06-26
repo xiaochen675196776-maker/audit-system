@@ -16,7 +16,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -1248,6 +1248,7 @@ async def execute_standard_import(
     # 避免逐行 flush（98k 行 → 1 次 flush）。
     _t0 = _time.time()
     raw_row_map: dict[int, uuid.UUID] = {}  # row_index → raw_row_id
+    raw_row_obj_map: dict[int, StandardTrialBalanceRawRow] = {}  # TASK-085: row_index → ORM object
     result_by_row = {r.row_index: r for r in transform_result.rows}  # 所有行的转换结果
     # TASK-085: 预建 leaf dict 避免 O(n²) 查找
     leaf_by_row = {leaf.row_index: leaf for leaf in leaves}
@@ -1284,12 +1285,16 @@ async def execute_standard_import(
         )
         db.add(raw_row)
         raw_row_map[ri.row_index] = raw_row.id
+        # TASK-085：同时保留 ORM 对象引用，供后续 parent_assign 直接使用
+        raw_row_obj_map[ri.row_index] = raw_row
 
     # 一次性 flush 所有 raw rows，获取数据库分配的 id
     await db.flush()
     _timings["raw_row_insert"] = round(_time.time() - _t0, 2)
 
     # 9. 给所有行补 parent_raw_row_id（不只是叶子行）
+    # TASK-085 优化：直接使用 step 8 保留的 ORM 对象引用，
+    # 避免逐行 db.get(StandardTrialBalanceRawRow, row_id) 查询（98k 行 → 0 次额外查询）。
     _t0 = _time.time()
     # 用代码→行索引的快速查找替代逐行扫描
     code_to_row_idx: dict[str, int] = {}
@@ -1307,14 +1312,10 @@ async def execute_standard_import(
         except (ValueError, TypeError):
             parent_idx = code_to_row_idx.get(tr.parent_key)
 
-        if parent_idx is not None and parent_idx in raw_row_map and tr.row_index in raw_row_map:
-            row_id = raw_row_map[tr.row_index]
-            parent_id = raw_row_map[parent_idx]
-            # TASK-085: 避免 db.get(Model, None) 触发 SAWarning
-            if row_id is not None and parent_id is not None:
-                rr = await db.get(StandardTrialBalanceRawRow, row_id)
-                if rr:
-                    rr.parent_raw_row_id = parent_id
+        if parent_idx is not None and parent_idx in raw_row_obj_map and tr.row_index in raw_row_obj_map:
+            parent_id = raw_row_map.get(parent_idx)
+            if parent_id is not None:
+                raw_row_obj_map[tr.row_index].parent_raw_row_id = parent_id
 
     await db.flush()
     _timings["parent_assign"] = round(_time.time() - _t0, 2)
@@ -1443,13 +1444,13 @@ async def get_import_batch(
     if batch is None:
         return None
 
-    # 统计条目数
+    # TASK-085：用 count 查询替代全量加载（205201 有 18984 条 entry）
     count_result = await db.execute(
-        select(StandardTrialBalanceEntry).where(
+        select(func.count(StandardTrialBalanceEntry.id)).where(
             StandardTrialBalanceEntry.batch_id == batch_id
         )
     )
-    entries = count_result.scalars().all()
+    entry_count = count_result.scalar() or 0
 
     return {
         "id": str(batch.id),
@@ -1464,7 +1465,7 @@ async def get_import_batch(
         "hierarchy_config": batch.hierarchy_config,
         "warnings": batch.warnings,
         "errors": batch.errors,
-        "entry_count": len(entries),
+        "entry_count": entry_count,
         "created_at": batch.created_at.isoformat() if batch.created_at else None,
         "updated_at": batch.updated_at.isoformat() if batch.updated_at else None,
     }

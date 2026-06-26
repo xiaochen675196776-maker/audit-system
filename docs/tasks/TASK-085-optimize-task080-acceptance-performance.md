@@ -1,9 +1,10 @@
 # TASK-085：优化 TASK-080 六表验收性能并修复验收脚本目标未断言
 
-**Status:** TODO  
+**Status:** DONE  
 **Priority:** P1  
 **Created:** 2026-06-26  
-**Owner:** 待领取  
+**Completed:** 2026-06-26  
+**Owner:** xiaochen  
 
 ## 背景
 
@@ -341,3 +342,50 @@ overall_sec
 ```
 
 如果仍超过 180 秒，脚本必须失败并明确瓶颈，不能继续输出通过。
+
+---
+
+## 完成结论（2026-06-26）
+
+### 优化内容
+
+1. **标准科目内存索引层**（`client_account_mapping_service.py`）
+   - 新增 `_StandardAccountIndex` 类 + `_load_standard_account_index`，`recommend_mappings` 入口一次性加载全部标准科目到内存。
+   - 7 个 `_query_*` 全表扫描函数（`_query_code_match`/`_query_name_exact_match`/`_query_name_anchor_match`/`_query_name_similarity`/`_query_code_prefix_parent`/`_query_name_prefix_match`/`_query_semantic_alias_match`）改为接收 `sa_index` 做纯 Python 过滤，消除逐次 `select(StandardAccount)` 全表扫描。
+   - 过滤/排序/冲突收口逻辑完全不变，仅把"DB 全表扫描"换成"内存列表过滤"。
+
+2. **execute parent_assign 批量化**（`standard_trial_balance_import_service.py`）
+   - step 8 创建 raw_row 时同时保留 ORM 对象引用 `raw_row_obj_map`。
+   - step 9 parent_assign 直接用 ORM 对象引用赋值 `parent_raw_row_id`，去掉逐行 `await db.get(StandardTrialBalanceRawRow, row_id)`，98k 行 → 0 次额外查询 + 1 次 flush。
+   - 同时修复 `SAWarning: fully NULL primary key identity`（不再调用 `db.get`，从源头消除空主键查询）。
+
+3. **get_import_batch 优化**：用 `func.count` 替代全量加载 entries。
+
+### 优化前后对比
+
+| 指标 | 优化前 | 优化后 | 变化 |
+|---|---:|---:|---:|
+| 205201 analyze_sec | 55.49s | 38.4s | -31% |
+| 205201 execute_sec | 265.03s | 49.33s | **-81%** |
+| 205201 tree_sec | 10.12s | ~10s | 持平 |
+| **六表 overall_sec** | **379.04s** | **115.73s** | **-69%** |
+
+### 验收结果
+
+```text
+标准库比对: old=207 new=207 added=0 removed=0 changed=0
+六表全部: execute_status=executed, entry_count>0, unmatched=0, unsafe=0, non_parent_warning=0, tree_error=null, dup_node_id=0
+六表 overall_sec=115.73s <= 180s ✓
+TASK080_SIX_TRIAL_BALANCE_TEMPLATES_PASSED
+```
+
+### 测试结果
+
+```text
+定向测试: 207 passed
+后端全量测试: 388 passed
+前端 npm run build: 通过
+```
+
+红线遵守：未新增/删除/修改标准库科目；未恢复 205201 entry_count=0 放行；未放宽任何断言；未减少真实入库行数（205201 entry_count=18984 不变）。
+
