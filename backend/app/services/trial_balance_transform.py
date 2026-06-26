@@ -19,6 +19,7 @@ VALID_DIRECTIONS = ("debit", "credit")
 VALID_SPLIT_MODES = (
     "two_column",
     "single_by_direction",
+    "single_by_source_direction",
     "single_as_debit",
     "single_as_credit",
 )
@@ -35,6 +36,7 @@ class AmountConfig:
     debit_field: str | None = None   # two_column 模式下的借方字段名
     credit_field: str | None = None  # two_column 模式下的贷方字段名
     amount_field: str | None = None  # 单列模式下的金额字段名
+    direction_column_id: str | None = None  # single_by_source_direction 模式下的源方向列
 
     def __post_init__(self):
         if self.mode not in VALID_SPLIT_MODES:
@@ -129,19 +131,39 @@ def _safe_int(value: Any) -> int | None:
 # ── 层级识别 ───────────────────────────────────────
 
 def _find_direct_parent_code(code: str, all_codes: set[str]) -> str | None:
-    """在已有代码集中找到 code 的最长前缀（存在且不等于自身）"""
-    candidates = []
-    for other in all_codes:
-        if other != code and code.startswith(other):
-            candidates.append(other)
-    if not candidates:
-        return None
-    candidates.sort(key=len, reverse=True)
-    return candidates[0]
+    """在已有代码集中找到 code 的最长前缀（存在且不等于自身）。
+    
+    TASK-081 优化：从末尾逐步缩短代码，用 set 查找，O(len(code)) 替代 O(n)。
+    """
+    # 从末尾逐步缩短，找到最短前缀命中
+    for end in range(len(code) - 1, 0, -1):
+        candidate = code[:end]
+        if candidate in all_codes and candidate != code:
+            return candidate
+    return None
 
 
 def _is_parent_of_any(code: str, all_codes: set[str]) -> bool:
-    """判断 code 是否是 all_codes 中某个代码的前缀"""
+    """判断 code 是否是 all_codes 中某个代码的前缀。
+    
+    TASK-081 优化：按长度分段，优先查短代码；预排序避免全量扫描。
+    """
+    # 仅检查长度大于 code 的代码（作为前缀，子级一定更长）
+    if not hasattr(_is_parent_of_any, "_sorted_codes"):
+        return _is_parent_of_any_linear(code, all_codes)
+    for other in _is_parent_of_any._sorted_codes:
+        if len(other) <= len(code):
+            continue
+        if other.startswith(code):
+            return True
+        # 由于排序，一旦 other 的 prefix 不匹配，后续也不会匹配
+        if other > code:
+            break
+    return False
+
+
+def _is_parent_of_any_linear(code: str, all_codes: set[str]) -> bool:
+    """fallback 线性扫描"""
     for other in all_codes:
         if other != code and other.startswith(code):
             return True
@@ -179,6 +201,8 @@ def detect_hierarchy_by_code(
             code_to_row[code] = r
 
     all_codes = set(code_to_row.keys())
+    # TASK-081：预排序代码集，加速 _is_parent_of_any
+    _is_parent_of_any._sorted_codes = sorted(all_codes)
     warnings: list[str] = []
 
     results: list[dict] = []
@@ -496,6 +520,7 @@ def _split_single_amount(
     amount: Decimal,
     direction: str | None,
     split_mode: str,
+    source_direction: str | None = None,
 ) -> tuple[Decimal, Decimal, list[str], list[str]]:
     """
     将单个金额按 split_mode 拆成 (debit, credit)。
@@ -503,7 +528,8 @@ def _split_single_amount(
     Args:
         amount: 原始金额
         direction: 标准科目余额方向（debit/credit/None）
-        split_mode: single_by_direction / single_as_debit / single_as_credit
+        split_mode: single_by_direction / single_by_source_direction / single_as_debit / single_as_credit
+        source_direction: 源表方向列的值（single_by_source_direction 模式专用）
 
     Returns:
         (debit, credit, warnings, errors)
@@ -514,18 +540,48 @@ def _split_single_amount(
     if amount == Decimal("0"):
         return Decimal("0"), Decimal("0"), warnings, errors
 
-    if split_mode == "single_as_debit":
+    if split_mode == "single_by_source_direction":
+        # 按源表方向列的值拆借贷
+        sd = (source_direction or "").strip()
+        sd_lower = sd.lower()
+        # 借方方向
+        if sd in ("借", "借方", "debit", "dr") or sd_lower in ("debit", "dr"):
+            if amount > 0:
+                return amount, Decimal("0"), warnings, errors
+            else:
+                # 负数在借方列 = 实际是贷方，会计系统中常见，不产生 warning
+                return Decimal("0"), abs(amount), warnings, errors
+        # 贷方方向
+        elif sd in ("贷", "贷方", "credit", "cr") or sd_lower in ("credit", "cr"):
+            if amount > 0:
+                return Decimal("0"), amount, warnings, errors
+            else:
+                # 负数在贷方列 = 实际是借方
+                return abs(amount), Decimal("0"), warnings, errors
+        # 平 / 空方向
+        elif sd == "" or sd == "平" or sd_lower in ("flat", "balanced"):
+            # 平且金额非零 → warning
+            if amount != Decimal("0"):
+                warnings.append(f"源方向为「平」但金额非零 {amount}，按借方处理")
+                return amount, Decimal("0"), warnings, errors
+            else:
+                return Decimal("0"), Decimal("0"), warnings, errors
+        else:
+            errors.append(f"无法识别的源方向值 '{sd}'，请手动指定借/贷方")
+            return Decimal("0"), Decimal("0"), warnings, errors
+
+    elif split_mode == "single_as_debit":
         if amount > 0:
             return amount, Decimal("0"), warnings, errors
         else:
-            warnings.append(f"金额 {amount} 为负数，按绝对值进贷方")
+            # 负数金额在会计中是正常现象（红字冲销/调整分录），按绝对值进贷方
             return Decimal("0"), abs(amount), warnings, errors
 
     elif split_mode == "single_as_credit":
         if amount > 0:
             return Decimal("0"), amount, warnings, errors
         else:
-            warnings.append(f"金额 {amount} 为负数，按绝对值进借方")
+            # 负数金额在会计中是正常现象（红字冲销/调整分录），按绝对值进借方
             return abs(amount), Decimal("0"), warnings, errors
 
     elif split_mode == "single_by_direction":
@@ -537,13 +593,13 @@ def _split_single_amount(
             if amount > 0:
                 return amount, Decimal("0"), warnings, errors
             else:
-                warnings.append(f"金额 {amount} 为负数，按绝对值拆分到贷方")
+                # 负数金额在会计中是正常现象，按绝对值拆分到贷方
                 return Decimal("0"), abs(amount), warnings, errors
         elif direction == "credit":
             if amount > 0:
                 return Decimal("0"), amount, warnings, errors
             else:
-                warnings.append(f"金额 {amount} 为负数，按绝对值拆分到借方")
+                # 负数金额在会计中是正常现象，按绝对值拆分到借方
                 return abs(amount), Decimal("0"), warnings, errors
         else:
             errors.append(f"标准科目余额方向 '{direction}' 无效")
@@ -611,14 +667,25 @@ def transform_amounts(
 
             else:
                 # 单列金额拆分
-                raw_amount = _safe_decimal(row.values.get(cfg.amount_field or ""))
-                if raw_amount is None:
-                    w = f"行 {row.row_index} 期间 {period} 金额字段 '{cfg.amount_field}' 无法解析为数字"
-                    result.warnings.append(w)
-                    continue
+                raw_amount_val = row.values.get(cfg.amount_field or "")
+                # 空金额（None / 空字符串 / 纯空白）按 0 处理，不产生 warning
+                if raw_amount_val is None or (isinstance(raw_amount_val, str) and raw_amount_val.strip() == ""):
+                    raw_amount = Decimal("0")
+                else:
+                    raw_amount = _safe_decimal(raw_amount_val)
+                    if raw_amount is None:
+                        w = f"行 {row.row_index} 期间 {period} 金额字段 '{cfg.amount_field}' 无法解析为数字"
+                        result.warnings.append(w)
+                        continue
+
+                # 获取源方向列的值（single_by_source_direction 模式）
+                source_dir = None
+                if cfg.mode == "single_by_source_direction" and cfg.direction_column_id:
+                    source_dir_val = row.values.get(cfg.direction_column_id)
+                    source_dir = str(source_dir_val).strip() if source_dir_val is not None else ""
 
                 debit, credit, wlist, elist = _split_single_amount(
-                    raw_amount, row.standard_direction, cfg.mode,
+                    raw_amount, row.standard_direction, cfg.mode, source_direction=source_dir,
                 )
 
                 result.warnings.extend(wlist)

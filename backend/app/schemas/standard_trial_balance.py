@@ -486,6 +486,7 @@ class FinFieldMappingEntry(BaseModel):
     split_mode: str | None = None
     debit_column_id: str | None = None
     credit_column_id: str | None = None
+    direction_column_id: str | None = None  # 源方向列 (single_by_source_direction 模式)
 
 
 class AnalyzeRequest(BaseModel):

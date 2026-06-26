@@ -1039,3 +1039,88 @@ class TestClientGroupDedup:
         for root in nodes:
             _collect_node_ids(root, all_ids)
         assert len(all_ids) == len(set(all_ids)), "整棵树存在重复 node_id"
+
+
+# ── TASK-082/083：get_tree 环路 / 自引用 / 重复 node_id 防护 ──
+
+class TestClientGroupCycleProtection:
+    """TASK-082/083：raw_row.parent_raw_row_id 出现自引用/互相引用时，
+    get_tree 必须能正常返回（不爆栈），且整棵树不允许重复 node_id。
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_tree_breaks_self_referencing_client_group(self, db):
+        """自引用 parent_raw_row_id → get_tree 不报错、total>0、node_id 不重复。"""
+        sa = await _create_account(db, "1001", "库存现金", level=1, is_leaf=True)
+        batch = await _create_batch(db, file_name="self_ref.xlsx")
+
+        raw = StandardTrialBalanceRawRow(
+            batch_id=batch.id, row_index=0, raw_values={},
+            client_account_code="1001", client_account_name="库存现金",
+            detected_level=1, is_leaf=True,
+            mapped_standard_account_id=sa.id, mapping_status="mapped",
+        )
+        db.add(raw)
+        await db.flush()
+        # 自引用：raw.parent_raw_row_id = raw.id
+        raw.parent_raw_row_id = raw.id
+        await db.flush()
+
+        await _create_entry(
+            db, batch.id, sa,
+            raw_row_id=raw.id,
+            client_account_code="1001", client_account_name="库存现金",
+            ending_debit=Decimal("100"),
+        )
+
+        # 必须正常返回，不抛 RecursionError
+        nodes, total = await get_tree(db, batch_id=batch.id)
+        assert total > 0
+
+        all_ids: list = []
+        for root in nodes:
+            _collect_node_ids(root, all_ids)
+        assert len(all_ids) == len(set(all_ids)), \
+            f"自引用场景不应产生重复 node_id: {[i for i in all_ids if all_ids.count(i) > 1]}"
+
+    @pytest.mark.asyncio
+    async def test_get_tree_breaks_mutual_client_group_cycle(self, db):
+        """两个 raw row 互相引用 parent → get_tree 不爆栈，至少一个 entry 正确返回。"""
+        sa = await _create_account(db, "1001", "库存现金", level=1, is_leaf=True)
+        batch = await _create_batch(db, file_name="mutual.xlsx")
+
+        raw_a = StandardTrialBalanceRawRow(
+            batch_id=batch.id, row_index=0, raw_values={},
+            client_account_code="1001", client_account_name="库存现金_A",
+            detected_level=2, is_leaf=True,
+            mapped_standard_account_id=sa.id, mapping_status="mapped",
+        )
+        raw_b = StandardTrialBalanceRawRow(
+            batch_id=batch.id, row_index=1, raw_values={},
+            client_account_code="1001", client_account_name="库存现金_B",
+            detected_level=1, is_leaf=False,
+            mapped_standard_account_id=sa.id, mapping_status="mapped",
+        )
+        db.add_all([raw_a, raw_b])
+        await db.flush()
+        # 互相引用：A → B → A
+        raw_a.parent_raw_row_id = raw_b.id
+        raw_b.parent_raw_row_id = raw_a.id
+        await db.flush()
+
+        await _create_entry(
+            db, batch.id, sa,
+            raw_row_id=raw_a.id,
+            client_account_code="1001", client_account_name="库存现金_A",
+            ending_debit=Decimal("50"),
+        )
+
+        # 必须正常返回，不抛 RecursionError
+        nodes, total = await get_tree(db, batch_id=batch.id)
+        assert total > 0
+
+        all_ids: list = []
+        for root in nodes:
+            _collect_node_ids(root, all_ids)
+        assert len(all_ids) == len(set(all_ids)), \
+            f"互相引用场景不应产生重复 node_id: {[i for i in all_ids if all_ids.count(i) > 1]}"

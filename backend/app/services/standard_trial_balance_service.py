@@ -251,6 +251,34 @@ def _make_synthetic_client_group_node(
     }
 
 
+def _is_descendant_of(
+    node: dict,
+    ancestor_node_id: str,
+    local_client_nodes: dict,
+    _visited: set | None = None,
+) -> bool:
+    """检查 node 的子树中是否包含 ancestor_node_id（即 node 是否是 ancestor 的后代形成环）。
+
+    TASK-082: 使用迭代 DFS + visited 检测环，避免自身因环而无限递归。
+    """
+    stack: list[dict] = [node]
+    visited: set[str] = set()
+    while stack:
+        cur = stack.pop()
+        nid = cur.get("node_id")
+        if nid is None:
+            continue
+        if nid == ancestor_node_id:
+            return True
+        if nid in visited:
+            continue
+        visited.add(nid)
+        for child in cur.get("children", []):
+            if child.get("node_type") == "client_group":
+                stack.append(child)
+    return False
+
+
 async def get_tree(
     db: AsyncSession,
     *,
@@ -327,14 +355,22 @@ async def get_tree(
     # 4. 构建 client_group 节点：按 (standard_account_id, raw_parent_id) 分组
     # 为每个 entry 沿 parent_raw_row_id 向上走，收集中间层
     def _ancestor_chain(raw_row: StandardTrialBalanceRawRow) -> list[StandardTrialBalanceRawRow]:
-        """返回从最顶层祖先到直接父级的链（不含自身）。"""
+        """返回从最顶层祖先到直接父级的链（不含自身），含环检测。"""
         chain = []
         cur = raw_row
-        while cur and cur.parent_raw_row_id:
+        visited: set[uuid.UUID] = set()
+        depth = 0
+        while cur and cur.parent_raw_row_id and depth < 1000:
+            depth += 1
+            if cur.parent_raw_row_id in visited:
+                break
             parent = raw_by_id.get(cur.parent_raw_row_id)
             if not parent:
                 break
+            visited.add(cur.parent_raw_row_id)
             chain.append(parent)
+            if parent.id == raw_row.id:
+                break
             cur = parent
         chain.reverse()
         return chain
@@ -539,6 +575,7 @@ async def get_tree(
                 _append_unique_child(entry_nodes, entry_node)
 
         # 把没有父级的 client_group 节点（链顶）挂到标准科目下
+        # TASK-082: 同时检测并断开 client_group 节点之间的环，避免 _finalize_cg / _clean_aggregated 死循环
         top_level_client_groups: list[dict] = []
         child_raw_ids: set[str] = set()
         for cg in local_client_nodes.values():
@@ -546,23 +583,59 @@ async def get_tree(
                 if child.get("node_type") == "client_group":
                     child_raw_ids.add(child["node_id"])
 
+        # TASK-082: 第二次遍历断开环 — 如果一个 client_group 是自己祖先的后代，移除该父子关系
+        _cg_cycle_broken = 0
+        for key, cg in local_client_nodes.items():
+            clean_children = []
+            for child in cg["children"]:
+                if child.get("node_type") == "client_group":
+                    # 检查 child 的子树中是否包含 cg（即 child 是否是 cg 的祖先）
+                    if _is_descendant_of(child, cg["node_id"], local_client_nodes):
+                        _cg_cycle_broken += 1
+                        logger.debug(
+                            "client_group cycle detected: %s → %s, breaking link",
+                            cg["node_id"], child.get("node_id"),
+                        )
+                        continue  # 跳过这个会导致环的 child
+                clean_children.append(child)
+            cg["children"] = clean_children
+        if _cg_cycle_broken:
+            logger.debug("client_group cycle broken %d links", _cg_cycle_broken)
+
+        # 重新收集 top_level（可能因断环变化）
+        child_raw_ids.clear()
+        for cg in local_client_nodes.values():
+            for child in cg["children"]:
+                if child.get("node_type") == "client_group":
+                    child_raw_ids.add(child["node_id"])
+        top_level_client_groups.clear()
+
         for key, cg in local_client_nodes.items():
             if cg["node_id"] not in child_raw_ids:
                 top_level_client_groups.append(cg)
 
         # 给 client_group 节点设置聚合金额（从 aggregated 移到标准字段）
-        def _finalize_cg(cg: dict):
-            agg = cg.pop("aggregated", _empty_agg())
-            cg["opening_debit"] = agg["opening_debit"]
-            cg["opening_credit"] = agg["opening_credit"]
-            cg["current_debit"] = agg["current_debit"]
-            cg["current_credit"] = agg["current_credit"]
-            cg["ending_debit"] = agg["ending_debit"]
-            cg["ending_credit"] = agg["ending_credit"]
-            cg["entry_count"] = agg["entry_count"]
-            for child in cg["children"]:
-                if child.get("node_type") == "client_group":
-                    _finalize_cg(child)
+        def _finalize_cg(root_cg: dict):
+            """迭代处理 client_group 树，含环检测避免死循环。"""
+            stack: list[dict] = [root_cg]
+            visited: set[str] = set()
+            while stack:
+                cg = stack.pop()
+                nid = cg.get("node_id")
+                if nid in visited:
+                    continue
+                visited.add(nid)
+                agg = cg.pop("aggregated", _empty_agg())
+                cg["opening_debit"] = agg["opening_debit"]
+                cg["opening_credit"] = agg["opening_credit"]
+                cg["current_debit"] = agg["current_debit"]
+                cg["current_credit"] = agg["current_credit"]
+                cg["ending_debit"] = agg["ending_debit"]
+                cg["ending_credit"] = agg["ending_credit"]
+                cg["entry_count"] = agg["entry_count"]
+                for child in cg["children"]:
+                    if child.get("node_type") == "client_group":
+                        stack.append(child)
 
         for cg in top_level_client_groups:
             _finalize_cg(cg)
@@ -624,9 +697,21 @@ async def get_tree(
 
     # 清理内部字段
     def _clean_aggregated(nodes: list[dict]):
-        for n in nodes:
+        # TASK-082: 使用 iterative stack + visited set 替代裸递归，防止环导致的 RecursionError
+        stack: list[dict] = list(nodes)
+        visited: set[str] = set()
+        while stack:
+            n = stack.pop()
+            nid = n.get("node_id")
+            if nid and nid in visited:
+                continue
+            if nid:
+                visited.add(nid)
             n.pop("aggregated", None)
-            _clean_aggregated(n.get("children", []))
+            children = n.get("children", [])
+            # 逆序推入以保持与原递归类似的遍历顺序（虽非必需，但保持兼容）
+            for child in reversed(children):
+                stack.append(child)
 
     _clean_aggregated(root_nodes)
 

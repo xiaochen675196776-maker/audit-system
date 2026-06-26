@@ -85,7 +85,14 @@ def _clean_header(header: str | None) -> str:
 
 def _parse_excel(file_path: str) -> tuple[list[str], list[list]]:
     """解析 Excel 文件"""
-    # 先用 openpyxl 读取（保留原始格式），pandas 做 fallback
+    ext = Path(file_path).suffix.lower()
+    # .xls 旧格式用 xlrd，.xlsx/.xlsm 用 openpyxl
+    if ext == ".xls" and _is_old_xls(file_path):
+        try:
+            return _parse_excel_xlrd(file_path)
+        except Exception:
+            return _parse_excel_pandas(file_path)
+    # .xlsx/.xlsm 或无法判断：先用 openpyxl，pandas 做 fallback
     try:
         return _parse_excel_openpyxl(file_path)
     except Exception:
@@ -508,12 +515,95 @@ def _parse_csv_all_rows(file_path: str, encoding: str = "auto") -> tuple[list[st
     return headers, all_rows
 
 
+def _is_old_xls(file_path: str) -> bool:
+    """通过文件头判断是否为旧 .xls 格式（OLE 或 BIFF）。"""
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(8)
+        # OLE2 复合文档 (D0 CF 11 E0 A1 B1 1A E1)
+        if header[:4] == b'\xd0\xcf\x11\xe0':
+            return True
+        # BIFF 流 (09 08 ...)
+        if header[:2] == b'\x09\x08':
+            return True
+        # BIFF 其他变体
+        if header[:2] == b'\x09\x00' or header[:2] == b'\x09\x04':
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _parse_excel_xlrd(file_path: str) -> tuple[list[str], list[list]]:
+    """用 xlrd 解析旧 .xls 文件。"""
+    import xlrd
+
+    wb = xlrd.open_workbook(file_path, formatting_info=False)
+    ws = wb.sheet_by_index(0)
+
+    all_rows: list[list] = []
+    for rx in range(ws.nrows):
+        row = []
+        for cx in range(ws.ncols):
+            cell = ws.cell(rx, cx)
+            if cell.ctype == xlrd.XL_CELL_EMPTY:
+                row.append("")
+            elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                # 保留数值类型（整数或浮点数），方便后续金额解析
+                val = cell.value
+                if isinstance(val, float) and val == int(val):
+                    row.append(int(val))
+                else:
+                    row.append(val)
+            elif cell.ctype == xlrd.XL_CELL_DATE:
+                row.append(str(cell.value))
+            elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                row.append(bool(cell.value))
+            elif cell.ctype == xlrd.XL_CELL_ERROR:
+                row.append("")
+            else:
+                # 文本类型
+                row.append(str(cell.value).strip())
+        all_rows.append(row)
+
+    if len(all_rows) < 2:
+        raise ValueError("Excel .xls 文件至少需要表头行 + 一行数据")
+
+    header_idx = _detect_header_row(all_rows)
+    headers = [_clean_header(h) for h in all_rows[header_idx]]
+    data_rows = all_rows[header_idx + 1:]
+
+    # 清理：移除全空行
+    data_rows = [
+        [cell if cell is not None else "" for cell in row]
+        for row in data_rows
+        if any(cell is not None and str(cell).strip() != "" for cell in row)
+    ]
+
+    return headers, data_rows
+
+
 def _parse_excel_all_rows(file_path: str) -> tuple[list[str], list[list]]:
     """解析 Excel 返回全部行。
 
-    read_only 模式对部分缺失默认样式的金蝶导出（Sheet1.max_row 异常返回 1）
+    .xls 旧格式用 xlrd；.xlsx/.xlsm 用 openpyxl。
+    openpyxl: read_only 模式对部分缺失默认样式的金蝶导出（Sheet1.max_row 异常返回 1）
     会失败，故优先用非 read_only 的 data_only 加载，异常时回退 read_only。
     """
+    ext = Path(file_path).suffix.lower()
+
+    # ── .xls 旧格式 → xlrd ──
+    if ext == ".xls" and _is_old_xls(file_path):
+        try:
+            return _parse_xls_all_rows_xlrd(file_path)
+        except Exception:
+            # xlrd 失败时尝试自定义二进制解析（如 205201-2023.xls 的特殊格式）
+            try:
+                return _parse_xls_custom_binary(file_path)
+            except Exception:
+                raise  # 如果都失败则抛出原始 xlrd 错误
+
+    # ── .xlsx/.xlsm → openpyxl ──
     from openpyxl import load_workbook
 
     all_rows: list[list] = []
@@ -540,6 +630,232 @@ def _parse_excel_all_rows(file_path: str) -> tuple[list[str], list[list]]:
 
     headers = [_clean_header(h) for h in all_rows[0]]
     return headers, all_rows
+
+
+def _parse_xls_all_rows_xlrd(file_path: str) -> tuple[list[str], list[list]]:
+    """用 xlrd 解析旧 .xls 文件返回全部行（不做表头检测）。"""
+    import xlrd
+
+    wb = xlrd.open_workbook(file_path, formatting_info=False)
+    ws = wb.sheet_by_index(0)
+
+    all_rows: list[list] = []
+    for rx in range(ws.nrows):
+        row = []
+        for cx in range(ws.ncols):
+            cell = ws.cell(rx, cx)
+            if cell.ctype == xlrd.XL_CELL_EMPTY:
+                row.append("")
+            elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                val = cell.value
+                if isinstance(val, float) and val == int(val):
+                    row.append(int(val))
+                else:
+                    row.append(val)
+            elif cell.ctype == xlrd.XL_CELL_DATE:
+                row.append(str(cell.value))
+            elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                row.append(bool(cell.value))
+            elif cell.ctype == xlrd.XL_CELL_ERROR:
+                row.append("")
+            else:
+                row.append(str(cell.value).strip())
+        all_rows.append(row)
+
+    if len(all_rows) < 2:
+        raise ValueError("Excel .xls 文件至少需要表头行 + 一行数据")
+
+    headers = [_clean_header(h) for h in all_rows[0]]
+    return headers, all_rows
+
+
+def _parse_xls_custom_binary(file_path: str) -> tuple[list[str], list[list]]:
+    """解析自定义二进制格式（如 205201-2023.xls 的专有会计软件导出格式）。
+
+    格式特点：字段元数据区和数据记录区均使用 04 02 标记的变长条目。
+    本函数提取字段名后按变长条目读取数据记录。
+
+    TASK-084 修复：这类文件同时包含 BIFF8 单元格记录（NUMBER/RK），
+    其中 NUMBER 记录（0x0203）携带真实的金额数值，而 04 02 文本层
+    只含科目代码/名称等文本字段、金额列为空。故在文本层解析完成后，
+    扫描 BIFF8 NUMBER/RK 记录，按 (row, col) 把数值填入对应单元格。
+    """
+    with open(file_path, "rb") as f:
+        data = f.read()
+
+    if len(data) < 12:
+        raise ValueError("文件太小，无法解析")
+
+    pos = 12
+
+    # ── 解析字段元数据 ──
+    field_names: list[str] = []
+    while pos + 12 <= len(data):
+        marker = data[pos:pos+2]
+        if marker == b'\x00\x00':
+            pos += 2
+            break
+        if marker != b'\x04\x02':
+            break
+        total_size = int.from_bytes(data[pos+2:pos+4], 'little')
+        name_len = int.from_bytes(data[pos+10:pos+12], 'little')
+        name_bytes = data[pos+12:pos+12+name_len]
+        try:
+            name = name_bytes.decode('gbk').strip('\x00').strip()
+        except Exception:
+            name = ""
+        field_names.append(name)
+        pos += total_size + 4
+
+    if not field_names:
+        raise ValueError("无法识别文件字段结构")
+
+    # 跳到数据区
+    while pos < len(data) and data[pos] == 0:
+        pos += 1
+
+    # ── 读取数据记录 ──
+    all_rows: list[list] = [field_names]
+    while pos + 10 <= len(data):
+        # 记录以 01 开头
+        if data[pos] != 0x01:
+            pos += 1
+            continue
+        record_start = pos
+        pos += 1
+        # 跳过记录头（9 字节）
+        if pos + 9 > len(data):
+            break
+        pos += 9
+
+        # 读取该记录的所有字段值
+        row_values: dict[int, str] = {}
+        while pos + 12 <= len(data):
+            if data[pos:pos+2] == b'\x04\x02':
+                total_size = int.from_bytes(data[pos+2:pos+4], 'little')
+                field_idx = int.from_bytes(data[pos+6:pos+8], 'little')
+                val_len = int.from_bytes(data[pos+10:pos+12], 'little')
+                if pos + 12 + val_len > len(data):
+                    break
+                val_bytes = data[pos+12:pos+12+val_len]
+                try:
+                    val = val_bytes.decode('gbk').strip()
+                except Exception:
+                    val = val_bytes.decode('gbk', errors='replace').strip()
+                row_values[field_idx] = val
+                pos += total_size + 4
+            elif data[pos:pos+2] == b'\x01\x02':
+                # 下一个记录开始
+                break
+            else:
+                pos += 1
+                break
+
+        # 按字段索引排列
+        if row_values:
+            row = [row_values.get(i, "") for i in range(len(field_names))]
+            all_rows.append(row)
+        else:
+            pos = record_start + 1  # 跳过这个无效记录
+            continue
+
+    if len(all_rows) < 2:
+        raise ValueError("未找到有效数据记录")
+
+    # ── TASK-084：扫描 BIFF8 NUMBER/RK 记录，补充金额数值 ──
+    # 文本层只含科目代码/名称，金额列（期初余额/借贷发生/期末结余）为空。
+    # BIFF8 NUMBER 记录携带真实数值，按 (row, col) 填入 all_rows。
+    _fill_biff_numeric_records(data, all_rows)
+
+    headers = [_clean_header(h) for h in all_rows[0]]
+    return headers, all_rows
+
+
+def _fill_biff_numeric_records(data: bytes, all_rows: list[list]) -> None:
+    """扫描 BIFF8 NUMBER(0x0203)/RK(0x027E)/MULRK(0x00BD) 记录，
+    把数值按 (row, col) 填入 all_rows 对应单元格（仅当原值为空时）。
+
+    BIFF 行号与 all_rows 索引一一对应：row 0 = 表头行，row 1+ = 数据行。
+    """
+    import struct
+
+    pos = 0
+    n = len(data)
+    while pos + 4 <= n:
+        rec_type = int.from_bytes(data[pos:pos+2], 'little')
+        rec_len = int.from_bytes(data[pos+2:pos+4], 'little')
+        body_start = pos + 4
+        body_end = body_start + rec_len
+        if body_end > n:
+            break
+
+        if rec_type == 0x0203 and rec_len >= 14:
+            # NUMBER: row(2) + col(2) + xf(2) + value(8)
+            row_idx = int.from_bytes(data[body_start:body_start+2], 'little')
+            col_idx = int.from_bytes(data[body_start+2:body_start+4], 'little')
+            val = struct.unpack('<d', data[body_start+6:body_start+14])[0]
+            _set_numeric_cell(all_rows, row_idx, col_idx, val)
+
+        elif rec_type == 0x027E and rec_len >= 10:
+            # RK: row(2) + col(2) + xf(2) + rk(4)
+            row_idx = int.from_bytes(data[body_start:body_start+2], 'little')
+            col_idx = int.from_bytes(data[body_start+2:body_start+4], 'little')
+            rk = int.from_bytes(data[body_start+6:body_start+10], 'little')
+            val = _decode_rk(rk)
+            _set_numeric_cell(all_rows, row_idx, col_idx, val)
+
+        elif rec_type == 0x00BD and rec_len >= 6:
+            # MULRK: row(2) + col_first(2) + (xf(2)+rk(4))*N + col_last(2)
+            row_idx = int.from_bytes(data[body_start:body_start+2], 'little')
+            col_first = int.from_bytes(data[body_start+2:body_start+4], 'little')
+            col_last = int.from_bytes(data[body_end-2:body_end], 'little')
+            rk_pos = body_start + 4
+            for col_idx in range(col_first, col_last + 1):
+                if rk_pos + 6 > body_end - 2:
+                    break
+                rk = int.from_bytes(data[rk_pos+2:rk_pos+6], 'little')
+                val = _decode_rk(rk)
+                _set_numeric_cell(all_rows, row_idx, col_idx, val)
+                rk_pos += 6
+
+        pos = body_end
+
+
+def _decode_rk(rk: int) -> float:
+    """解码 BIFF8 RK 值（4 字节压缩数值）。
+
+    bit 0: 0=IEEE 754 double（高 30 位）, 1=signed integer（高 30 位）
+    bit 1: 0=原值, 1=乘以 100
+    """
+    is_int = rk & 0x01
+    is_scaled = (rk >> 1) & 0x01
+    if is_int:
+        # 高 30 位为有符号整数
+        val = rk >> 2
+        if val >= 0x20000000:  # 30 位有符号负数补码
+            val -= 0x40000000
+        value = float(val)
+    else:
+        # 高 30 位为 IEEE 754 double 的高 30 位，低 2 位补 0
+        import struct
+        packed = struct.pack('>I', rk) + b'\x00\x00\x00\x00'
+        value = struct.unpack('>d', packed)[0]
+    if is_scaled:
+        value *= 100.0
+    return value
+
+
+def _set_numeric_cell(all_rows: list[list], row_idx: int, col_idx: int, val: float) -> None:
+    """把数值填入 all_rows[row_idx][col_idx]，仅当原值为空/非数值时写入。"""
+    if row_idx < 0 or row_idx >= len(all_rows):
+        return
+    row = all_rows[row_idx]
+    while len(row) <= col_idx:
+        row.append("")
+    existing = row[col_idx]
+    # 仅当原值为空或已是数值时写入，不覆盖文本层的文本值
+    if existing is None or str(existing).strip() == "":
+        row[col_idx] = val
 
 
 def build_columns(headers: list[str], sample_rows: list[list] | None = None) -> list[dict]:

@@ -23,6 +23,109 @@ from app.models.client_account_mapping import ClientAccountMapping
 from app.models.standard_account import StandardAccount
 
 
+# ── 旧科目编码→新标准科目编码 crosswalk ──────────────
+# 用于老账套/老准则科目编码体系映射到当前标准科目。
+# key: 旧编码（可能带点分层级，取第一段/前缀匹配）
+# value: 应映射到的标准科目代码
+_OLD_CODE_CROSSWALK: dict[str, str] = {
+    # 资产类
+    "101": "1001",    # 现金 → 库存现金
+    "102": "1002",    # 银行存款 → 银行存款
+    "109": "1012",    # 其他货币资金 → 其他货币资金
+    "1009": "1012",   # 其他货币资金（含基金）→ 其他货币资金
+    "111": "1101",    # 短期投资 → 交易性金融资产
+    "1111": "112101", # 应收票据 → 应收票据
+    "112": "112101",  # 应收票据 → 应收票据
+    "113": "112201",  # 应收账款 → 应收账款
+    "1131": "112201", # 应收账款 → 应收账款
+    "114": "112402",  # 坏账准备 → 坏账准备（应收账款）
+    "115": "112401",  # 预付账款 → 预付款项
+    "1151": "112401", # 预付账款 → 预付款项
+    "119": "122101",  # 其他应收款 → 其他应收款
+    "121": "1403",    # 材料采购 → 原材料（或材料采购）
+    "122": "1403",    # 在途物资 → 原材料
+    "123": "1403",    # 原材料 → 原材料
+    "1231": "122102", # 坏账准备 → 减：其他应收款-坏账准备（按客户用途归入）
+    "124": "1405",    # 库存商品 → 库存商品
+    "128": "141101",  # 包装物 → 包装物
+    "129": "141102",  # 低值易耗品 → 低值易耗品
+    "131": "140601",  # 半成品 → 半成品
+    "137": "1405",    # 产成品 → 库存商品
+    "139": "147101",  # 存货跌价准备 → 存货-资产减值损失
+    "141": "1901",    # 待摊费用 → 其他流动资产
+    "151": "151101",  # 长期股权投资 → 长期股权投资-原值
+    "161": "160101",  # 固定资产 → 固定资产原值
+    "165": "1602",    # 累计折旧 → 累计折旧
+    "1651": "164101", # 使用权资产 → 使用权资产-原值（客户用 1651 体系）
+    "169": "160401",  # 在建工程 → 在建工程-原值
+    "171": "170101",  # 无形资产 → 无形资产-原值
+    "181": "1801",    # 长期待摊费用 → 长期待摊费用
+    "1802": "1801",   # 长期待摊费用（软件等）→ 长期待摊费用
+    "1807": "1811",   # 递延所得税资产
+    "191": "1902",    # 其他非流动资产 → 其他非流动资产
+    # 负债类
+    "201": "2001",    # 短期借款 → 短期借款
+    "202": "2201",    # 应付票据 → 应付票据
+    "203": "2202",    # 应付账款 → 应付账款
+    "204": "2203",    # 预收账款 → 预收款项
+    "209": "2241",    # 其他应付款 → 其他应付款
+    "211": "2211",    # 应付工资 → 应付职工薪酬
+    "2121": "2211",   # 应付福利费 → 应付职工薪酬
+    "2131": "2241",   # 其他应交款 → 其他应付款
+    "214": "2221",    # 应交税金 → 应交税费
+    "2171": "2221",   # 应交税费
+    "221": "2501",    # 长期借款 → 长期借款
+    "223": "2701",    # 应付债券 → 长期应付款
+    "229": "2241",    # 其他长期负债 → 其他应付款
+    # 权益类
+    "301": "4001",    # 实收资本 → 股本（实收资本）
+    "311": "4003",    # 资本公积 → 资本公积
+    "312": "4101",    # 盈余公积 → 盈余公积
+    "313": "4101",    # 公益金 → 盈余公积
+    "321": "4103",    # 本年利润 → 未分配利润
+    "322": "4105",    # 利润分配 → 利润分配
+    # 成本类
+    "401": "5001",    # 生产成本 → 生产成本
+    "405": "5101",    # 制造费用 → 制造费用
+    # 损益类
+    "501": "6001",    # 产品销售收入 → 主营业务收入
+    "502": "6401",    # 产品销售成本 → 主营业务成本
+    "503": "6602",    # 产品销售费用/其他费用 → 管理费用
+    "504": "6602",    # 管理费用 → 管理费用
+    "511": "6051",    # 其他业务收入 → 其他业务收入
+    "512": "6402",    # 其他业务支出 → 其他业务成本
+    "521": "6602",    # 管理费用/研发费用明细 → 结合父级路径
+    "522": "6601",    # 销售费用 → 销售费用
+    "531": "6111",    # 投资收益 → 投资收益
+    "541": "6301",    # 营业外收入 → 营业外收入
+    "542": "6711",    # 营业外支出 → 营业外支出
+    "550": "6801",    # 所得税 → 所得税费用
+    "560": "6901",    # 以前年度损益调整 → 以前年度损益调整
+    # 费用明细类（常见明细科目代码段）
+    "4107": "660201", # 研发费用明细 → 研发费用
+    "6121": "6117",   # 其他收益相关 → 其他收益
+    "2132": "2241",   # 其他应付款明细（保证金等）
+    "2151": "2211",   # 应付职工薪酬明细
+    "2181": "2241",   # 其他应付款明细（个人往来等）
+    "5407": "6401",   # 主营业务成本明细
+    "5701": "6801",   # 所得税费用明细
+    # 研发支出/费用相关
+    "5301": "660201",  # 研发支出/研发费用 → 研发费用
+}
+
+# ── 泛化叶子名（不能仅凭名称匹配，必须结合父级路径） ──
+_GENERIC_LEAF_NAMES: set[str] = {
+    "工资", "职工福利", "福利费", "社保", "公积金", "工会经费", "职工教育经费",
+    "折旧费", "摊销费", "材料费", "水电费", "办公费", "差旅费", "交通费",
+    "业务招待费", "通讯费", "租赁费", "修理费", "保险费", "聘请中介机构费",
+    "咨询费", "诉讼费", "排污费", "绿化费", "税金", "其他费用", "其他",
+    "检测费", "试验检验费", "委托外部研究开发费用",
+    "行政管理类", "生产经营类",
+    "充电场站", "办公租赁",
+    "职工薪酬", "劳务费", "运输费", "装卸费", "包装费", "广告费",
+}
+
+
 # ── 名称规范化（与字段映射经验库保持一致） ──────────
 
 def _normalize_name(value: str | None) -> str:
@@ -545,6 +648,87 @@ async def recommend_mappings(
                     if str(sa.id) in existing_ids:
                         continue
                     candidate = _build_semantic_alias_candidate(sa, group_key, client_name)
+                    entry["candidates"].append(candidate)
+
+        # ── 优先级 3c2：旧科目编码 crosswalk ──
+        # TASK-080：老账套/老准则科目编码（如 101=现金, 502=产品销售成本）
+        # 按静态映射表直接匹配到新标准科目。
+        if normalized_client_code and not entry["candidates"]:
+            crosswalk_code = _lookup_old_code_crosswalk(client_code)
+            if crosswalk_code:
+                crosswalk_matches = await _query_crosswalk_match(db, crosswalk_code)
+                for sa in crosswalk_matches:
+                    candidate = _build_crosswalk_candidate(sa, client_code, client_name, crosswalk_code)
+                    entry["candidates"].append(candidate)
+
+        # ── 优先级 3c3：父级继承 ──
+        # TASK-080：当行有父级科目且父级有安全映射候选时，子级（尤其是泛化叶子名）
+        # 应继承父级映射，而不是通过名称相似度误配到无关科目。
+        # 如果已有候选全是低质量 name_similarity（score<0.9 或带 warning），
+        # 父级继承候选应替换它们。
+        parent_code = ca.get("parent_client_account_code")
+        parent_name = ca.get("parent_client_account_name")
+        ancestor_codes = ca.get("ancestor_codes") or []
+        ancestor_names = ca.get("ancestor_names") or []
+
+        # 检查现有候选是否全是弱候选
+        existing_candidates = entry.get("candidates", [])
+        has_only_weak = bool(existing_candidates) and all(
+            c.get("warning") is not None or float(c.get("score", 0) or 0) < 0.9
+            for c in existing_candidates
+        )
+
+        if not entry["candidates"] or has_only_weak:
+
+            # 尝试按父代码在 crosswalk 中查找
+            parent_crosswalk = None
+            parent_codes_to_try = []
+            if parent_code:
+                parent_codes_to_try.append(parent_code)
+            parent_codes_to_try.extend(ancestor_codes)
+
+            for pc in parent_codes_to_try:
+                parent_crosswalk = _lookup_old_code_crosswalk(pc)
+                if parent_crosswalk:
+                    break
+                # 试试点分第一段
+                parts = pc.replace(".", " ").replace("-", " ").split()
+                for part in parts:
+                    cw = _lookup_old_code_crosswalk(part)
+                    if cw:
+                        parent_crosswalk = cw
+                        break
+                if parent_crosswalk:
+                    break
+
+            # 如果 crosswalk 没找到，尝试按代码前缀在标准科目中查找
+            if not parent_crosswalk and parent_codes_to_try:
+                for pc in parent_codes_to_try:
+                    prefix_matches = await _query_code_prefix_parent(db, pc)
+                    if prefix_matches:
+                        sa = prefix_matches[0]
+                        parent_crosswalk = sa.account_code
+                        break
+                    # 也尝试第一段
+                    parts = pc.replace(".", " ").replace("-", " ").split()
+                    if parts:
+                        prefix_matches = await _query_code_prefix_parent(db, parts[0])
+                        if prefix_matches:
+                            sa = prefix_matches[0]
+                            parent_crosswalk = sa.account_code
+                            break
+
+            if parent_crosswalk:
+                crosswalk_matches = await _query_crosswalk_match(db, parent_crosswalk)
+                for sa in crosswalk_matches:
+                    is_generic = _normalize_name(client_name) in {
+                        _normalize_name(n) for n in _GENERIC_LEAF_NAMES
+                    }
+                    candidate = _build_parent_inherited_candidate(
+                        sa, client_code, client_name,
+                        parent_code, parent_name, parent_crosswalk,
+                        is_generic=is_generic,
+                    )
                     entry["candidates"].append(candidate)
 
         # ── 优先级 3d：标准科目名称相似度 ─────
@@ -1814,4 +1998,117 @@ async def save_mapping(
         "status": "created",
         "mapping_id": str(new_mapping.id),
         "conflict_detail": None,
+    }
+
+
+# ── TASK-081：性能缓存 ──────────────────────────────
+# 避免大文件（如 205201 98k 行）反复计算 crosswalk 和查询 DB
+_crosswalk_cache: dict[str, str | None] = {}
+_crosswalk_sa_cache: dict[str, list] = {}  # target_code → list[StandardAccount]
+
+
+def _lookup_old_code_crosswalk(client_code: str) -> str | None:
+    """在旧编码映射表中查找最匹配的标准科目代码（带缓存）。"""
+    if not client_code:
+        return None
+    code = str(client_code).strip()
+    if code in _crosswalk_cache:
+        return _crosswalk_cache[code]
+
+    result = _lookup_old_code_crosswalk_impl(code)
+    _crosswalk_cache[code] = result
+    return result
+
+
+def _lookup_old_code_crosswalk_impl(code: str) -> str | None:
+    """crosswalk 查找实现。"""
+    # 精确匹配
+    if code in _OLD_CODE_CROSSWALK:
+        return _OLD_CODE_CROSSWALK[code]
+    # 点分层级：取第一段
+    parts = code.replace(".", " ").replace("-", " ").replace("/", " ").split()
+    if parts:
+        first = parts[0]
+        if first in _OLD_CODE_CROSSWALK:
+            return _OLD_CODE_CROSSWALK[first]
+    # 按前缀匹配（最长的）
+    best = None
+    best_len = 0
+    for old_code, std_code in _OLD_CODE_CROSSWALK.items():
+        if code.startswith(old_code) and len(old_code) > best_len:
+            best = std_code
+            best_len = len(old_code)
+    return best
+
+
+async def _query_crosswalk_match(
+    db: AsyncSession,
+    target_code: str,
+) -> list[StandardAccount]:
+    """按标准科目代码精确查询（crosswalk 结果，带缓存）。"""
+    if target_code in _crosswalk_sa_cache:
+        return _crosswalk_sa_cache[target_code]
+    stmt = select(StandardAccount).where(
+        StandardAccount.account_code == target_code,
+        StandardAccount.is_active == True,
+    )
+    result = await db.execute(stmt)
+    accounts = list(result.scalars().all())
+    if accounts:
+        _crosswalk_sa_cache[target_code] = accounts
+    return accounts
+
+
+def _build_crosswalk_candidate(
+    sa: StandardAccount,
+    client_code: str,
+    client_name: str | None,
+    target_code: str,
+) -> dict:
+    """从旧编码 crosswalk 构造安全候选。"""
+    return {
+        "standard_account_id": str(sa.id),
+        "standard_account_code": sa.account_code,
+        "standard_account_name": sa.account_name,
+        "score": 0.95,
+        "source": "old_code_crosswalk",
+        "reason": (
+            f"旧编码「{client_code}」按编码映射表归入标准科目 → "
+            f"{sa.account_code} {sa.account_name}"
+        ),
+        "warning": None,
+    }
+
+
+def _build_parent_inherited_candidate(
+    sa: StandardAccount,
+    client_code: str,
+    client_name: str | None,
+    parent_code: str | None,
+    parent_name: str | None,
+    target_code: str,
+    is_generic: bool = False,
+) -> dict:
+    """从父级继承构造候选（通过 crosswalk 或前缀匹配）。"""
+    score = 0.93 if is_generic else 0.95
+    if is_generic:
+        reason = (
+            f"泛化明细「{client_name or client_code}」继承父级"
+            f"「{parent_code or ''} {parent_name or ''}」→ "
+            f"{sa.account_code} {sa.account_name}"
+        )
+    else:
+        reason = (
+            f"明细「{client_code} {client_name or ''}」继承父级"
+            f"「{parent_code or ''} {parent_name or ''}」→ "
+            f"{sa.account_code} {sa.account_name}"
+        )
+    return {
+        "standard_account_id": str(sa.id),
+        "standard_account_code": sa.account_code,
+        "standard_account_name": sa.account_name,
+        "score": score,
+        "source": "parent_inherited_crosswalk",
+        "reason": reason,
+        "warning": None,
     }

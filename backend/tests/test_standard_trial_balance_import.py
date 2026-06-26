@@ -193,6 +193,72 @@ class TestFullFlowWithCodes:
             os.unlink(file_path)
 
 
+# ── TASK-083：无确认映射时 execute 返回 skipped，不得冒充 executed ──
+
+class TestNoConfirmedMappingsSkipped:
+    """TASK-083：confirmed_mappings 为空时 execute 不得返回 executed，必须返回 skipped/blocked。"""
+
+    @pytest.mark.asyncio
+    async def test_execute_without_confirmed_mappings_is_not_executed_success(self, db):
+        """无 confirmed_mappings → status in {skipped, blocked}，entry_count==0，无 raw_row/entry 写入。"""
+        await _seed_standard_accounts(db, [
+            {"code": "1001", "name": "库存现金", "direction": "debit"},
+        ])
+
+        file_path = _make_excel(
+            headers=["科目代码", "科目名称", "期末借方", "期末贷方"],
+            rows=[["1001", "库存现金", "10000", "0"]],
+        )
+
+        try:
+            preview = await preview_standard_import(
+                db, file_path, "empty.xlsx", fiscal_year=2024, period=1,
+            )
+            batch_id = uuid.UUID(preview["batch_id"])
+
+            field_mappings = [
+                {"column_id": "col_0", "field_name": "account_code"},
+                {"column_id": "col_1", "field_name": "account_name"},
+                {"column_id": "col_2", "field_name": "ending_debit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+                {"column_id": "col_3", "field_name": "ending_credit",
+                 "period_type": "ending", "split_mode": "two_column",
+                 "debit_column_id": "col_2", "credit_column_id": "col_3"},
+            ]
+            await analyze_standard_import(
+                db, batch_id, file_path,
+                field_mappings=field_mappings,
+                fiscal_year=2024, period=1,
+            )
+
+            result = await execute_standard_import(
+                db, batch_id, file_path,
+                confirmed_mappings=[],
+                warnings_confirmed=True,
+            )
+            assert result["status"] in {"skipped", "blocked"}, \
+                f"无确认映射应返回 skipped/blocked，实际: {result['status']}"
+            assert result["entry_count"] == 0
+            assert result.get("reason") == "no_confirmed_mappings"
+
+            # skipped 语义：不得写入任何 entry / raw_row
+            entries_result = await db.execute(
+                select(StandardTrialBalanceEntry).where(
+                    StandardTrialBalanceEntry.batch_id == batch_id
+                )
+            )
+            assert entries_result.scalars().all() == []
+            raw_result = await db.execute(
+                select(StandardTrialBalanceRawRow).where(
+                    StandardTrialBalanceRawRow.batch_id == batch_id
+                )
+            )
+            assert raw_result.scalars().all() == []
+        finally:
+            os.unlink(file_path)
+
+
 # ── 测试：未映射阻止 execute ──────────────────────
 
 class TestUnmappedBlocksExecute:

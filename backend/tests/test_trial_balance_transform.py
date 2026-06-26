@@ -387,8 +387,8 @@ class TestAmountSplitting:
         results, warnings, errors = transform_amounts(rows)
         assert results[0].ending_debit == Decimal("0")
         assert results[0].ending_credit == Decimal("500.00")
-        assert len(warnings) == 1
-        assert "负数" in warnings[0]
+        # TASK-084: 负数金额不再生成警告（会计中的正常现象）
+        assert len(warnings) == 0
 
     def test_single_by_direction_credit_positive(self):
         """单列金额按标准方向拆：贷方正数 → 进贷方"""
@@ -426,7 +426,8 @@ class TestAmountSplitting:
         results, warnings, errors = transform_amounts(rows)
         assert results[0].ending_debit == Decimal("1000.00")
         assert results[0].ending_credit == Decimal("0")
-        assert len(warnings) == 1
+        # TASK-084: 负数金额不再生成警告
+        assert len(warnings) == 0
 
     def test_user_override_as_debit_positive(self):
         """用户覆盖为借方：正数进借方"""
@@ -463,8 +464,8 @@ class TestAmountSplitting:
         results, warnings, errors = transform_amounts(rows)
         assert results[0].ending_debit == Decimal("0")
         assert results[0].ending_credit == Decimal("800.00")
-        assert len(warnings) == 1
-        assert "负数" in warnings[0]
+        # TASK-084: 负数金额不再生成警告
+        assert len(warnings) == 0
 
     def test_user_override_as_credit_positive(self):
         """用户覆盖为贷方：正数进贷方"""
@@ -501,7 +502,8 @@ class TestAmountSplitting:
         results, warnings, errors = transform_amounts(rows)
         assert results[0].ending_debit == Decimal("800.00")
         assert results[0].ending_credit == Decimal("0")
-        assert len(warnings) == 1
+        # TASK-084: 负数金额不再生成警告
+        assert len(warnings) == 0
 
     def test_direction_missing_error(self):
         """标准方向缺失时按方向拆分 → 错误"""
@@ -991,8 +993,8 @@ class TestSplitSingleAmount:
         d, c, w, e = _split_single_amount(Decimal("-100"), "debit", "single_by_direction")
         assert d == Decimal("0")
         assert c == Decimal("100")
-        assert len(w) == 1
-        assert "负数" in w[0]
+        # TASK-084: 负数金额不再生成警告
+        assert len(w) == 0
 
     def test_credit_positive(self):
         d, c, w, e = _split_single_amount(Decimal("200"), "credit", "single_by_direction")
@@ -1003,7 +1005,8 @@ class TestSplitSingleAmount:
         d, c, w, e = _split_single_amount(Decimal("-200"), "credit", "single_by_direction")
         assert d == Decimal("200")
         assert c == Decimal("0")
-        assert len(w) == 1
+        # TASK-084: 负数金额不再生成警告
+        assert len(w) == 0
 
     def test_direction_none_error(self):
         d, c, w, e = _split_single_amount(Decimal("100"), None, "single_by_direction")
@@ -1020,7 +1023,8 @@ class TestSplitSingleAmount:
         d, c, w, e = _split_single_amount(Decimal("-100"), None, "single_as_debit")
         assert d == Decimal("0")
         assert c == Decimal("100")
-        assert len(w) == 1
+        # TASK-084: 负数金额不再生成警告
+        assert len(w) == 0
 
     def test_as_credit_positive(self):
         d, c, w, e = _split_single_amount(Decimal("200"), None, "single_as_credit")
@@ -1031,7 +1035,8 @@ class TestSplitSingleAmount:
         d, c, w, e = _split_single_amount(Decimal("-200"), None, "single_as_credit")
         assert d == Decimal("200")
         assert c == Decimal("0")
-        assert len(w) == 1
+        # TASK-084: 负数金额不再生成警告
+        assert len(w) == 0
 
     def test_zero_amount(self):
         d, c, w, e = _split_single_amount(Decimal("0"), "debit", "single_by_direction")

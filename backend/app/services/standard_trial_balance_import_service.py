@@ -8,6 +8,7 @@
 
 import uuid
 import os
+import re
 import shutil
 import logging
 from datetime import datetime, timezone
@@ -119,19 +120,56 @@ def _collect_summary_total_skip_rows(
     code_col_id: str | None,
     name_col_id: str | None,
 ) -> set[int]:
-    """返回科目编码/名称含「小计」「合计」的行索引集合，这些行不参与映射与入库。
+    """返回科目编码/名称含「合计」「总计」「小计」的行索引集合，这些行不参与映射与入库。
 
-    广西：(资产)小计：、(负债)小计： 等；金蝶：合计 行。
+    广西：(资产)小计：、(负债)小计： 等；金蝶：合计 行；医疗：总计 行。
+    也覆盖「本页合计」「本月合计」「累计」等模式。
+    同时过滤配置科目（如 code=9999「不过帐设置用」）和页脚元数据行。
     """
     code_idx = col_id_to_index.get(code_col_id) if code_col_id else None
     name_idx = col_id_to_index.get(name_col_id) if name_col_id else None
+
+    # 汇总关键词（含中文括号变体）
+    _SUMMARY_KEYWORDS = (
+        "合计", "总计", "小计", "本页合计", "本月合计", "累计",
+        "（资产）小计", "(资产)小计", "（负债）小计", "(负债)小计",
+        "（权益）小计", "(权益)小计", "（损益）小计", "(损益)小计",
+        "资产）小计", "资产)小计", "负债）小计", "负债)小计",
+        "权益）小计", "权益)小计", "损益）小计", "损益)小计",
+    )
+    # 页脚元数据关键词
+    _FOOTER_KEYWORDS = (
+        "核算单位", "制单人", "打印时间", "打印日期", "编制单位",
+        "审核人", "记账人", "财务主管", "单位负责人",
+    )
+    # 配置科目/非过帐科目关键词（名称中含这些关键词的行不参与导入）
+    _CONFIG_NAME_KEYWORDS = (
+        "不过帐", "不记帐", "不记账", "设置用", "系统设置", "暂存",
+    )
+
     skip: set[int] = set()
     for ri, row in enumerate(rows):
         code = _safe_str(row[code_idx]) if code_idx is not None and code_idx < len(row) else ""
         name = _safe_str(row[name_idx]) if name_idx is not None and name_idx < len(row) else ""
-        combined = f"{code} {name}"
-        if any(kw in combined for kw in ("小计", "合计")):
+        # 单独检查 code 和 name，也检查组合
+        if any(kw in code for kw in _SUMMARY_KEYWORDS):
             skip.add(ri)
+            continue
+        if any(kw in name for kw in _SUMMARY_KEYWORDS):
+            skip.add(ri)
+            continue
+        combined = f"{code} {name}"
+        if any(kw in combined for kw in _SUMMARY_KEYWORDS):
+            skip.add(ri)
+            continue
+        # 页脚元数据：科目编码列包含非科目类的元数据关键词
+        if any(kw in code for kw in _FOOTER_KEYWORDS):
+            skip.add(ri)
+            continue
+        # 配置科目/非过帐科目：名称含配置关键词（如「不过帐设置用」）
+        if any(kw in name for kw in _CONFIG_NAME_KEYWORDS):
+            skip.add(ri)
+            continue
     return skip
 
 
@@ -425,6 +463,7 @@ async def analyze_standard_import(
                 "debit_field": fm.get("debit_column_id"),
                 "credit_field": fm.get("credit_column_id"),
                 "amount_field": cid,  # for single column modes
+                "direction_column_id": fm.get("direction_column_id"),
             })
             amount_fields.add(cid)
 
@@ -467,6 +506,10 @@ async def analyze_standard_import(
         ))
 
         if code or name:
+            # TASK-081：预过滤 — 跳过完全空代码和空名称的行（辅助核算展示行）
+            # 205201 大量 (code="", name="") 行仅用于展示核算维度，不参与映射
+            if not code.strip() and not name.strip():
+                continue
             client_accounts_for_mapping.append({
                 "row_index": row_idx,
                 "client_account_code": code if code else None,
@@ -489,6 +532,80 @@ async def analyze_standard_import(
         merged_hier = flat_hier
     else:
         merged_hier = merge_hierarchy(code_hier, indent_hier, flat_hier)
+
+    # 6b. 构建代码→行信息索引（用于父级/祖先上下文查找）
+    code_to_row_info: dict[str, dict] = {}
+    for ri in row_inputs_no_dir:
+        if ri.client_account_code:
+            code_to_row_info[ri.client_account_code.strip()] = {
+                "row_index": ri.row_index,
+                "code": ri.client_account_code.strip(),
+                "name": ri.client_account_name or "",
+            }
+
+    # 6c. 为每个 client_account 补充父级/祖先上下文
+    # TASK-081 优化：先建 row_index → hierarchy 映射，避免 O(n²) 嵌套扫描
+    row_index_to_hier: dict[int, dict] = {}
+    for h in merged_hier:
+        row_index_to_hier[h.get("row_index")] = h
+
+    for ca_entry in client_accounts_for_mapping:
+        ca_code = (ca_entry.get("client_account_code") or "").strip()
+        # 找父级
+        parent_code = None
+        parent_name = None
+        if ca_code:
+            h = row_index_to_hier.get(ca_entry["row_index"])
+            if h and h.get("parent_key"):
+                parent_info = code_to_row_info.get(h["parent_key"])
+                if parent_info:
+                    parent_code = parent_info["code"]
+                    parent_name = parent_info["name"]
+
+        # 收集祖先链（沿 parent_key 回溯，TASK-081 优化：O(len(code)) 替代 O(n)）
+        ancestor_codes: list[str] = []
+        ancestor_names: list[str] = []
+        if ca_code:
+            current_code = ca_code
+            visited: set[str] = set()
+            while current_code and current_code not in visited:
+                visited.add(current_code)
+                # 从末尾逐步缩短找到最长前缀父级
+                found_parent = None
+                for end in range(len(current_code) - 1, 0, -1):
+                    candidate = current_code[:end]
+                    if candidate in code_to_row_info and candidate != current_code:
+                        found_parent = candidate
+                        break
+                if found_parent:
+                    info = code_to_row_info[found_parent]
+                    ancestor_codes.append(info["code"])
+                    ancestor_names.append(info["name"])
+                    current_code = found_parent
+                else:
+                    break
+
+        # 构建完整路径
+        full_path_parts = [ca_entry.get("client_account_name") or ""]
+        full_path_parts.extend(reversed(ancestor_names))
+        full_path = "\\".join(p for p in full_path_parts if p)
+
+        ca_entry["parent_client_account_code"] = parent_code
+        ca_entry["parent_client_account_name"] = parent_name
+        ca_entry["ancestor_codes"] = ancestor_codes
+        ca_entry["ancestor_names"] = ancestor_names
+        ca_entry["client_account_full_path"] = full_path
+
+        # TASK-080 Fallback: 如果层级检测没找到父级，从代码本身推导
+        # 逐步缩短代码（去掉末尾数字），直到找到可识别的父级前缀
+        if not parent_code and not ancestor_codes and ca_code and len(ca_code) >= 4:
+            derived_parents = []
+            for end in range(len(ca_code) - 1, 1, -1):
+                candidate_parent = ca_code[:end]
+                # 至少保留 2 位数字
+                if len(candidate_parent) >= 2:
+                    derived_parents.append(candidate_parent)
+            ca_entry["ancestor_codes"] = derived_parents[:5]  # 最多 5 层祖先
 
     # 7. 构建层级响应
     hierarchy = []
@@ -541,14 +658,56 @@ async def analyze_standard_import(
         if ri is not None and ri in row_mapping_meta:
             entry.update(row_mapping_meta[ri])
 
-    # 9. 运行科目映射推荐
-    mapping_recommendations = await recommend_mappings(
+    # 9. 运行科目映射推荐（TASK-081：大文件先去重）
+    # 对 client_accounts_for_mapping 按 (code, name, ancestors) 去重，
+    # 只对唯一 key 调用 recommend_mappings，然后回填到所有相同 key 的行。
+    _dedup_key_to_first_idx: dict[tuple, int] = {}
+    for idx, ca in enumerate(client_accounts_for_mapping):
+        key = (
+            (ca.get("client_account_code") or "").strip(),
+            (ca.get("client_account_name") or "").strip(),
+            tuple(ca.get("ancestor_codes") or []),
+            tuple(ca.get("ancestor_names") or []),
+        )
+        if key not in _dedup_key_to_first_idx:
+            _dedup_key_to_first_idx[key] = idx
+
+    unique_accounts = [client_accounts_for_mapping[i] for i in _dedup_key_to_first_idx.values()]
+    unique_recommendations = await recommend_mappings(
         db=db,
         data_type="trial_balance",
-        client_accounts=client_accounts_for_mapping,
+        client_accounts=unique_accounts,
         customer_label=customer_label,
         source_label=source_label,
     )
+
+    # 回填：把去重结果映射回原始列表
+    _dedup_result_map: dict[tuple, dict] = {}
+    for idx, rec in enumerate(unique_recommendations):
+        ca = unique_accounts[idx]
+        key = (
+            (ca.get("client_account_code") or "").strip(),
+            (ca.get("client_account_name") or "").strip(),
+            tuple(ca.get("ancestor_codes") or []),
+            tuple(ca.get("ancestor_names") or []),
+        )
+        _dedup_result_map[key] = rec
+
+    mapping_recommendations = []
+    for ca in client_accounts_for_mapping:
+        key = (
+            (ca.get("client_account_code") or "").strip(),
+            (ca.get("client_account_name") or "").strip(),
+            tuple(ca.get("ancestor_codes") or []),
+            tuple(ca.get("ancestor_names") or []),
+        )
+        rec = _dedup_result_map.get(key, {"candidates": []})
+        # 复制一份，不共享 candidates 引用（避免后续修改互相影响）
+        mapping_recommendations.append({
+            "client_account_code": ca.get("client_account_code"),
+            "client_account_name": ca.get("client_account_name"),
+            "candidates": list(rec.get("candidates", [])),
+        })
 
     for idx, rec in enumerate(mapping_recommendations):
         source_row = client_accounts_for_mapping[idx] if idx < len(client_accounts_for_mapping) else {}
@@ -639,6 +798,7 @@ async def analyze_standard_import(
                         period_type=pc["period_type"],
                         mode=mode,
                         amount_field=af,
+                        direction_column_id=pc.get("direction_column_id"),
                     ))
 
         # 从推荐中获取最佳方向
@@ -691,8 +851,14 @@ async def analyze_standard_import(
             "category": "no_direction" if "方向缺失" in e or "无法按标准方向" in e else "missing_amount",
         })
 
-    # 来自转换引擎的警告
+    # 来自转换引擎的警告（过滤掉 auto_skip_rows 中的行的警告）
     for w in transform_result.global_warnings:
+        # 提取警告中的行号（格式："行 N: ..."）
+        m = re.match(r"行 (\d+):", w)
+        if m:
+            row_idx = int(m.group(1))
+            if row_idx in auto_skip_rows:
+                continue  # 跳过的行不产生警告
         cat = "parent_amount_mismatch" if "不一致" in w else "negative_amount" if "负数" in w else "indent_suggested" if "缩进" in w else "other"
         warnings.append({
             "row_index": None,
@@ -799,8 +965,12 @@ async def execute_standard_import(
     执行导入：校验 → 保存原始行 → 生成标准余额表 → 保存映射经验。
 
     Returns:
-        dict with entry_count, raw_row_count, mapping_saved_count, mapping_saved
+        dict with entry_count, raw_row_count, mapping_saved_count, mapping_saved,
+              debug_timings (各阶段耗时秒数)
     """
+    import time as _time
+    _timings: dict[str, float] = {}
+
     # 1. 查批次
     result = await db.execute(
         select(StandardTrialBalanceImportBatch).where(
@@ -822,7 +992,26 @@ async def execute_standard_import(
 
     # 2. 获取分析结果
     parse_config = (batch.hierarchy_config or {}).get("parse_config") or {}
+
+    # TASK-083: 如果没有确认映射，直接跳过解析和执行，避免大文件（如205201 98k行）空跑。
+    # 不得返回 status=executed，否则调用方会误判「导入成功」。改为 skipped 语义，
+    # 验收脚本必须把 skipped 视为未完成导入（除非显式配置允许跳过）。
+    if not confirmed_mappings:
+        logger.info("execute_standard_import: no confirmed mappings, skipping execution")
+        if batch.status not in ("previewed", "analyzed"):
+            # 保留批次原状态，不擅自改成 executed
+            await db.flush()
+        return {
+            "status": "skipped",
+            "reason": "no_confirmed_mappings",
+            "entry_count": 0,
+            "mapping_saved_count": 0,
+            "raw_row_count": 0,
+        }
+
+    _t0 = _time.time()
     headers, rows, data_start, header_rows = _load_import_rows(file_path, parse_config)
+    _timings["load_rows"] = round(_time.time() - _t0, 2)
 
     field_mapping_data = batch.field_mapping or {}
     fm_list = field_mapping_data.get("mappings", [])
@@ -855,6 +1044,7 @@ async def execute_standard_import(
                 "debit_field": fm.get("debit_column_id"),
                 "credit_field": fm.get("credit_column_id"),
                 "amount_field": cid,
+                "direction_column_id": fm.get("direction_column_id"),
             })
 
     # 4. 验证：获取现有警告和错误
@@ -889,7 +1079,23 @@ async def execute_standard_import(
     for cm in confirmed_mappings:
         confirmed_by_row[cm.get("row_index", -1)] = cm
 
+    # TASK-084 性能优化：预加载所有涉及的 StandardAccount 到内存，
+    # 避免后续逐行 DB 查询（98k 行 × 2 次查询 = 196k 次 → 1 次批量查询）。
+    all_sa_ids: set[uuid.UUID] = set()
+    for cm in confirmed_mappings:
+        sid = cm.get("standard_account_id")
+        if sid:
+            all_sa_ids.add(sid)
+    sa_cache: dict[uuid.UUID, StandardAccount] = {}
+    if all_sa_ids:
+        sa_result = await db.execute(
+            select(StandardAccount).where(StandardAccount.id.in_(list(all_sa_ids)))
+        )
+        for sa in sa_result.scalars().all():
+            sa_cache[sa.id] = sa
+
     # 重新构建 row_inputs 并运行 transform
+    _t0 = _time.time()
     row_inputs: list[RowInput] = []
     for row_idx, row in enumerate(rows):
         code = ""
@@ -925,19 +1131,16 @@ async def execute_standard_import(
                         period_type=pc["period_type"],
                         mode=mode,
                         amount_field=af,
+                        direction_column_id=pc.get("direction_column_id"),
                     ))
 
-        # 确定标准方向
+        # 确定标准方向（从缓存读取，不再逐行查 DB）
         cm = confirmed_by_row.get(row_idx)
         std_dir = None
         if cm:
             sa_id = cm.get("standard_account_id")
             if sa_id:
-                # 查标准科目方向
-                sa_result = await db.execute(
-                    select(StandardAccount).where(StandardAccount.id == sa_id)
-                )
-                sa = sa_result.scalar_one_or_none()
+                sa = sa_cache.get(sa_id)
                 if sa:
                     std_dir = sa.balance_direction
 
@@ -952,6 +1155,7 @@ async def execute_standard_import(
         ))
 
     transform_result = transform_rows(row_inputs, hierarchy_mode=hierarchy_mode)
+    _timings["build_and_transform"] = round(_time.time() - _t0, 2)
 
     # 6. 获取叶子行，校验每个叶子行都有映射（跳过无代码无名称的行）
     leaves = get_leaf_rows(transform_result)
@@ -1006,15 +1210,13 @@ async def execute_standard_import(
         raise ValueError(f"存在 {len(unmapped_leaves)} 个末级客户科目未映射到启用标准科目: {detail}")
 
     # 7. 校验：按标准方向拆分的叶子行必须有方向
+    # TASK-084 性能优化：使用预加载的 sa_cache，不再逐行查 DB。
     for leaf in leaves:
         if leaf.row_index in ignored_row_set:
             continue
         cm = confirmed_by_row.get(leaf.row_index)
         if cm:
-            sa_result = await db.execute(
-                select(StandardAccount).where(StandardAccount.id == cm["standard_account_id"])
-            )
-            sa = sa_result.scalar_one_or_none()
+            sa = sa_cache.get(cm["standard_account_id"])
             if sa is None or not sa.is_active:
                 batch.status = "blocked"
                 await db.flush()
@@ -1022,11 +1224,6 @@ async def execute_standard_import(
                     f"行 {leaf.row_index} 映射的标准科目「{cm.get('standard_account_code')}」"
                     f"{'不存在' if sa is None else '已停用'}，请重新选择"
                 )
-
-            # 检查是否使用 single_by_direction 且方向为空
-            for ac in leaf.amount_configs if hasattr(leaf, 'amount_configs') else []:
-                # amount_configs 不在 TransformResult 上，改用 row_inputs
-                pass
 
     # 重新按 row_inputs 检查
     for ri in row_inputs:
@@ -1037,10 +1234,7 @@ async def execute_standard_import(
             continue
         for ac in ri.amount_configs:
             if ac.mode == "single_by_direction":
-                sa_result = await db.execute(
-                    select(StandardAccount).where(StandardAccount.id == cm["standard_account_id"])
-                )
-                sa = sa_result.scalar_one_or_none()
+                sa = sa_cache.get(cm["standard_account_id"])
                 if sa and not sa.balance_direction:
                     batch.status = "blocked"
                     await db.flush()
@@ -1050,11 +1244,16 @@ async def execute_standard_import(
                     )
 
     # 8. 保存原始行快照（所有行，包括父级和末级）
+    # TASK-084 性能优化：先批量 add 所有 raw rows，再一次性 flush，
+    # 避免逐行 flush（98k 行 → 1 次 flush）。
+    _t0 = _time.time()
     raw_row_map: dict[int, uuid.UUID] = {}  # row_index → raw_row_id
     result_by_row = {r.row_index: r for r in transform_result.rows}  # 所有行的转换结果
+    # TASK-085: 预建 leaf dict 避免 O(n²) 查找
+    leaf_by_row = {leaf.row_index: leaf for leaf in leaves}
 
     for ri in row_inputs:
-        leaf = next((lr for lr in leaves if lr.row_index == ri.row_index), None)
+        leaf = leaf_by_row.get(ri.row_index)
         is_leaf = leaf is not None
         is_user_ignored = ri.row_index in ignored_row_set
         cm = None if is_user_ignored else confirmed_by_row.get(ri.row_index)
@@ -1084,34 +1283,47 @@ async def execute_standard_import(
             warnings=row_warnings,
         )
         db.add(raw_row)
-        await db.flush()
         raw_row_map[ri.row_index] = raw_row.id
 
+    # 一次性 flush 所有 raw rows，获取数据库分配的 id
+    await db.flush()
+    _timings["raw_row_insert"] = round(_time.time() - _t0, 2)
+
     # 9. 给所有行补 parent_raw_row_id（不只是叶子行）
+    _t0 = _time.time()
+    # 用代码→行索引的快速查找替代逐行扫描
+    code_to_row_idx: dict[str, int] = {}
+    for ri in row_inputs:
+        if ri.client_account_code:
+            code_to_row_idx[ri.client_account_code.strip()] = ri.row_index
+
     for tr in transform_result.rows:
         if not tr.parent_key:
             continue
         # parent_key 可能是代码或 row_index 字符串
+        parent_idx = None
         try:
             parent_idx = int(tr.parent_key)
         except (ValueError, TypeError):
-            parent_idx = None
-            # 代码形式：找对应代码的行
-            for ri2 in row_inputs:
-                if ri2.client_account_code and ri2.client_account_code.strip() == tr.parent_key:
-                    parent_idx = ri2.row_index
-                    break
+            parent_idx = code_to_row_idx.get(tr.parent_key)
 
         if parent_idx is not None and parent_idx in raw_row_map and tr.row_index in raw_row_map:
             row_id = raw_row_map[tr.row_index]
             parent_id = raw_row_map[parent_idx]
-            rr = await db.get(StandardTrialBalanceRawRow, row_id)
-            if rr:
-                rr.parent_raw_row_id = parent_id
+            # TASK-085: 避免 db.get(Model, None) 触发 SAWarning
+            if row_id is not None and parent_id is not None:
+                rr = await db.get(StandardTrialBalanceRawRow, row_id)
+                if rr:
+                    rr.parent_raw_row_id = parent_id
 
     await db.flush()
+    _timings["parent_assign"] = round(_time.time() - _t0, 2)
 
     # 10. 生成标准科目余额表明细（只写叶子行）
+    # TASK-084 性能优化：使用预加载的 sa_cache，不再逐行查 DB。
+    _t0 = _time.time()
+    # 构建叶子行 set 加速查找
+    leaf_row_indices = {leaf.row_index for leaf in leaves}
     entry_count = 0
     for leaf in leaves:
         if leaf.row_index in ignored_row_set:
@@ -1120,11 +1332,8 @@ async def execute_standard_import(
         if not cm:
             continue
 
-        # 获取标准科目快照
-        sa_result = await db.execute(
-            select(StandardAccount).where(StandardAccount.id == cm["standard_account_id"])
-        )
-        sa = sa_result.scalar_one_or_none()
+        # 从缓存获取标准科目快照
+        sa = sa_cache.get(cm["standard_account_id"])
         if sa is None:
             continue
 
@@ -1151,10 +1360,15 @@ async def execute_standard_import(
         entry_count += 1
 
     await db.flush()
+    _timings["entry_insert"] = round(_time.time() - _t0, 2)
 
     # 11. 保存映射经验
+    # TASK-085 性能优化：按 (code, name, standard_account_id) 去重，
+    # 18k 叶子行中大量重复（如 220206 出现 92 次），只需保存一次。
+    _t0 = _time.time()
     mapping_saved: list[dict] = []
     if save_mapping_experience:
+        seen_keys: set[tuple] = set()
         for leaf in leaves:
             if leaf.row_index in ignored_row_set:
                 continue
@@ -1163,6 +1377,16 @@ async def execute_standard_import(
                 continue
             if not leaf.client_account_code and not leaf.client_account_name:
                 continue
+
+            # 去重：同 (code, name, sa_id) 只保存一次
+            dedup_key = (
+                (leaf.client_account_code or "").strip(),
+                (leaf.client_account_name or "").strip(),
+                cm["standard_account_id"],
+            )
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
 
             try:
                 result = await save_mapping(
@@ -1186,6 +1410,8 @@ async def execute_standard_import(
             except Exception as e:
                 logger.warning(f"保存映射经验失败: {e}")
 
+    _timings["save_mapping"] = round(_time.time() - _t0, 2)
+
     # 12. 更新批次状态
     batch.status = "executed"
     await db.flush()
@@ -1197,6 +1423,7 @@ async def execute_standard_import(
         "raw_row_count": len(row_inputs),
         "mapping_saved_count": len(mapping_saved),
         "mapping_saved": mapping_saved,
+        "debug_timings": _timings,
     }
 
 
