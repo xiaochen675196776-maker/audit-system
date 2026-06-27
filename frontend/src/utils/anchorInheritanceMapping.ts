@@ -1,13 +1,18 @@
 /**
- * TASK-092 锚点继承式映射前端工具函数
+ * TASK-094B 锚点继承式映射前端工具函数
  *
  * 所有映射角色相关的判定与构造逻辑都集中在本文件，避免在 Vue 组件里
  * 复制内联实现。组件里只引用本文件的导出函数。
  *
- * 强制约束：
- * - inherited 行不得计入未映射；
- * - 非末级 anchor 也允许确认并提交；
- * - confirmed_mappings 必须只包含 anchor / breakpoint / explicit_override；
+ * 强制约束（TASK-094B）：
+ * - 全部角色判定函数必须接收统一的 LocalMappingState；
+ * - explicit_override 已开启但未选择：视为未映射、阻止确认/执行、不提交 override；
+ * - override 提交目标不得使用原 inherited resolved 兜底；
+ * - 恢复继承必须清除 override 与选择并恢复 inherited 角色；
+ * - 非末级 anchor 仍然需要确认并提交，不得以「父级不入库」代替显示；
+ * - 状态展示统一使用 rowDisplayStatus(row, localState)；
+ * - confirmed_mappings 必须只包含 anchor / breakpoint / explicit_override 且
+ *   explicit_override 必须有用户选择；
  * - 不允许任何 candidates[0] 兜底（不提供 candidates[0] 函数）；
  * - 后端 unconfirmed 最高分候选只能作为 suggested，不得作为 resolved；
  * - 兼容老版（mapping_role / requires_confirmation 不存在时）按 fallback 处理。
@@ -140,7 +145,9 @@ export function rowMappingRoleTagType(role: MappingRole): string {
  * - 已忽略：不需要
  * - 角色是 inherited / structural_summary / ignored：不需要
  * - 角色是 unresolved：需要
- * - 角色是 anchor / breakpoint / explicit_override 且 requires_confirmation=true：需要
+ * - 角色是 explicit_override：只要本地 explicitOverrideRows 标记为 true，就必须
+ *   计入未映射、阻止确认/执行（即便后端 requires_confirmation=false）。
+ * - 角色是 anchor / breakpoint 且 requires_confirmation=true：需要
  *
  * 注意：is_leaf / participates_in_entry 不再决定是否需要映射，
  * 非末级 anchor（如 银行存款）依然需要确认。
@@ -157,12 +164,12 @@ export function rowRequiresMapping(
   if (role === 'unresolved') return true
 
   if (role === 'explicit_override') {
-    return !!state?.explicitOverrideRows?.[row.row_index] ||
-      row.rec?.requires_confirmation === true ||
-      !row.rec?.resolved_standard_account_id
+    // 用户已点击「单独映射」但未选择新标准科目：视为未映射
+    if (state?.explicitOverrideRows?.[row.row_index]) return true
+    return row.rec?.requires_confirmation === true || !row.rec?.resolved_standard_account_id
   }
 
-  // anchor / breakpoint / explicit_override — 根据 requires_confirmation 决定
+  // anchor / breakpoint — 根据 requires_confirmation 决定
   return row.rec?.requires_confirmation === true
 }
 
@@ -182,8 +189,10 @@ export function rowCanSelectStandardAccount(
  *
  * 规则：
  * - 已忽略：不提交
- * - 角色属于 anchor / breakpoint / explicit_override：提交
- * - 其它（inherited / structural_summary / ignored / unresolved）：不提交
+ * - 角色属于 anchor / breakpoint：提交（无用户选择时由 buildAnchorOnly 兜底为 auto_confirmed）
+ * - 角色属于 explicit_override：仅当用户已选择新标准科目才提交（禁止使用原
+ *   inherited resolved 兜底为空选择 override）
+ * - 其它（inherited / structural_summary / ignored / unresolved 无选择）：不提交
  */
 export function rowShouldSubmitMapping(
   row: MappingReviewRow,
@@ -191,7 +200,12 @@ export function rowShouldSubmitMapping(
 ): boolean {
   if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
   const role = effectiveMappingRole(row, state)
-  return (SUBMITTABLE_ROLES as readonly string[]).includes(role)
+  if (!(SUBMITTABLE_ROLES as readonly string[]).includes(role)) return false
+  // explicit_override 必须有用户选择，否则视为空 override 直接阻断
+  if (role === 'explicit_override' && !state?.selectedByRow?.[row.row_index]) {
+    return false
+  }
+  return true
 }
 
 /** 该行是否可单独映射（从前端 override 一个 inherited 子节点） */
@@ -241,6 +255,8 @@ export type RowDisplayStatus =
   | 'structural'
   | 'ignored'
   | 'overridden'
+  | 'explicit_override_pending'
+  | 'explicit_override_confirmed'
 
 export interface RowDisplayInfo {
   status: RowDisplayStatus
@@ -248,43 +264,94 @@ export interface RowDisplayInfo {
   type: '' | 'success' | 'warning' | 'info' | 'danger' | 'primary'
 }
 
+/**
+ * 统一行级展示状态。
+ *
+ * 严格基于 effective role + LocalMappingState 计算，组件不再有第二套逻辑。
+ * 至少区分：
+ *   - 映射锚点（anchor / breakpoint 已匹配或自动确认）
+ *   - 自动确认（anchor unique_safe）
+ *   - 待确认（anchor / breakpoint requires_confirmation）
+ *   - 自动继承（inherited 未 override）
+ *   - 显式覆盖待选择（explicit_override 已开启但未选择）
+ *   - 显式覆盖已确认（explicit_override / inherited + selected）
+ *   - 继承中断点（breakpoint）
+ *   - 结构汇总（structural_summary）
+ *   - 未解决（unresolved 未选择）
+ *   - 已忽略
+ *
+ * 非末级 anchor 一律展示「映射锚点」/「已匹配」/「待确认」等具体状态，不允许
+ * 因 is_leaf=false 错误降级为「父级不入库」。
+ */
 export function rowDisplayStatus(
   row: MappingReviewRow,
-  hasSelected: boolean,
+  state: Partial<LocalMappingState> = {},
 ): RowDisplayInfo {
-  if (row.is_ignored) return { status: 'ignored', label: '已忽略', type: 'info' }
-  const role = rowMappingRole(row)
-  if (role === 'structural_summary') {
-    return { status: 'structural', label: '父级不入库', type: 'warning' }
-  }
-  if (role === 'ignored') {
+  if (row.is_ignored || state.ignoredRows?.[row.row_index]) {
     return { status: 'ignored', label: '已忽略', type: 'info' }
   }
+  const role = effectiveMappingRole(row, state)
+  const hasSelected = !!state.selectedByRow?.[row.row_index]
+
+  if (role === 'structural_summary') {
+    return { status: 'structural', label: '结构汇总', type: 'info' }
+  }
+
   if (role === 'inherited') {
     if (hasSelected) {
       return {
         status: 'overridden',
-        label: '已单独映射',
+        label: '显式覆盖已确认',
         type: 'primary',
       }
     }
     return { status: 'inherited', label: '自动继承', type: 'success' }
   }
+
   if (role === 'explicit_override') {
     if (hasSelected) {
-      return { status: 'overridden', label: '显式覆盖', type: 'info' }
+      return {
+        status: 'explicit_override_confirmed',
+        label: '显式覆盖已确认',
+        type: 'primary',
+      }
     }
-    return { status: 'pending_confirmation', label: '待确认覆盖', type: 'warning' }
+    return {
+      status: 'explicit_override_pending',
+      label: '显式覆盖待选择',
+      type: 'warning',
+    }
   }
+
   if (role === 'anchor' || role === 'breakpoint') {
     if (hasSelected) {
-      return { status: 'mapped', label: '已匹配', type: 'success' }
+      const label =
+        role === 'breakpoint' ? '继承中断点已确认' : '映射锚点'
+      return {
+        status: 'mapped',
+        label,
+        type: role === 'breakpoint' ? 'warning' : 'success',
+      }
     }
-    if (row.rec?.auto_confirm_status === 'unique_safe' && row.rec?.resolved_standard_account_id) {
+    if (
+      row.rec?.auto_confirm_status === 'unique_safe' &&
+      row.rec?.resolved_standard_account_id
+    ) {
       return { status: 'auto_confirmed', label: '自动确认', type: 'success' }
     }
-    return { status: 'pending_confirmation', label: '待确认', type: 'warning' }
+    const label = role === 'breakpoint' ? '继承中断点' : '映射锚点'
+    return {
+      status: 'pending_confirmation',
+      label: `待确认 · ${label}`,
+      type: 'warning',
+    }
   }
+
+  // unresolved：selected 后 effective role 已变为 anchor，此处只处理未选
+  if (role === 'unresolved') {
+    return { status: 'unresolved', label: '未解决', type: 'danger' }
+  }
+
   return { status: 'unresolved', label: '未解决', type: 'danger' }
 }
 
@@ -293,11 +360,14 @@ export function rowDisplayStatus(
 /**
  * 从前端确认状态 + analyze 响应构造 confirmed_mappings。
  *
- * 严格规则：
+ * 严格规则（TASK-094B）：
  * - 只为 role ∈ {anchor, breakpoint, explicit_override} 提交
+ * - explicit_override 必须有用户选择；禁止使用原 inherited resolved 兜底
+ *   （否则会产生一个与原继承相同的「假 override」提交）
  * - 用户已选中 → 用 selection_source=user_confirmed
- * - 自动确认（mapping_mode=direct_auto + resolved 已存在）→ 用 selection_source=auto_confirmed
- * - 其它情况（unresolved / pending）→ 不提交（execute 必须有显式确认）
+ * - 自动确认（auto_confirm_status=unique_safe + resolved 已存在）→ 用
+ *   selection_source=auto_confirmed；仅 anchor / breakpoint 允许该兜底
+ * - 其它情况（unresolved 未选 / pending / inherited）→ 不提交
  */
 export function buildAnchorOnlyConfirmedMappings(
   rows: MappingReviewRow[],
@@ -317,8 +387,11 @@ export function buildAnchorOnlyConfirmedMappings(
     let standard: MappingCandidate | null | undefined = sel
     let selectionSource: 'user_confirmed' | 'auto_confirmed' | 'user_corrected' =
       'user_confirmed'
-    if (!standard && row.rec?.resolved_standard_account_id) {
-      // 用后端 resolved 构造一条虚拟 candidate
+
+    // explicit_override 禁止使用 backend resolved 兜底（必须用户确认选择）
+    const allowAutoFallback = role === 'anchor' || role === 'breakpoint'
+
+    if (!standard && allowAutoFallback && row.rec?.resolved_standard_account_id) {
       standard = {
         standard_account_id: row.rec.resolved_standard_account_id,
         standard_account_code: row.rec.resolved_standard_account_code || '',
@@ -352,7 +425,12 @@ export function buildAnchorOnlyConfirmedMappings(
 
 // ── 显式覆盖 / 恢复继承（用于组件 override 操作） ──────────
 
-/** 设置某行为 override（已选中 standardAccountId） */
+/**
+ * 设置某行为 override（已选中 standardAccountId）。
+ *
+ * 该函数仅更新 selectedByRow；explicitOverrideRows 标志由组件单独维护，
+ * 二者必须配套（applyExplicitOverrideSelection + setExplicitOverrideFlag）。
+ */
 export function applyExplicitOverride(
   selectedByRow: Record<number, MappingCandidate | null | undefined>,
   rowIndex: number,
@@ -369,6 +447,25 @@ export function restoreInheritance(
   const next = { ...selectedByRow }
   delete next[rowIndex]
   return next
+}
+
+/**
+ * 计算开启 override 但未选择新标准科目的「空 override」行集合。
+ * 仅用于诊断与统计，不参与提交。
+ */
+export function countEmptyOverrides(
+  rows: MappingReviewRow[],
+  state: Partial<LocalMappingState>,
+): number {
+  let count = 0
+  for (const row of rows) {
+    const rowIndex = row.row_index
+    if (row.is_ignored || state.ignoredRows?.[rowIndex]) continue
+    if (!state.explicitOverrideRows?.[rowIndex]) continue
+    if (state.selectedByRow?.[rowIndex]) continue
+    count += 1
+  }
+  return count
 }
 
 // ── 汇总统计（用于前端的 step 3 / 4 启用判定） ──────────────

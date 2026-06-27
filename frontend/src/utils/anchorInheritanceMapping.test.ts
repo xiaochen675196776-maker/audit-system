@@ -1,8 +1,13 @@
 /**
- * TASK-093 前端锚点继承式映射工具函数测试
+ * TASK-094B 前端锚点继承式映射工具函数测试
  *
  * 直接从生产模块导入函数，禁止复制实现。
  * 运行方式：npx tsx src/utils/anchorInheritanceMapping.test.ts
+ *
+ * TASK-094B 重点：
+ * - explicit_override 已开启但未选择：requiresMapping=true、shouldSubmit=false
+ * - override 提交不得使用原 inherited resolved 兜底
+ * - rowDisplayStatus 接收 state（不再用 hasSelected bool）
  */
 
 import {
@@ -17,6 +22,9 @@ import {
   applyExplicitOverride,
   restoreInheritance,
   computeStats,
+  computeDynamicUnresolvedCount,
+  effectiveMappingRole,
+  countEmptyOverrides,
   normalizeMappingRecommend,
   MAPPING_ROLES,
   SUBMITTABLE_ROLES,
@@ -128,14 +136,37 @@ console.log('--- §1 角色与状态判定 ---')
   assert(rowShouldSubmitMapping(row) === true, 'breakpoint 提交')
 }
 
-// 6. explicit_override 要求确认
+// 6. explicit_override 要求确认 + 必须有用户选择才能提交（TASK-094B）
 {
   const row = {
     row_index: 0,
     rec: { ...baseRec, mapping_role: 'explicit_override', requires_confirmation: true },
   }
   assert(rowRequiresMapping(row) === true, 'explicit_override 要求确认')
-  assert(rowShouldSubmitMapping(row) === true, 'explicit_override 提交')
+  // 没有 explicitOverrideRows 标记时，单纯 explicit_override 不再单独视为待确认
+  // （必须由用户在组件点击「单独映射」才会进入 override 角色）
+  assert(rowShouldSubmitMapping(row) === false, 'explicit_override 无用户选择 → 不提交')
+  // 用户点击 override + 选中 → 提交
+  assert(
+    rowShouldSubmitMapping(row, {
+      explicitOverrideRows: { 0: true },
+      selectedByRow: { 0: baseCandidate },
+    }) === true,
+    'explicit_override + 选中 → 提交',
+  )
+  // 用户点击 override + 未选择 → 阻断（TASK-094B 反例）
+  assert(
+    rowShouldSubmitMapping(row, {
+      explicitOverrideRows: { 0: true },
+    }) === false,
+    'explicit_override 已开启但未选择 → 不提交（红线）',
+  )
+  assert(
+    rowRequiresMapping(row, {
+      explicitOverrideRows: { 0: true },
+    }) === true,
+    'explicit_override 已开启但未选择 → 仍需映射（计入未映射）',
+  )
 }
 
 // 7. unresolved 要求确认
@@ -223,44 +254,113 @@ console.log('\n--- §2 行级展示状态 ---')
 {
   const info = rowDisplayStatus(
     { row_index: 0, rec: { ...baseRec, mapping_role: 'inherited' } },
-    false,
+    {},
   )
   assert(info.status === 'inherited', 'inherited 未 override → inherited 状态')
+  assert(info.label === '自动继承', 'inherited 未 override 标签 = 自动继承')
 }
 {
   const info = rowDisplayStatus(
     { row_index: 0, rec: { ...baseRec, mapping_role: 'inherited' } },
-    true,
+    { selectedByRow: { 0: baseCandidate } },
   )
   assert(info.status === 'overridden', 'inherited 已 override → overridden')
+  assert(info.label === '显式覆盖已确认', 'inherited 已 override 标签 = 显式覆盖已确认')
 }
 {
   const info = rowDisplayStatus(
     { row_index: 0, rec: { ...baseRec, mapping_role: 'anchor', requires_confirmation: false, resolved_standard_account_id: 'sa-001', auto_confirm_status: 'unique_safe' as any } },
-    false,
+    {},
   )
   assert(info.status === 'auto_confirmed', 'anchor unique_safe + 无 selection → auto_confirmed')
+  assert(info.label === '自动确认', 'anchor unique_safe 标签 = 自动确认')
 }
 {
   const info = rowDisplayStatus(
     { row_index: 0, rec: { ...baseRec, mapping_role: 'anchor', requires_confirmation: true } },
-    false,
+    {},
   )
   assert(info.status === 'pending_confirmation', 'anchor 待确认 → pending_confirmation')
+  assert(info.label.includes('映射锚点'), 'anchor 待确认 标签包含 映射锚点')
 }
 {
   const info = rowDisplayStatus(
     { row_index: 0, rec: { ...baseRec, mapping_role: 'unresolved' } },
-    false,
+    {},
   )
   assert(info.status === 'unresolved', 'unresolved → unresolved')
+  assert(info.label === '未解决', 'unresolved 标签 = 未解决')
 }
 {
   const info = rowDisplayStatus(
     { row_index: 0, rec: { ...baseRec, mapping_role: 'structural_summary' } },
-    false,
+    {},
   )
   assert(info.status === 'structural', 'structural_summary → structural')
+  assert(info.label === '结构汇总', 'structural_summary 标签 = 结构汇总（非父级不入库）')
+}
+{
+  // TASK-094B：explicit_override 已开启但未选择 → 显式覆盖待选择
+  const info = rowDisplayStatus(
+    { row_index: 0, rec: { ...baseRec, mapping_role: 'explicit_override' } },
+    { explicitOverrideRows: { 0: true } },
+  )
+  assert(
+    info.status === 'explicit_override_pending',
+    'explicit_override + 未选择 → explicit_override_pending',
+  )
+  assert(
+    info.label === '显式覆盖待选择',
+    'explicit_override + 未选择 标签 = 显式覆盖待选择',
+  )
+}
+{
+  // TASK-094B：explicit_override + 选中 → 显式覆盖已确认
+  const info = rowDisplayStatus(
+    { row_index: 0, rec: { ...baseRec, mapping_role: 'explicit_override' } },
+    { explicitOverrideRows: { 0: true }, selectedByRow: { 0: baseCandidate } },
+  )
+  assert(
+    info.status === 'explicit_override_confirmed',
+    'explicit_override + 已选择 → explicit_override_confirmed',
+  )
+  assert(
+    info.label === '显式覆盖已确认',
+    'explicit_override + 已选择 标签 = 显式覆盖已确认',
+  )
+}
+{
+  // TASK-094B：非末级 anchor（is_leaf=false）仍展示映射锚点
+  const info = rowDisplayStatus(
+    {
+      row_index: 0,
+      rec: { ...baseRec, mapping_role: 'anchor', requires_confirmation: false, resolved_standard_account_id: 'sa-001', auto_confirm_status: 'unique_safe' as any },
+      is_leaf: false,
+      is_summary: true,
+      participates_in_entry: false,
+    },
+    {},
+  )
+  assert(info.label !== '父级不入库', '非末级 anchor 不显示 父级不入库')
+  assert(info.status === 'auto_confirmed', '非末级 anchor unique_safe → auto_confirmed')
+}
+{
+  // TASK-094B：breakpoint 待确认 → 继承中断点 标签
+  const info = rowDisplayStatus(
+    { row_index: 0, rec: { ...baseRec, mapping_role: 'breakpoint', requires_confirmation: true } },
+    {},
+  )
+  assert(info.status === 'pending_confirmation', 'breakpoint 待确认 → pending_confirmation')
+  assert(info.label.includes('继承中断点'), 'breakpoint 待确认 标签包含 继承中断点')
+}
+{
+  // TASK-094B：ignored → 已忽略
+  const info = rowDisplayStatus(
+    { row_index: 0, rec: { ...baseRec, mapping_role: 'anchor' }, is_ignored: true },
+    {},
+  )
+  assert(info.status === 'ignored', 'is_ignored=true → ignored')
+  assert(info.label === '已忽略', 'is_ignored 标签 = 已忽略')
 }
 
 // ─────────── §3 构造 confirmed_mappings ───────────
@@ -284,7 +384,11 @@ console.log('\n--- §3 构造 confirmed_mappings ---')
     4: baseCandidate,
     5: baseCandidate,
   }
-  const confirmed = buildAnchorOnlyConfirmedMappings(rows, selected)
+  const state: any = {
+    explicitOverrideRows: { 4: true },
+    selectedByRow: selected,
+  }
+  const confirmed = buildAnchorOnlyConfirmedMappings(rows, selected, state)
   assert(confirmed.length === 4, '提交 anchor/breakpoint/explicit_override/已选择 unresolved')
   assert(confirmed[0].row_index === 0, '提交 anchor')
   assert(confirmed[1].row_index === 3, '提交 breakpoint')
@@ -342,6 +446,102 @@ console.log('\n--- §3 构造 confirmed_mappings ---')
   }
   const confirmed = buildAnchorOnlyConfirmedMappings(rows, selected)
   assert(confirmed.length === 0, 'inherited 不提交，即使有选中')
+}
+
+// 5. TASK-094B 反例：explicit_override 已开启但未选择 → 不提交（不得使用原 inherited resolved 兜底）
+{
+  const rows = [
+    {
+      row_index: 0,
+      rec: {
+        ...baseRec,
+        mapping_role: 'inherited',
+        resolved_standard_account_id: 'sa-inherited',
+        resolved_standard_account_code: '1002',
+        resolved_standard_account_name: '银行存款',
+      },
+    },
+  ]
+  const state: any = {
+    explicitOverrideRows: { 0: true },
+    selectedByRow: {},
+  }
+  const confirmed = buildAnchorOnlyConfirmedMappings(rows, {}, state)
+  assert(
+    confirmed.length === 0,
+    'override 已开启但未选择 → confirmed_mappings 不应包含该行（红线）',
+  )
+  // 即使 selectedByRow 被显式传 null，仍然必须包含 explicitOverrideRows=true 的状态
+  assert(
+    rowShouldSubmitMapping(rows[0] as any, state) === false,
+    'override 已开启但未选择 → rowShouldSubmitMapping=false（红线）',
+  )
+  assert(
+    rowRequiresMapping(rows[0] as any, state) === true,
+    'override 已开启但未选择 → rowRequiresMapping=true（计入未映射）',
+  )
+}
+
+// 6. TASK-094B：override 目标必须使用用户选择的标准科目，不得使用原 inherited resolved
+{
+  const userCandidate: MappingCandidate = {
+    ...baseCandidate,
+    standard_account_id: 'sa-user-override',
+    standard_account_code: '6603',
+    standard_account_name: '用户指定的覆盖科目',
+  }
+  const rows = [
+    {
+      row_index: 0,
+      rec: {
+        ...baseRec,
+        mapping_role: 'inherited',
+        resolved_standard_account_id: 'sa-inherited',
+        resolved_standard_account_code: '1002',
+        resolved_standard_account_name: '银行存款',
+      },
+    },
+  ]
+  const state: any = {
+    explicitOverrideRows: { 0: true },
+    selectedByRow: { 0: userCandidate },
+  }
+  const confirmed = buildAnchorOnlyConfirmedMappings(rows, { 0: userCandidate }, state)
+  assert(confirmed.length === 1, 'override + 用户选择 → 提交')
+  assert(confirmed[0].standard_account_id === 'sa-user-override', 'override 目标 = 用户选择')
+  assert(
+    confirmed[0].standard_account_code === '6603',
+    'override 目标代码 = 用户选择（不是原 inherited 1002）',
+  )
+  assert(confirmed[0].selection_source === 'user_confirmed', 'override selection_source = user_confirmed')
+  assert(confirmed[0].mapping_action === 'override', 'override mapping_action = override')
+  assert(confirmed[0].apply_to_descendants === true, 'override apply_to_descendants = true')
+}
+
+// 7. TASK-094B：恢复继承后 explicit_override 行不再提交
+{
+  const rows = [
+    {
+      row_index: 0,
+      rec: {
+        ...baseRec,
+        mapping_role: 'inherited',
+        resolved_standard_account_id: 'sa-inherited',
+        resolved_standard_account_code: '1002',
+        resolved_standard_account_name: '银行存款',
+      },
+    },
+  ]
+  // 模拟恢复继承：清空 override 与选择
+  const state: any = {
+    explicitOverrideRows: {},
+    selectedByRow: {},
+  }
+  const confirmed = buildAnchorOnlyConfirmedMappings(rows, {}, state)
+  assert(confirmed.length === 0, '恢复继承后 → 不提交')
+  assert(rowShouldSubmitMapping(rows[0] as any, state) === false, '恢复继承后 → rowShouldSubmitMapping=false')
+  assert(rowRequiresMapping(rows[0] as any, state) === false, '恢复继承后 → rowRequiresMapping=false（恢复 inherited）')
+  assert(effectiveMappingRole(rows[0] as any, state) === 'inherited', '恢复继承后 effective role=inherited')
 }
 
 // ─────────── §4 显式覆盖 / 恢复继承 ───────────
@@ -483,6 +683,154 @@ console.log('\n--- §7 常量集合 ---')
   assert(INHERITED_LIKE_ROLES.includes('inherited'), 'INHERITED_LIKE_ROLES 包含 inherited')
   assert(INHERITED_LIKE_ROLES.includes('structural_summary'), 'INHERITED_LIKE_ROLES 包含 structural_summary')
   assert(INHERITED_LIKE_ROLES.includes('ignored'), 'INHERITED_LIKE_ROLES 包含 ignored')
+}
+
+// ─────────── §8 TASK-094B 反例与闭环 ───────────
+
+console.log('\n--- §8 TASK-094B 反例与闭环 ---')
+
+// 8.1 inherited + explicitOverrideRows=true + 无选择 → requiresMapping=true, shouldSubmit=false
+{
+  const row = {
+    row_index: 0,
+    rec: { ...baseRec, mapping_role: 'inherited' },
+  }
+  const state: any = { explicitOverrideRows: { 0: true } }
+  assert(
+    rowRequiresMapping(row, state) === true,
+    '8.1 inherited override 开启未选择 → requiresMapping=true',
+  )
+  assert(
+    rowShouldSubmitMapping(row, state) === false,
+    '8.1 inherited override 开启未选择 → shouldSubmit=false',
+  )
+  assert(
+    effectiveMappingRole(row, state) === 'explicit_override',
+    '8.1 inherited override 开启 → effective role = explicit_override',
+  )
+  assert(
+    countEmptyOverrides([row], state) === 1,
+    '8.1 inherited override 开启未选择 → countEmptyOverrides=1',
+  )
+}
+
+// 8.2 inherited + explicitOverrideRows=true + 选中 → shouldSubmit=true，使用用户选择
+{
+  const row = {
+    row_index: 0,
+    rec: { ...baseRec, mapping_role: 'inherited' },
+  }
+  const state: any = {
+    explicitOverrideRows: { 0: true },
+    selectedByRow: { 0: baseCandidate },
+  }
+  assert(
+    rowShouldSubmitMapping(row, state) === true,
+    '8.2 inherited override + 选中 → shouldSubmit=true',
+  )
+  assert(
+    countEmptyOverrides([row], state) === 0,
+    '8.2 inherited override + 选中 → countEmptyOverrides=0',
+  )
+}
+
+// 8.3 恢复继承：清空 override + 清空选择 → effective role=inherited，requiresMapping=false
+{
+  const row = {
+    row_index: 0,
+    rec: { ...baseRec, mapping_role: 'inherited' },
+  }
+  // 模拟组件内 stdRestoreInheritance 后的状态
+  const state: any = {
+    explicitOverrideRows: {},
+    selectedByRow: {},
+    ignoredRows: {},
+  }
+  assert(
+    effectiveMappingRole(row, state) === 'inherited',
+    '8.3 恢复继承后 effective role = inherited',
+  )
+  assert(
+    rowRequiresMapping(row, state) === false,
+    '8.3 恢复继承后 requiresMapping=false（不再计入未映射）',
+  )
+  assert(
+    rowShouldSubmitMapping(row, state) === false,
+    '8.3 恢复继承后 shouldSubmit=false',
+  )
+}
+
+// 8.4 unresolved + 选择 → effective role=anchor，应该计入未映射减少
+{
+  const row = {
+    row_index: 0,
+    rec: { ...baseRec, mapping_role: 'unresolved', resolved_standard_account_id: null },
+  }
+  // 选择前
+  assert(
+    effectiveMappingRole(row, {}) === 'unresolved',
+    '8.4 unresolved 未选择 → effective role = unresolved',
+  )
+  assert(rowRequiresMapping(row, {}) === true, '8.4 unresolved 未选择 → requiresMapping=true')
+  // 选择后
+  const state: any = { selectedByRow: { 0: baseCandidate } }
+  assert(
+    effectiveMappingRole(row, state) === 'anchor',
+    '8.4 unresolved 选择后 → effective role = anchor',
+  )
+  assert(rowRequiresMapping(row, state) === false, '8.4 unresolved 选择后 → requiresMapping=false')
+  assert(rowShouldSubmitMapping(row, state) === true, '8.4 unresolved 选择后 → shouldSubmit=true')
+}
+
+// 8.5 unresolved 清除选择 → 回到 unresolved
+{
+  const row = {
+    row_index: 0,
+    rec: { ...baseRec, mapping_role: 'unresolved' },
+  }
+  const state: any = { selectedByRow: {} }
+  assert(effectiveMappingRole(row, state) === 'unresolved', '8.5 清除 unresolved 选择 → role=unresolved')
+  assert(rowRequiresMapping(row, state) === true, '8.5 清除 unresolved 选择 → requiresMapping=true')
+}
+
+// 8.6 computeDynamicUnresolvedCount 区分已选择/未选择
+{
+  const rows = [
+    { row_index: 0, rec: { ...baseRec, mapping_role: 'unresolved' } },
+    { row_index: 1, rec: { ...baseRec, mapping_role: 'unresolved' } },
+    { row_index: 2, rec: { ...baseRec, mapping_role: 'inherited' } },
+    { row_index: 3, rec: { ...baseRec, mapping_role: 'anchor' } },
+  ]
+  // 全部未选：unresolved=2
+  assert(
+    computeDynamicUnresolvedCount(rows as any, {}) === 2,
+    '8.6 全部未选 → unresolved=2',
+  )
+  // 选择 row 0 → unresolved=1
+  assert(
+    computeDynamicUnresolvedCount(rows as any, { selectedByRow: { 0: baseCandidate } }) === 1,
+    '8.6 选择 1 个 unresolved → unresolved=1',
+  )
+  // 全部 unresolved 已选 → unresolved=0
+  assert(
+    computeDynamicUnresolvedCount(rows as any, {
+      selectedByRow: { 0: baseCandidate, 1: baseCandidate },
+    }) === 0,
+    '8.6 全部 unresolved 已选 → unresolved=0',
+  )
+}
+
+// 8.7 ignored 行不计入 unresolved 也不计入 unmapped
+{
+  const rows = [
+    { row_index: 0, rec: { ...baseRec, mapping_role: 'unresolved' }, is_ignored: true },
+  ]
+  assert(
+    computeDynamicUnresolvedCount(rows as any, {}) === 0,
+    '8.7 ignored 行 → unresolved=0',
+  )
+  assert(rowRequiresMapping(rows[0] as any, {}) === false, '8.7 ignored 行 → requiresMapping=false')
+  assert(rowShouldSubmitMapping(rows[0] as any, {}) === false, '8.7 ignored 行 → shouldSubmit=false')
 }
 
 // ── 总结 ──

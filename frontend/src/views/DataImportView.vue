@@ -293,10 +293,10 @@
                   <el-table-column label="期末贷方" width="140" align="right" class-name="std-amount-col">
                     <template #default="{ row }">{{ fmtAmount(row.amount?.ending_credit) }}</template>
                   </el-table-column>
-                  <el-table-column label="匹配状态" width="110" align="center">
+                  <el-table-column label="匹配状态" width="120" align="center">
                     <template #default="{ row }">
-                      <el-tag size="small" :type="stdMappingRoleTagType(stdMappingRole(row))">
-                        {{ stdMappingRoleLabel(stdMappingRole(row)) }}
+                      <el-tag size="small" :type="stdRowDisplay(row).type">
+                        {{ stdRowDisplay(row).label }}
                       </el-tag>
                       <div v-if="stdRowWarningMessages(row).length" class="std-row-warning-count">
                         {{ stdRowWarningMessages(row).length }} 条警告
@@ -306,8 +306,10 @@
                   <el-table-column label="当前标准科目" width="320">
                     <template #default="{ row }">
                       <div v-if="stdIsIgnored(row.row_index)" class="std-current-account ignored">已忽略，不导入</div>
-                      <div v-else-if="!stdRowParticipates(row)" class="std-current-account muted">父级不入库</div>
-                      <div v-else-if="stdMappingRole(row) === 'inherited' && !stdSelectedMapping(row.row_index)" class="std-current-account inherited">
+                      <div v-else-if="stdMappingRole(row) === 'structural_summary'" class="std-current-account muted">
+                        结构汇总节点，不参与映射
+                      </div>
+                      <div v-else-if="stdMappingRole(row) === 'inherited' && !stdSelectedMapping(row.row_index) && !stdExplicitOverrideRows[row.row_index]" class="std-current-account inherited">
                         <div>
                           <code>{{ row.rec?.resolved_standard_account_code }}</code>
                           <span>{{ row.rec?.resolved_standard_account_name }}</span>
@@ -319,8 +321,10 @@
                         </div>
                         <div class="std-inherit-meta">自动继承，无需逐行确认</div>
                       </div>
-                      <div v-else-if="stdMappingRole(row) === 'structural_summary'" class="std-current-account muted">
-                        结构汇总节点，不参与映射
+                      <div v-else-if="stdMappingRole(row) === 'explicit_override' && !stdSelectedMapping(row.row_index)" class="std-current-account unmapped">
+                        <div>显式覆盖待选择</div>
+                        <div class="std-inherit-meta warning">已开启单独映射，请选择标准科目（不得留空）</div>
+                        <span v-if="row.rec?.candidates.length">推荐候选：{{ row.rec.candidates.length }} 个</span>
                       </div>
                       <div v-else-if="stdSelectedMapping(row.row_index)" class="std-current-account">
                         <div>
@@ -331,7 +335,7 @@
                           {{ matchSourceLabel(stdSelectedMapping(row.row_index)!.source) }} · 置信度 {{ stdConfidenceText(stdSelectedMapping(row.row_index)!.score) }}
                         </div>
                         <div v-if="stdMappingRole(row) === 'explicit_override'" class="std-inherit-meta">
-                          显式覆盖继承
+                          显式覆盖继承（手动指定）
                         </div>
                         <div v-if="stdSelectedMapping(row.row_index)!.warning" class="std-current-warning">
                           {{ stdSelectedMapping(row.row_index)!.warning }}
@@ -1082,7 +1086,7 @@ import {
   rowMappingRole,
   rowRequiresMapping as utilRowRequiresMapping,
   rowCanSelectStandardAccount,
-  rowShouldSubmitMapping,
+  rowShouldSubmitMapping as utilRowShouldSubmitMapping,
   rowCanOverride as utilRowCanOverride,
   rowParticipatesInEntry as utilRowParticipates,
   rowDisplayStatus,
@@ -1092,6 +1096,7 @@ import {
   applyExplicitOverride as utilApplyExplicitOverride,
   restoreInheritance as utilRestoreInheritance,
   computeStats,
+  countEmptyOverrides,
   normalizeMappingRecommend,
   type LocalMappingState,
 } from '@/utils/anchorInheritanceMapping'
@@ -1993,9 +1998,9 @@ function stdIsIgnored(rowIndex: number): boolean {
 }
 
 /**
- * TASK-092：该行是否需要用户在前端做映射选择。
- * 委托给 util.rowRequiresMapping — 基于 mapping_role + requires_confirmation 判定，
- * inherited / structural_summary / ignored 都不计入未映射。
+ * TASK-094B：该行是否需要用户在前端做映射选择。
+ * 必须接收统一 LocalMappingState，确保 explicit_override 已开启但未选择时
+ * 正确计入未映射。
  */
 function stdRowRequiresMapping(row: StdReviewRow): boolean {
   if (!stdRowHasIdentity(row)) return false
@@ -2008,7 +2013,30 @@ function stdRowRequiresMapping(row: StdReviewRow): boolean {
     participates_in_entry: row.participates_in_entry,
     rec: row.rec,
     is_ignored: !!stdIgnoredRows.value[row.row_index],
-  })
+  }, stdLocalMappingState.value)
+}
+
+/** 该行是否应提交映射（继承 state 判定） */
+function stdRowShouldSubmit(row: StdReviewRow): boolean {
+  return utilRowShouldSubmitMapping({
+    row_index: row.row_index,
+    rec: row.rec,
+    is_ignored: !!stdIgnoredRows.value[row.row_index],
+  }, stdLocalMappingState.value)
+}
+
+/** TASK-094B：行级展示状态（统一由 util.rowDisplayStatus 计算） */
+function stdRowDisplay(row: StdReviewRow) {
+  return rowDisplayStatus({
+    row_index: row.row_index,
+    client_account_code: row.client_account_code,
+    client_account_name: row.client_account_name,
+    is_leaf: row.is_leaf,
+    is_summary: row.is_summary,
+    participates_in_entry: row.participates_in_entry,
+    rec: row.rec,
+    is_ignored: !!stdIgnoredRows.value[row.row_index],
+  }, stdLocalMappingState.value)
 }
 
 function stdRowWarningMessages(row: StdReviewRow): string[] {
@@ -2023,13 +2051,6 @@ function stdRowWarningMessages(row: StdReviewRow): string[] {
   return Array.from(new Set(messages))
 }
 
-function stdRowStatus(row: StdReviewRow): { label: string; type: '' | 'success' | 'warning' | 'info' | 'danger' } {
-  if (stdIsIgnored(row.row_index)) return { label: '已忽略', type: 'info' }
-  if (!stdRowParticipates(row)) return { label: '父级不入库', type: 'warning' }
-  if (stdSelectedMapping(row.row_index)) return { label: '已匹配', type: 'success' }
-  return { label: '未匹配', type: 'danger' }
-}
-
 function stdConfidenceText(score: number | null | undefined): string {
   if (typeof score !== 'number' || Number.isNaN(score)) return '—'
   return `${Math.round(score * 100)}%`
@@ -2037,13 +2058,17 @@ function stdConfidenceText(score: number | null | undefined): string {
 
 function stdReviewRowClassName({ row }: { row: StdReviewRow }): string {
   if (stdIsIgnored(row.row_index)) return 'std-row-ignored'
-  if (!stdRowParticipates(row)) return 'std-row-parent'
+  if (stdMappingRole(row) === 'structural_summary') return 'std-row-parent'
   if (stdRowRequiresMapping(row) && !stdSelectedMapping(row.row_index)) return 'std-row-unmapped'
   return ''
 }
 
 const stdMatchedCount = computed(() =>
   stdReviewRows.value.filter(row => stdRowRequiresMapping(row) && !!stdSelectedMapping(row.row_index)).length
+)
+
+const stdEmptyOverrideCount = computed(() =>
+  countEmptyOverrides(stdReviewRows.value as any, stdLocalMappingState.value)
 )
 
 const stdWarningRowCount = computed(() =>
@@ -2187,32 +2212,6 @@ function stdMappingRole(row: any): string {
     rec: row.rec,
     is_ignored: !!stdIgnoredRows.value[row.row_index],
   }, stdLocalMappingState.value)
-}
-
-function stdMappingRoleLabel(role: string): string {
-  const map: Record<string, { label: string; type: string }> = {
-    anchor: { label: '映射锚点', type: 'primary' },
-    inherited: { label: '自动继承', type: 'success' },
-    breakpoint: { label: '继承中断点', type: 'warning' },
-    explicit_override: { label: '显式覆盖', type: 'info' },
-    structural_summary: { label: '结构汇总', type: 'info' },
-    unresolved: { label: '未解决', type: 'danger' },
-    ignored: { label: '已忽略', type: 'info' },
-  }
-  return map[role]?.label || role
-}
-
-function stdMappingRoleTagType(role: string): string {
-  const map: Record<string, string> = {
-    anchor: 'primary',
-    inherited: 'success',
-    breakpoint: 'warning',
-    explicit_override: 'info',
-    structural_summary: 'info',
-    unresolved: 'danger',
-    ignored: 'info',
-  }
-  return map[role] || ''
 }
 
 // ANCHOR-INHERITANCE-MAPPING：是否允许"单独映射"（普通继承行）
@@ -2556,9 +2555,12 @@ defineExpose({
   __setStdAnalyzeForTest,
   __anchorInheritanceForTest: {
     dynamicUnresolvedCount: stdUnresolvedLeafCount,
+    emptyOverrideCount: stdEmptyOverrideCount,
     canExecute: stdCanExecute,
+    canConfirm: stdCanConfirm,
     confirmedMappings: stdBuildAnchorOnlyConfirmedMappings,
     selectCandidate: stdSelectCandidate,
+    clearMapping: stdClearMapping,
     setOverride: stdSetOverride,
     restoreInheritance: stdRestoreInheritance,
     setWarningsConfirmed(value: boolean) {
@@ -2571,6 +2573,17 @@ defineExpose({
     canSelect(rowIndex: number) {
       const row = stdReviewRowByIndex(rowIndex)
       return row ? stdRowCanSelect(row) : false
+    },
+    requiresMapping(rowIndex: number) {
+      const row = stdReviewRowByIndex(rowIndex)
+      return row ? stdRowRequiresMapping(row) : false
+    },
+    rowDisplay(rowIndex: number) {
+      const row = stdReviewRowByIndex(rowIndex)
+      return row ? stdRowDisplay(row) : null
+    },
+    get explicitOverrideRows() {
+      return stdExplicitOverrideRows.value
     },
   },
 })
