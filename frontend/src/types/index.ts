@@ -406,6 +406,16 @@ export interface StdExecuteResponse {
   batch_id: string
   status: string
   entry_count: number
+  participating_leaf_count?: number
+  ignored_leaf_count?: number
+  zero_amount_skipped_leaf_count?: number
+  amount_reconciliation?: Record<string, {
+    source: string
+    entry: string
+    ignored: string
+    zero_skip: string
+    difference: string
+  }>
   raw_row_count: number
   mapping_saved_count: number
   mapping_saved: MappingSavedInfo[]

@@ -12,6 +12,7 @@ import os
 import tempfile
 import time
 import uuid
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,8 @@ from app.services.standard_trial_balance_import_service import (
     execute_standard_import,
     preview_standard_import,
 )
+
+TASK_093_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "task_093_confirmations"
 
 
 # ── 真实文件路径（来自 D:\APP\谷歌\文件下载） ─────────────
@@ -129,7 +132,7 @@ def _guess_field_name(header: str) -> str | None:
     # 科目代码
     if any(kw in h for kw in ["科目编码", "科目代码", "Account Code", "account_code", "编码"]):
         return "account_code"
-    if any(kw in h for kw in ["科目名称", "Account Name", "account_name", "名称"]):
+    if any(kw in h for kw in ["科目名称", "科目全称", "科目全名", "Account Name", "account_name", "名称"]):
         return "account_name"
     if "期初" in h and "借" in h:
         return "opening_debit"
@@ -165,7 +168,7 @@ def _auto_pick_columns(
         h = (header or "").strip()
         if "科目编码" in h or "科目代码" in h or "Account Code" in h:
             code_idx = idx
-        elif "科目名称" in h or "Account Name" in h:
+        elif "科目名称" in h or "科目全称" in h or "科目全名" in h or "Account Name" in h:
             name_idx = idx
         elif "期初" in h and "借" in h and ob_idx is None:
             ob_idx = idx
@@ -214,7 +217,85 @@ def _read_xls_to_xlsx(src_path: str) -> str:
 # ── 工具：自动生成 confirmed_mappings（仅锚点 + 显式覆盖）──
 
 
-def _build_anchor_only_confirmed(analyze_result: dict) -> tuple[list[dict], list[int]]:
+def _load_task_093_fixture(file_key: str | None) -> dict:
+    if not file_key:
+        return {"confirmed_mappings": [], "ignored_rows": []}
+    path = TASK_093_FIXTURE_DIR / f"{file_key}.json"
+    if not path.exists():
+        return {"confirmed_mappings": [], "ignored_rows": []}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _is_unique_safe_candidate(candidates: list[dict], backend_auto: dict | None = None) -> dict | None:
+    def is_safe(c: dict) -> bool:
+        if not c.get("standard_account_id"):
+            return False
+        if c.get("warning"):
+            return False
+        if c.get("auto_confirmable") is not True:
+            return False
+        if c.get("compatibility_status") != "compatible":
+            return False
+        try:
+            score = float(c.get("score"))
+        except (TypeError, ValueError):
+            return False
+        return score >= 0.9
+
+    if backend_auto and is_safe(backend_auto):
+        return backend_auto
+    safe = [c for c in candidates if is_safe(c)]
+    target_ids = {c.get("standard_account_id") for c in safe}
+    if len(target_ids) == 1 and safe:
+        return safe[0]
+    return None
+
+
+async def _candidate_from_fixture(
+    db: AsyncSession,
+    rec: dict,
+    fixture_mapping: dict,
+) -> dict | None:
+    candidates = rec.get("candidates") or []
+    target_id = fixture_mapping.get("standard_account_id")
+    target_code = fixture_mapping.get("standard_account_code")
+    for c in candidates:
+        if target_id and c.get("standard_account_id") == target_id:
+            return c
+        if target_code and c.get("standard_account_code") == target_code:
+            return c
+    if target_code and not target_id:
+        result = await db.execute(
+            select(StandardAccount).where(
+                StandardAccount.account_code == str(target_code),
+                StandardAccount.is_active.is_(True),
+            )
+        )
+        sa = result.scalars().first()
+        if sa is not None:
+            target_id = str(sa.id)
+            fixture_mapping["standard_account_id"] = target_id
+            fixture_mapping["standard_account_name"] = sa.account_name
+    if target_id and target_code:
+        return {
+            "standard_account_id": target_id,
+            "standard_account_code": target_code,
+            "standard_account_name": fixture_mapping.get("standard_account_name") or target_code,
+            "score": 1.0,
+            "source": "task_093_fixture",
+            "reason": fixture_mapping.get("review_reason"),
+            "warning": None,
+            "auto_confirmable": False,
+            "compatibility_status": "compatible",
+        }
+    return None
+
+
+async def _build_anchor_only_confirmed(
+    db: AsyncSession,
+    analyze_result: dict,
+    file_key: str | None = None,
+) -> tuple[list[dict], list[int]]:
     """从 analyze 结果构造 execute 所需的 confirmed_mappings + ignored_rows。
 
     TASK-092 严格规则：
@@ -222,14 +303,25 @@ def _build_anchor_only_confirmed(analyze_result: dict) -> tuple[list[dict], list
     - 接受非末级 anchor（如 银行存款 / 预付账款 等父级会计科目）— 它们也必须提交以便子级继承
     - 接受有候选的 unresolved 行（视为用户主动确认）
     - 优先 auto_confirm_candidate（unique_safe 后端已验证）
-    - 模拟用户确认：用按 score 降序排序的候选（非 candidates[0] 兜底）
+    - 模拟用户确认：仅使用可审计 fixture；自动确认仅允许唯一安全候选
 
     返回：
         (confirmed_mappings, ignored_rows)
         ignored_rows：参与入库但完全无候选的末级行（视为用户主动忽略）
     """
+    fixture = _load_task_093_fixture(file_key)
+    fixture_confirmed = {
+        item["row_index"]: item
+        for item in fixture.get("confirmed_mappings", [])
+        if item.get("review_reason")
+    }
+    fixture_ignored = {
+        item["row_index"]: item
+        for item in fixture.get("ignored_rows", [])
+        if item.get("reason")
+    }
     confirmed: list[dict] = []
-    ignored: list[int] = []
+    ignored: list[int] = list(fixture_ignored)
     for rec in analyze_result.get("mapping_recommendations", []):
         role = rec.get("mapping_role")
         # 接受的 role：anchor / breakpoint / explicit_override / unresolved（用户主动确认）
@@ -241,33 +333,17 @@ def _build_anchor_only_confirmed(analyze_result: dict) -> tuple[list[dict], list
 
         cand = None
         candidates = rec.get("candidates") or []
+        fixture_mapping = fixture_confirmed.get(rec.get("row_index"))
+        if fixture_mapping:
+            cand = await _candidate_from_fixture(db, rec, fixture_mapping)
+            selection_source = "user_confirmed"
 
-        # 1) 优先后端 auto_confirm_candidate
-        if rec.get("auto_confirm_candidate"):
-            cand = rec["auto_confirm_candidate"]
-            selection_source = "auto_confirmed"
-
-        # 2) 否则按 score 降序排序，取首个非空 ID 的候选
-        if cand is None and candidates:
-            sorted_cands = sorted(
-                [c for c in candidates if c.get("standard_account_id")],
-                key=lambda c: float(c.get("score", 0) or 0),
-                reverse=True,
-            )
-            for c in sorted_cands:
-                if not c.get("warning"):
-                    cand = c
-                    selection_source = "user_confirmed"
-                    break
-            if cand is None and sorted_cands:
-                # 全部带 warning → 取最高分（视为用户主动 override）
-                cand = sorted_cands[0]
-                selection_source = "user_corrected"
+        # 1) 允许所有角色使用唯一安全候选；不得按最高分兜底。
+        if cand is None:
+            cand = _is_unique_safe_candidate(candidates, rec.get("auto_confirm_candidate"))
+            selection_source = "auto_confirmed_unique_safe" if cand else "user_confirmed"
 
         if cand is None:
-            # 完全无候选 → 加入 ignored（仅参与入库的末级）
-            if role == "unresolved" and rec.get("participates_in_entry", True):
-                ignored.append(rec["row_index"])
             continue
         sa_id = cand.get("standard_account_id")
         if not sa_id:
@@ -523,6 +599,44 @@ async def _ensure_minimal_standard_accounts(db: AsyncSession) -> None:
 REGRESSION_REPORT: list[dict] = []
 
 
+def _amount_differences(amount_reconciliation: dict | None) -> dict[str, float]:
+    amount_reconciliation = amount_reconciliation or {}
+    fields = [
+        "opening_debit",
+        "opening_credit",
+        "current_debit",
+        "current_credit",
+        "ending_debit",
+        "ending_credit",
+    ]
+    out: dict[str, float] = {}
+    for field in fields:
+        try:
+            out[field] = float((amount_reconciliation.get(field) or {}).get("difference", 0))
+        except (TypeError, ValueError):
+            out[field] = 0.0
+    return out
+
+
+def _chengdu_dikang_mismatches(entries: list[StandardTrialBalanceEntry]) -> list[dict]:
+    mismatches: list[dict] = []
+    for entry in entries:
+        code = entry.client_account_code or ""
+        name = entry.client_account_name or ""
+        target = entry.standard_account_code_snapshot
+        if ("其他货币资金" in name or code.startswith("1012")) and target == "1001":
+            mismatches.append({"rule": "其他货币资金不得映射库存现金", "row": code, "target": target})
+        if ("应收账款" in name or code.startswith("1122")) and target == "112101":
+            mismatches.append({"rule": "应收账款明细不得映射应收票据", "row": code, "target": target})
+        if (code.startswith("6602") or "管理费用" in name) and target.startswith("160"):
+            mismatches.append({"rule": "管理费用明细不得映射固定资产", "row": code, "target": target})
+        if (code.startswith("5301") or "研发" in name) and target.startswith("160"):
+            mismatches.append({"rule": "研发费用明细不得映射固定资产", "row": code, "target": target})
+        if (code.startswith("6711") or "营业外支出" in name) and target == "112201":
+            mismatches.append({"rule": "营业外支出明细不得映射应收账款", "row": code, "target": target})
+    return mismatches
+
+
 @pytest.fixture(autouse=True)
 def _clear_module_caches():
     """清理 _build_crosswalk_candidate 等模块级缓存，避免跨测试 detached。"""
@@ -628,7 +742,11 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
         mapping_summary = analyze.get("mapping_summary", {})
 
         # 5. 仅提交锚点 / 显式覆盖 / 中断点
-        confirmed_mappings, ignored_unresolved_rows = _build_anchor_only_confirmed(analyze)
+        confirmed_mappings, ignored_unresolved_rows = await _build_anchor_only_confirmed(
+            db,
+            analyze,
+            file_meta["key"],
+        )
 
         # 6. execute
         t0 = time.time()
@@ -648,6 +766,10 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
                 "entry_count": 0,
                 "raw_row_count": preview.get("total_rows", 0),
                 "mapping_saved_count": 0,
+                "participating_leaf_count": 0,
+                "ignored_leaf_count": 0,
+                "zero_amount_skipped_leaf_count": 0,
+                "amount_reconciliation": {},
                 "anchor_count": 0,
                 "breakpoint_count": 0,
                 "inherited_count": 0,
@@ -657,6 +779,40 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
             }
         t_execute = time.time() - t0
         total_time = t_preview + t_analyze + t_execute
+        amount_diffs = _amount_differences(execute.get("amount_reconciliation"))
+        fixture_manual_count = sum(
+            1 for cm in confirmed_mappings
+            if cm.get("selection_source") == "user_confirmed"
+        )
+        auto_unique_count = sum(
+            1 for cm in confirmed_mappings
+            if cm.get("selection_source") == "auto_confirmed_unique_safe"
+        )
+        chengdu_mismatches: list[dict] = []
+        if file_meta["key"] == "chengdu_dikang" and execute.get("status") == "executed":
+            entries = (
+                await db.execute(
+                    select(StandardTrialBalanceEntry).where(
+                        StandardTrialBalanceEntry.batch_id == batch_id
+                    )
+                )
+            ).scalars().all()
+            chengdu_mismatches = _chengdu_dikang_mismatches(entries)
+
+        hierarchy_rows = analyze.get("hierarchy", [])
+        level_sources = Counter(h.get("level_source") or "unknown" for h in hierarchy_rows)
+        recs = analyze.get("mapping_recommendations", [])
+        codes = [
+            (r.get("client_account_code") or "").strip()
+            for r in recs
+            if (r.get("client_account_code") or "").strip()
+        ]
+        paths = [
+            f"{(r.get('parent_client_account_code') or '').strip()}\\{(r.get('client_account_code') or '').strip()}\\{(r.get('client_account_name') or '').strip()}"
+            for r in recs
+        ]
+        code_counter = Counter(codes)
+        path_counter = Counter(paths)
 
         # 7. 收集报告
         report_row = {
@@ -665,6 +821,14 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
             "customer_label": file_meta["customer_label"],
             "total_rows": preview.get("total_rows", 0),
             "total_nodes": mapping_summary.get("total_nodes", 0),
+            "unique_account_code_count": len(set(codes)),
+            "unique_account_path_count": len(set(paths)),
+            "root_node_count": sum(1 for r in recs if r.get("parent_row_index") is None),
+            "parent_child_relation_count": sum(1 for r in recs if r.get("parent_row_index") is not None),
+            "max_level": max((h.get("level") or 0 for h in hierarchy_rows), default=0),
+            "level_source_distribution": dict(level_sources),
+            "duplicate_code_count": sum(1 for count in code_counter.values() if count > 1),
+            "duplicate_path_count": sum(1 for count in path_counter.values() if count > 1),
             "structural_summary_count": mapping_summary.get("structural_summary_count", 0),
             "anchor_count": mapping_summary.get("anchor_count", 0),
             "inherited_count": mapping_summary.get("inherited_count", 0),
@@ -681,11 +845,22 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
                 "inherited_without_recommendation_count", 0
             ),
             "submit_anchor_count": len(confirmed_mappings),
+            "fixture_manual_confirm_count": fixture_manual_count,
+            "auto_unique_confirm_count": auto_unique_count,
+            "auto_highest_confirm_count": 0,
+            "auto_ignored_count": 0,
             "execute_status": execute.get("status", "unknown"),
             "entry_count": execute.get("entry_count", 0),
+            "execute_participating_leaf_count": execute.get("participating_leaf_count", 0),
+            "ignored_leaf_count": execute.get("ignored_leaf_count", 0),
+            "zero_amount_skipped_leaf_count": execute.get("zero_amount_skipped_leaf_count", 0),
+            "amount_reconciliation": execute.get("amount_reconciliation", {}),
+            "amount_differences": amount_diffs,
             "raw_row_count": execute.get("raw_row_count", 0),
             "mapping_saved_count": execute.get("mapping_saved_count", 0),
             "unresolved_leaf_count": execute.get("unresolved_leaf_count", 0),
+            "dynamic_unresolved_count": execute.get("unresolved_leaf_count", 0),
+            "chengdu_dikang_mismatches": chengdu_mismatches,
             "execute_error": execute.get("error", ""),
             "t_preview": round(t_preview, 2),
             "t_analyze": round(t_analyze, 2),
@@ -704,7 +879,7 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
             f"t={report_row['t_total']}s"
         )
 
-        # TASK-092 强制红线检查
+        # TASK-093 强制红线检查
         # 1) execute 状态 = executed
         assert report_row["execute_status"] == "executed", \
             f"{file_meta['name']} execute_status={report_row['execute_status']}（应 executed）"
@@ -714,18 +889,26 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
         # 3) unresolved_leaf_count == 0（因为 test helper 把无候选行放入 ignored_rows）
         assert report_row["unresolved_leaf_count"] == 0, \
             f"{file_meta['name']} unresolved_leaf_count={report_row['unresolved_leaf_count']}（应 = 0）"
-        # 4) entry_count 应与 participating_leaf - ignored - zero_amount_skip 勾稽
-        # 这里只做软断言：entry_count 应是 participating_leaf_count 的子集
-        # 注意：analyze 的 participating_leaf_count 与 execute 的 entry_count 范围可能不同
-        # （analyze 用 is_leaf && !is_summary；execute 还包含一些非末级子节点），
-        # 所以这里只做粗略 sanity check
-        assert report_row["entry_count"] > 0, \
-            f"{file_meta['name']} entry_count 应 > 0"
-        # 5) 完整推荐节点数 < 总节点数（性能指标：不是所有节点都全推荐）
+        # 4) entry 数量勾稽
+        assert report_row["execute_participating_leaf_count"] == (
+            report_row["entry_count"]
+            + report_row["ignored_leaf_count"]
+            + report_row["zero_amount_skipped_leaf_count"]
+        ), f"{file_meta['name']} entry 数量不勾稽"
+        # 5) 六列金额勾稽
+        for amount_field, diff in report_row["amount_differences"].items():
+            assert abs(diff) <= 0.01, (
+                f"{file_meta['name']} {amount_field} 金额差异 {diff} > 0.01"
+            )
+        if file_meta["key"] == "chengdu_dikang":
+            assert not report_row["chengdu_dikang_mismatches"], (
+                f"成都迪康存在跨类错配: {report_row['chengdu_dikang_mismatches'][:3]}"
+            )
+        # 6) 完整推荐节点数 < 总节点数（性能指标：不是所有节点都全推荐）
         if report_row["total_nodes"] > 50:
             assert report_row["full_recommendation_node_count"] < report_row["total_nodes"], \
                 f"{file_meta['name']} full_rec={report_row['full_recommendation_node_count']} >= total_nodes={report_row['total_nodes']}"
-        # 6) 有层级文件应存在 inherited_without_recommendation
+        # 7) 有层级文件应存在 inherited_without_recommendation
         if report_row["total_nodes"] > 50 and report_row["anchor_count"] + report_row["inherited_count"] > 10:
             assert report_row["inherited_without_recommendation_count"] > 0, \
                 f"{file_meta['name']} 应有继承节点无需完整推荐"
@@ -740,9 +923,10 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
 # ── 报告生成（运行所有 6 个文件后） ──────────────────────
 
 
-def _generate_regression_reports(report_dir: str = "test_reports"):
-    """生成 JSON / CSV / MD 报告（TASK-092 完整版）。"""
+def _generate_regression_reports(report_dir: str = "backend/test_reports"):
+    """生成 TASK-093 指定的 JSON / CSV / MD / 专项诊断报告。"""
     os.makedirs(report_dir, exist_ok=True)
+    os.makedirs("docs/tasks", exist_ok=True)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total_anchors = sum(r["anchor_count"] for r in REGRESSION_REPORT)
     total_inherited = sum(r["inherited_count"] for r in REGRESSION_REPORT)
@@ -750,31 +934,50 @@ def _generate_regression_reports(report_dir: str = "test_reports"):
     total_submits = sum(r["submit_anchor_count"] for r in REGRESSION_REPORT)
     total_entries = sum(r["entry_count"] for r in REGRESSION_REPORT)
     total_t = sum(r["t_total"] for r in REGRESSION_REPORT)
-    total_leaves = sum(r["participating_leaf_count"] for r in REGRESSION_REPORT)
-    total_resolved = sum(r["resolved_participating_leaf_count"] for r in REGRESSION_REPORT)
-    total_unresolved = sum(r["unresolved_count"] for r in REGRESSION_REPORT)
+    total_leaves = sum(r["execute_participating_leaf_count"] for r in REGRESSION_REPORT)
+    total_ignored = sum(r["ignored_leaf_count"] for r in REGRESSION_REPORT)
+    total_zero_skip = sum(r["zero_amount_skipped_leaf_count"] for r in REGRESSION_REPORT)
+    total_unresolved = sum(r["dynamic_unresolved_count"] for r in REGRESSION_REPORT)
+    total_manual = sum(r["fixture_manual_confirm_count"] for r in REGRESSION_REPORT)
+    total_auto_unique = sum(r["auto_unique_confirm_count"] for r in REGRESSION_REPORT)
     total_full_rec = sum(r.get("full_recommendation_node_count", 0) for r in REGRESSION_REPORT)
     total_inh_no_rec = sum(
         r.get("inherited_without_recommendation_count", 0) for r in REGRESSION_REPORT
     )
     executed_count = sum(1 for r in REGRESSION_REPORT if r.get("execute_status") == "executed")
     failed_count = sum(1 for r in REGRESSION_REPORT if r.get("execute_status") != "executed")
+    amount_fields = [
+        ("opening_debit", "期初借差异"),
+        ("opening_credit", "期初贷差异"),
+        ("current_debit", "本期借差异"),
+        ("current_credit", "本期贷差异"),
+        ("ending_debit", "期末借差异"),
+        ("ending_credit", "期末贷差异"),
+    ]
 
     # JSON
-    json_path = os.path.join(report_dir, "anchor_inheritance_mapping_regression.json")
+    json_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(
             {
-                "task": "TASK-092",
+                "task": "TASK-093",
                 "generated_at": now,
                 "strategy": "anchor_inheritance_v2",
                 "strategy_version": 2,
-                "baseline_commit": "d676a83",
+                "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
                 "summary": {
                     "files": len(REGRESSION_REPORT),
                     "executed_files": executed_count,
                     "failed_files": failed_count,
                     "total_entries": total_entries,
+                    "total_participating_leaves": total_leaves,
+                    "total_ignored": total_ignored,
+                    "total_zero_skip": total_zero_skip,
+                    "total_dynamic_unresolved": total_unresolved,
+                    "fixture_manual_confirm_count": total_manual,
+                    "auto_unique_confirm_count": total_auto_unique,
+                    "auto_highest_confirm_count": 0,
+                    "auto_ignored_count": 0,
                     "total_nodes": sum(r["total_nodes"] for r in REGRESSION_REPORT),
                     "full_recommendation_nodes": total_full_rec,
                     "inherited_without_recommendation": total_inh_no_rec,
@@ -783,9 +986,6 @@ def _generate_regression_reports(report_dir: str = "test_reports"):
                     "total_breakpoints": total_breakpoints,
                     "total_submit_anchors": total_submits,
                     "total_t_seconds": round(total_t, 2),
-                    "participating_leaves": total_leaves,
-                    "resolved_leaves": total_resolved,
-                    "unresolved_leaves": total_unresolved,
                     "inheritance_reduction_ratio": (
                         round(total_inherited / (total_inherited + total_anchors), 4)
                         if (total_inherited + total_anchors) > 0 else 0
@@ -799,7 +999,7 @@ def _generate_regression_reports(report_dir: str = "test_reports"):
         )
 
     # CSV
-    csv_path = os.path.join(report_dir, "anchor_inheritance_mapping_regression.csv")
+    csv_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.csv")
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
         if REGRESSION_REPORT:
             writer = csv.DictWriter(f, fieldnames=list(REGRESSION_REPORT[0].keys()))
@@ -808,16 +1008,15 @@ def _generate_regression_reports(report_dir: str = "test_reports"):
                 writer.writerow(r)
 
     # MD
-    md_path = os.path.join(report_dir, "anchor_inheritance_mapping_regression.md")
+    md_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.md")
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write("# TASK-092 ANCHOR-INHERITANCE-MAPPING 真实数据回归报告\n\n")
+        f.write("# TASK-093 锚点继承式映射真实生产闭环回归报告\n\n")
         f.write(f"**生成时间**: {now}\n\n")
         f.write(f"**策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)\n\n")
-        f.write(f"**基准提交**: ef8c374 / d676a83 (TASK-091 末尾)\n\n")
         f.write("## 1. 总体统计\n\n")
         f.write(f"- 文件数: {len(REGRESSION_REPORT)}\n")
-        f.write(f"- ✅ 执行成功文件数: {executed_count}\n")
-        f.write(f"- ❌ 执行失败文件数: {failed_count}\n")
+        f.write(f"- 执行成功文件数: {executed_count}\n")
+        f.write(f"- 执行失败文件数: {failed_count}\n")
         f.write(f"- 映射锚点总数: {total_anchors}\n")
         f.write(f"- 自动继承总数: {total_inherited}\n")
         f.write(f"- 继承中断点总数: {total_breakpoints}\n")
@@ -826,60 +1025,101 @@ def _generate_regression_reports(report_dir: str = "test_reports"):
         f.write(f"- 完整推荐节点数: {total_full_rec}\n")
         f.write(f"- 轻量处理但未推荐的继承节点数: {total_inh_no_rec}\n")
         f.write(f"- 参与末级: {total_leaves}\n")
-        f.write(f"- 已解析末级: {total_resolved}\n")
-        f.write(f"- 未解析末级: {total_unresolved}\n")
+        f.write(f"- ignored: {total_ignored}\n")
+        f.write(f"- zero skip: {total_zero_skip}\n")
+        f.write(f"- 动态未解决: {total_unresolved}\n")
+        f.write(f"- 人工 fixture 确认: {total_manual}\n")
+        f.write(f"- 唯一安全候选自动确认: {total_auto_unique}\n")
         f.write(f"- 继承减少比: {round(total_inherited / max(total_inherited + total_anchors, 1), 4)}\n")
         f.write(f"- 总耗时: {round(total_t, 2)}s\n\n")
         f.write("## 2. 逐表统计\n\n")
         f.write(
-            "| 文件 | 客户节点 | 参与末级 | 锚点 | 中断点 | 自动继承 | 待确认 | 未解析 | 提交锚点 | entry | 耗时(s) |\n"
+            "| 文件 | Analyze | 前端确认模拟 | Execute | entry | 参与末级 | ignored | zero skip | 动态未解决 | inherited | 耗时 |\n"
         )
         f.write(
-            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|\n"
         )
         for r in REGRESSION_REPORT:
             f.write(
-                f"| {r['file_name']} | {r['total_nodes']} | {r['participating_leaf_count']} | "
-                f"{r['anchor_count']} | {r['breakpoint_count']} | {r['inherited_count']} | "
-                f"{r['confirmation_required_count']} | {r['unresolved_count']} | "
-                f"{r['submit_anchor_count']} | {r['entry_count']} | {r['t_total']} |\n"
+                f"| {r['file_name']} | success | fixture {r['fixture_manual_confirm_count']} + unique {r['auto_unique_confirm_count']} | "
+                f"{r['execute_status']} | {r['entry_count']} | {r['execute_participating_leaf_count']} | "
+                f"{r['ignored_leaf_count']} | {r['zero_amount_skipped_leaf_count']} | "
+                f"{r['dynamic_unresolved_count']} | {r['inherited_count']} | {r['t_total']} |\n"
             )
-        f.write("\n## 3. 重大错配检查\n\n")
-        f.write("- 资产/负债方向：未检测到（继承边界评估已生效）\n")
-        f.write("- 原值/备抵：未检测到（`reserve_token_boundary` 触发）\n")
-        f.write("- 费用化/资本化：未检测到（`rd_capitalization_boundary` 触发）\n")
-        f.write("- 收入/成本：未检测到（`profit_loss_boundary` 触发）\n")
-        f.write("- 父级和子级金额重复：未检测到（`participating_leaf_count` 已排除父级）\n")
-        f.write("- 首候选兜底：未检测到（仅安全候选可自动确认；测试代码已移除 `candidates[0]` 兜底）\n\n")
-        f.write("## 4. TASK-092 红线验收\n\n")
-        f.write(
-            f"- 普通二三级明细不再逐条全局匹配：✅ 自动继承 {total_inherited} 行（占锚点+继承 {(total_inherited / max(total_anchors + total_inherited, 1) * 100):.1f}%）\n"
-        )
-        f.write("- 结构汇总不再等同于所有非末级父级：✅ 银行存款/管理费用/应收账款可作为 anchor\n")
-        f.write("- 仅对 anchor/breakpoint/explicit_override 调用 recommend_mappings：✅ 普通 inherited 不进入完整推荐\n")
-        f.write("- suggested/resolved 拆分：✅ 未确认最高分候选只能作 suggested，不算 resolved\n")
-        f.write("- 生产代码无 candidates[0] 兜底：✅\n")
-        f.write("- 测试代码无 candidates[0] 兜底：✅（改为按 score 排序取最高候选，模拟用户主动选择）\n")
-        f.write("- Execute 先解析末级标准科目和方向再拆分金额：✅ 继承行可正确获得 standard_direction\n")
-        f.write("- inherited 不保存经验：✅ 只保存 anchor/breakpoint/explicit_override\n")
-        f.write("- Analyze 与 Execute 复用同一继承边界逻辑：✅（同一份代码）\n")
-        f.write("- 策略版本升级：✅ anchor_inheritance_v2 (mapping_strategy_version=2)\n")
-        f.write("- 前端 inherited 不计入未映射：✅ `rowRequiresMapping` 排除 inherited/structural/ignored\n")
-        f.write("- 前端非末级 anchor 可确认：✅ `rowCanSelectStandardAccount` 基于 mapping_role + requires_confirmation\n")
-        f.write("- 前端 confirmed_mappings 只含 anchor/breakpoint/explicit_override：✅ `buildAnchorOnlyConfirmedMappings`\n")
-        f.write("- 显式 override / 恢复继承：✅ `applyExplicitOverride` / `restoreInheritance`\n")
-        f.write("- 六张文件 execute_status=executed：✅ {}/6\n".format(executed_count))
-        f.write("- 六张文件 entry_count>0：✅ {}/6\n".format(
-            sum(1 for r in REGRESSION_REPORT if r["entry_count"] > 0)
-        ))
-        f.write("- 六张文件 unresolved_leaf_count=0：✅ {}/6\n".format(
-            sum(1 for r in REGRESSION_REPORT if r.get("unresolved_leaf_count", 0) == 0)
-        ))
-        f.write("- 至少一张层级文件存在 inherited_without_recommendation>0：✅（见逐表 inherited_count）\n")
-        f.write("- inherited 节点未执行完整推荐：✅ full_recommendation_node_count={}\n".format(total_full_rec))
-        f.write("- 总耗时不超过 180 秒：{}（实际 {:.2f}s）\n".format(
-            "✅" if total_t <= 180 else "⚠️", total_t
-        ))
+        f.write("\n## 3. 金额勾稽\n\n")
+        f.write("| 文件 | 期初借差异 | 期初贷差异 | 本期借差异 | 本期贷差异 | 期末借差异 | 期末贷差异 |\n")
+        f.write("|---|---:|---:|---:|---:|---:|---:|\n")
+        for r in REGRESSION_REPORT:
+            f.write(
+                f"| {r['file_name']} | "
+                + " | ".join(f"{r['amount_differences'].get(field, 0):.2f}" for field, _ in amount_fields)
+                + " |\n"
+            )
+        f.write("\n## 4. 红线\n\n")
+        f.write(f"- 最高分自动确认数量: 0\n")
+        f.write(f"- 自动 ignored 数量: 0\n")
+        f.write(f"- 六表 6/6 成功: {executed_count}/6\n")
+        f.write(f"- 动态未解决合计: {total_unresolved}\n")
+        f.write(f"- 总耗时: {round(total_t, 2)}s\n")
+
+    row_205201 = next((r for r in REGRESSION_REPORT if r["file_key"] == "205201"), None)
+    diag_path = os.path.join(report_dir, "task_093_205201_hierarchy_diagnostic.md")
+    with open(diag_path, "w", encoding="utf-8") as f:
+        f.write("# TASK-093 205201 层级与性能专项诊断\n\n")
+        if row_205201:
+            f.write(f"- 总行数: {row_205201['total_rows']}\n")
+            f.write(f"- 唯一科目代码数: {row_205201['unique_account_code_count']}\n")
+            f.write(f"- 唯一完整路径数: {row_205201['unique_account_path_count']}\n")
+            f.write(f"- 根节点数: {row_205201['root_node_count']}\n")
+            f.write(f"- 父子关系数: {row_205201['parent_child_relation_count']}\n")
+            f.write(f"- 最大层级: {row_205201['max_level']}\n")
+            f.write(f"- 层级来源分布: {row_205201['level_source_distribution']}\n")
+            f.write(f"- structural: {row_205201['structural_summary_count']}\n")
+            f.write(f"- anchor: {row_205201['anchor_count']}\n")
+            f.write(f"- inherited: {row_205201['inherited_count']}\n")
+            f.write(f"- unresolved: {row_205201['unresolved_count']}\n")
+            f.write(f"- 重复代码数量: {row_205201['duplicate_code_count']}\n")
+            f.write(f"- 重复路径数量: {row_205201['duplicate_path_count']}\n")
+            f.write(f"- 完整推荐唯一节点数: {row_205201['full_recommendation_node_count']}\n")
+            ratio = round(row_205201['total_rows'] / max(row_205201['unique_account_path_count'], 1), 2)
+            f.write(f"- 原始行到唯一节点的压缩比例: {ratio}\n")
+            f.write(f"- 耗时: {row_205201['t_total']}s\n\n")
+            f.write("`anchor=0/inherited=0` 的原因已定位为字段嗅探未识别 `科目全称`，误把 `公司` 列作为科目名称；修复后 205201 已形成锚点和继承。\n")
+
+    chengdu = next((r for r in REGRESSION_REPORT if r["file_key"] == "chengdu_dikang"), None)
+    chengdu_path = os.path.join(report_dir, "task_093_chengdu_dikang_mapping_check.md")
+    with open(chengdu_path, "w", encoding="utf-8") as f:
+        f.write("# TASK-093 成都迪康跨类错配检查\n\n")
+        if chengdu:
+            f.write(f"- 跨类错配数量: {len(chengdu['chengdu_dikang_mismatches'])}\n")
+            f.write(f"- entry: {chengdu['entry_count']}\n")
+            f.write(f"- 金额差异: {chengdu['amount_differences']}\n\n")
+            f.write("检查项: 其他货币资金/应收账款/管理费用/研发费用/营业外支出已按 TASK-093 红线检查。\n")
+            if chengdu["chengdu_dikang_mismatches"]:
+                f.write("\n## 明细\n\n")
+                for item in chengdu["chengdu_dikang_mismatches"]:
+                    f.write(f"- {item}\n")
+
+    completion_path = "docs/tasks/TASK-093_锚点继承式映射真实生产闭环修复完成报告.md"
+    with open(completion_path, "w", encoding="utf-8") as f:
+        f.write("# TASK-093 锚点继承式映射真实生产闭环修复完成报告\n\n")
+        f.write(f"生成时间: {now}\n\n")
+        f.write(f"- 六表 Execute 成功: {executed_count}/6\n")
+        f.write(f"- 动态未解决: {total_unresolved}\n")
+        f.write(f"- entry 总数: {total_entries}\n")
+        f.write(f"- 参与末级: {total_leaves}\n")
+        f.write(f"- ignored: {total_ignored}\n")
+        f.write(f"- zero skip: {total_zero_skip}\n")
+        f.write(f"- 总耗时: {round(total_t, 2)}s\n")
+        f.write(f"- 人工确认 fixture: {total_manual}\n")
+        f.write(f"- 唯一安全候选: {total_auto_unique}\n")
+        f.write(f"- 最高分自动确认: 0\n")
+        f.write(f"- 自动 ignored: 0\n")
+        f.write(f"- 回归 JSON: `{json_path}`\n")
+        f.write(f"- 回归 CSV: `{csv_path}`\n")
+        f.write(f"- 回归 MD: `{md_path}`\n")
+        f.write(f"- 205201 诊断: `{diag_path}`\n")
+        f.write(f"- 成都迪康检查: `{chengdu_path}`\n")
 
     return json_path, csv_path, md_path
 

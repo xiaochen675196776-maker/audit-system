@@ -681,6 +681,10 @@ class ExecuteResponse(BaseModel):
     batch_id: uuid.UUID
     status: str
     entry_count: int
+    participating_leaf_count: int = 0
+    ignored_leaf_count: int = 0
+    zero_amount_skipped_leaf_count: int = 0
+    amount_reconciliation: dict = Field(default_factory=dict)
     raw_row_count: int
     mapping_saved_count: int
     mapping_saved: list[MappingSavedInfo] = []

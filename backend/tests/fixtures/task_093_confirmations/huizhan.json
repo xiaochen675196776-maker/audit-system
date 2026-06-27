@@ -1,0 +1,97 @@
+{
+  "file_key": "huizhan",
+  "confirmed_mappings": [
+    {
+      "row_index": 2,
+      "client_account_code": "1122",
+      "client_account_name": "1122\\应收账款",
+      "standard_account_code": "112201",
+      "review_reason": "????????"
+    },
+    {
+      "row_index": 13,
+      "client_account_code": "123101",
+      "client_account_name": "123101\\坏账准备\\应收账款",
+      "standard_account_code": "112202",
+      "review_reason": "????-????????"
+    },
+    {
+      "row_index": 17,
+      "client_account_code": "1601",
+      "client_account_name": "1601\\固定资产",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 18,
+      "client_account_code": "160101",
+      "client_account_name": "160101\\固定资产\\房屋、建筑物",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 19,
+      "client_account_code": "160102",
+      "client_account_name": "160102\\固定资产\\专用设备",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 20,
+      "client_account_code": "160103",
+      "client_account_name": "160103\\固定资产\\运输设备",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 21,
+      "client_account_code": "160104",
+      "client_account_name": "160104\\固定资产\\办公设备",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 22,
+      "client_account_code": "160105",
+      "client_account_name": "160105\\固定资产\\办公家具",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 23,
+      "client_account_code": "160199",
+      "client_account_name": "160199\\固定资产\\其他",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 75,
+      "client_account_code": "22210101",
+      "client_account_name": "22210101\\应交税费\\应交增值税\\进项税",
+      "standard_account_code": "2221",
+      "review_reason": "?????????????"
+    },
+    {
+      "row_index": 78,
+      "client_account_code": "22210102",
+      "client_account_name": "22210102\\应交税费\\应交增值税\\销项税",
+      "standard_account_code": "2221",
+      "review_reason": "?????????????"
+    },
+    {
+      "row_index": 111,
+      "client_account_code": "2501",
+      "client_account_name": "2501\\长期借款",
+      "standard_account_code": "2502",
+      "review_reason": "????????"
+    },
+    {
+      "row_index": 119,
+      "client_account_code": "4103",
+      "client_account_name": "4103\\本年利润",
+      "standard_account_code": "4103",
+      "review_reason": "???????????????"
+    }
+  ],
+  "ignored_rows": []
+}

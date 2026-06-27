@@ -1,0 +1,635 @@
+{
+  "task": "TASK-093",
+  "generated_at": "2026-06-27 12:50:12",
+  "strategy": "anchor_inheritance_v2",
+  "strategy_version": 2,
+  "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
+  "summary": {
+    "files": 6,
+    "executed_files": 6,
+    "failed_files": 0,
+    "total_entries": 20514,
+    "total_participating_leaves": 49880,
+    "total_ignored": 0,
+    "total_zero_skip": 29366,
+    "total_dynamic_unresolved": 0,
+    "fixture_manual_confirm_count": 2008,
+    "auto_unique_confirm_count": 17774,
+    "auto_highest_confirm_count": 0,
+    "auto_ignored_count": 0,
+    "total_nodes": 100472,
+    "full_recommendation_nodes": 1747,
+    "inherited_without_recommendation": 915,
+    "total_anchors": 18579,
+    "total_inherited": 915,
+    "total_breakpoints": 22,
+    "total_submit_anchors": 19782,
+    "total_t_seconds": 134.99,
+    "inheritance_reduction_ratio": 0.0469
+  },
+  "rows": [
+    {
+      "file_key": "huizhan",
+      "file_name": "会展中心余额表.xlsx",
+      "customer_label": "会展中心",
+      "total_rows": 266,
+      "total_nodes": 266,
+      "unique_account_code_count": 266,
+      "unique_account_path_count": 266,
+      "root_node_count": 38,
+      "parent_child_relation_count": 228,
+      "max_level": 5,
+      "level_source_distribution": {
+        "code_prefix": 266
+      },
+      "duplicate_code_count": 0,
+      "duplicate_path_count": 0,
+      "structural_summary_count": 2,
+      "anchor_count": 25,
+      "inherited_count": 39,
+      "breakpoint_count": 3,
+      "explicit_override_count": 0,
+      "unresolved_count": 23,
+      "confirmation_required_count": 11,
+      "participating_leaf_count": 66,
+      "resolved_participating_leaf_count": 47,
+      "full_recommendation_node_count": 240,
+      "inherited_without_recommendation_count": 39,
+      "submit_anchor_count": 51,
+      "fixture_manual_confirm_count": 13,
+      "auto_unique_confirm_count": 38,
+      "auto_highest_confirm_count": 0,
+      "auto_ignored_count": 0,
+      "execute_status": "executed",
+      "entry_count": 66,
+      "execute_participating_leaf_count": 196,
+      "ignored_leaf_count": 0,
+      "zero_amount_skipped_leaf_count": 130,
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "1227995439.06",
+          "entry": "1227995439.06",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "opening_credit": {
+          "source": "1038818366.47",
+          "entry": "1038818366.47",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "current_debit": {
+          "source": "0",
+          "entry": "0",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0"
+        },
+        "current_credit": {
+          "source": "0",
+          "entry": "0",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0"
+        },
+        "ending_debit": {
+          "source": "1233416773.24",
+          "entry": "1233416773.24",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "ending_credit": {
+          "source": "1043476314.80",
+          "entry": "1043476314.80",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        }
+      },
+      "amount_differences": {
+        "opening_debit": 0.0,
+        "opening_credit": 0.0,
+        "current_debit": 0.0,
+        "current_credit": 0.0,
+        "ending_debit": 0.0,
+        "ending_credit": 0.0
+      },
+      "raw_row_count": 266,
+      "mapping_saved_count": 43,
+      "unresolved_leaf_count": 0,
+      "dynamic_unresolved_count": 0,
+      "chengdu_dikang_mismatches": [],
+      "execute_error": "",
+      "t_preview": 0.02,
+      "t_analyze": 1.67,
+      "t_execute": 0.12,
+      "t_total": 1.81
+    },
+    {
+      "file_key": "112",
+      "file_name": "1-12科目余额表.xls",
+      "customer_label": "测试112",
+      "total_rows": 1011,
+      "total_nodes": 1011,
+      "unique_account_code_count": 467,
+      "unique_account_path_count": 1011,
+      "root_node_count": 139,
+      "parent_child_relation_count": 872,
+      "max_level": 4,
+      "level_source_distribution": {
+        "code_prefix": 1010,
+        "flat": 1
+      },
+      "duplicate_code_count": 8,
+      "duplicate_path_count": 0,
+      "structural_summary_count": 35,
+      "anchor_count": 148,
+      "inherited_count": 591,
+      "breakpoint_count": 6,
+      "explicit_override_count": 0,
+      "unresolved_count": 222,
+      "confirmation_required_count": 219,
+      "participating_leaf_count": 924,
+      "resolved_participating_leaf_count": 714,
+      "full_recommendation_node_count": 364,
+      "inherited_without_recommendation_count": 591,
+      "submit_anchor_count": 376,
+      "fixture_manual_confirm_count": 222,
+      "auto_unique_confirm_count": 154,
+      "auto_highest_confirm_count": 0,
+      "auto_ignored_count": 0,
+      "execute_status": "executed",
+      "entry_count": 924,
+      "execute_participating_leaf_count": 931,
+      "ignored_leaf_count": 0,
+      "zero_amount_skipped_leaf_count": 7,
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "1181031979.93",
+          "entry": "593128747.77",
+          "ignored": "0",
+          "zero_skip": "587903232.16",
+          "difference": "0.00"
+        },
+        "opening_credit": {
+          "source": "1181031979.93",
+          "entry": "593128747.77",
+          "ignored": "0",
+          "zero_skip": "587903232.16",
+          "difference": "0.00"
+        },
+        "current_debit": {
+          "source": "8031429538.52",
+          "entry": "4378282468.69",
+          "ignored": "0",
+          "zero_skip": "3653147069.83",
+          "difference": "0.00"
+        },
+        "current_credit": {
+          "source": "8031429538.52",
+          "entry": "4378282468.69",
+          "ignored": "0",
+          "zero_skip": "3653147069.83",
+          "difference": "0.00"
+        },
+        "ending_debit": {
+          "source": "1259085962.96",
+          "entry": "632260499.63",
+          "ignored": "0",
+          "zero_skip": "626825463.33",
+          "difference": "0.00"
+        },
+        "ending_credit": {
+          "source": "1259085962.96",
+          "entry": "632260499.63",
+          "ignored": "0",
+          "zero_skip": "626825463.33",
+          "difference": "0.00"
+        }
+      },
+      "amount_differences": {
+        "opening_debit": 0.0,
+        "opening_credit": 0.0,
+        "current_debit": 0.0,
+        "current_credit": 0.0,
+        "ending_debit": 0.0,
+        "ending_credit": 0.0
+      },
+      "raw_row_count": 1011,
+      "mapping_saved_count": 267,
+      "unresolved_leaf_count": 0,
+      "dynamic_unresolved_count": 0,
+      "chengdu_dikang_mismatches": [],
+      "execute_error": "",
+      "t_preview": 0.04,
+      "t_analyze": 2.26,
+      "t_execute": 0.75,
+      "t_total": 3.05
+    },
+    {
+      "file_key": "205201",
+      "file_name": "205201-2023.xls",
+      "customer_label": "205201",
+      "total_rows": 98456,
+      "total_nodes": 98456,
+      "unique_account_code_count": 714,
+      "unique_account_path_count": 714,
+      "root_node_count": 46083,
+      "parent_child_relation_count": 2459,
+      "max_level": 3,
+      "level_source_distribution": {
+        "code_prefix": 48542,
+        "flat": 49914
+      },
+      "duplicate_code_count": 491,
+      "duplicate_path_count": 491,
+      "structural_summary_count": 21415,
+      "anchor_count": 18248,
+      "inherited_count": 4,
+      "breakpoint_count": 0,
+      "explicit_override_count": 0,
+      "unresolved_count": 743,
+      "confirmation_required_count": 130,
+      "participating_leaf_count": 18984,
+      "resolved_participating_leaf_count": 18248,
+      "full_recommendation_node_count": 703,
+      "inherited_without_recommendation_count": 4,
+      "submit_anchor_count": 18991,
+      "fixture_manual_confirm_count": 1543,
+      "auto_unique_confirm_count": 17448,
+      "auto_highest_confirm_count": 0,
+      "auto_ignored_count": 0,
+      "execute_status": "executed",
+      "entry_count": 18984,
+      "execute_participating_leaf_count": 48199,
+      "ignored_leaf_count": 0,
+      "zero_amount_skipped_leaf_count": 29215,
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "16176908331.3502",
+          "entry": "16176908331.3502",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000"
+        },
+        "opening_credit": {
+          "source": "5794258509.3262",
+          "entry": "5794258509.3262",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000"
+        },
+        "current_debit": {
+          "source": "16279577821.7248",
+          "entry": "16279577821.7248",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000"
+        },
+        "current_credit": {
+          "source": "6376586413.9808",
+          "entry": "6376586413.9808",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000"
+        },
+        "ending_debit": {
+          "source": "0",
+          "entry": "0",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0"
+        },
+        "ending_credit": {
+          "source": "0",
+          "entry": "0",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0"
+        }
+      },
+      "amount_differences": {
+        "opening_debit": 0.0,
+        "opening_credit": 0.0,
+        "current_debit": 0.0,
+        "current_credit": 0.0,
+        "ending_debit": 0.0,
+        "ending_credit": 0.0
+      },
+      "raw_row_count": 98456,
+      "mapping_saved_count": 330,
+      "unresolved_leaf_count": 0,
+      "dynamic_unresolved_count": 0,
+      "chengdu_dikang_mismatches": [],
+      "execute_error": "",
+      "t_preview": 2.09,
+      "t_analyze": 58.66,
+      "t_execute": 65.74,
+      "t_total": 126.49
+    },
+    {
+      "file_key": "tb_2023",
+      "file_name": "科目余额表2023年导入.xls",
+      "customer_label": "TB2023",
+      "total_rows": 181,
+      "total_nodes": 181,
+      "unique_account_code_count": 180,
+      "unique_account_path_count": 181,
+      "root_node_count": 41,
+      "parent_child_relation_count": 140,
+      "max_level": 4,
+      "level_source_distribution": {
+        "code_prefix": 180,
+        "flat": 1
+      },
+      "duplicate_code_count": 0,
+      "duplicate_path_count": 0,
+      "structural_summary_count": 10,
+      "anchor_count": 26,
+      "inherited_count": 77,
+      "breakpoint_count": 1,
+      "explicit_override_count": 0,
+      "unresolved_count": 65,
+      "confirmation_required_count": 65,
+      "participating_leaf_count": 160,
+      "resolved_participating_leaf_count": 97,
+      "full_recommendation_node_count": 88,
+      "inherited_without_recommendation_count": 77,
+      "submit_anchor_count": 92,
+      "fixture_manual_confirm_count": 66,
+      "auto_unique_confirm_count": 26,
+      "auto_highest_confirm_count": 0,
+      "auto_ignored_count": 0,
+      "execute_status": "executed",
+      "entry_count": 160,
+      "execute_participating_leaf_count": 162,
+      "ignored_leaf_count": 0,
+      "zero_amount_skipped_leaf_count": 2,
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "3074258361.96",
+          "entry": "1476750876.11",
+          "ignored": "0",
+          "zero_skip": "1597507485.85",
+          "difference": "0.00"
+        },
+        "opening_credit": {
+          "source": "3074258361.96",
+          "entry": "1476750876.11",
+          "ignored": "0",
+          "zero_skip": "1597507485.85",
+          "difference": "0.00"
+        },
+        "current_debit": {
+          "source": "16239988909.96",
+          "entry": "8115291540.49",
+          "ignored": "0",
+          "zero_skip": "8124697369.47",
+          "difference": "0.00"
+        },
+        "current_credit": {
+          "source": "16239988909.96",
+          "entry": "8115291540.49",
+          "ignored": "0",
+          "zero_skip": "8124697369.47",
+          "difference": "0.00"
+        },
+        "ending_debit": {
+          "source": "3365356918.54",
+          "entry": "1617597239.91",
+          "ignored": "0",
+          "zero_skip": "1747759678.63",
+          "difference": "0.00"
+        },
+        "ending_credit": {
+          "source": "3365356918.54",
+          "entry": "1617597239.91",
+          "ignored": "0",
+          "zero_skip": "1747759678.63",
+          "difference": "0.00"
+        }
+      },
+      "amount_differences": {
+        "opening_debit": 0.0,
+        "opening_credit": 0.0,
+        "current_debit": 0.0,
+        "current_credit": 0.0,
+        "ending_debit": 0.0,
+        "ending_credit": 0.0
+      },
+      "raw_row_count": 181,
+      "mapping_saved_count": 87,
+      "unresolved_leaf_count": 0,
+      "dynamic_unresolved_count": 0,
+      "chengdu_dikang_mismatches": [],
+      "execute_error": "",
+      "t_preview": 0.01,
+      "t_analyze": 0.52,
+      "t_execute": 0.21,
+      "t_total": 0.75
+    },
+    {
+      "file_key": "yiliao",
+      "file_name": "医疗3月31日序时账及余额表.xlsx",
+      "customer_label": "医疗3月",
+      "total_rows": 154,
+      "total_nodes": 154,
+      "unique_account_code_count": 154,
+      "unique_account_path_count": 154,
+      "root_node_count": 37,
+      "parent_child_relation_count": 117,
+      "max_level": 4,
+      "level_source_distribution": {
+        "code_prefix": 154
+      },
+      "duplicate_code_count": 0,
+      "duplicate_path_count": 0,
+      "structural_summary_count": 5,
+      "anchor_count": 34,
+      "inherited_count": 79,
+      "breakpoint_count": 8,
+      "explicit_override_count": 0,
+      "unresolved_count": 12,
+      "confirmation_required_count": 10,
+      "participating_leaf_count": 87,
+      "resolved_participating_leaf_count": 77,
+      "full_recommendation_node_count": 139,
+      "inherited_without_recommendation_count": 79,
+      "submit_anchor_count": 54,
+      "fixture_manual_confirm_count": 11,
+      "auto_unique_confirm_count": 43,
+      "auto_highest_confirm_count": 0,
+      "auto_ignored_count": 0,
+      "execute_status": "executed",
+      "entry_count": 87,
+      "execute_participating_leaf_count": 97,
+      "ignored_leaf_count": 0,
+      "zero_amount_skipped_leaf_count": 10,
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "17531847.39",
+          "entry": "17531847.39",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "opening_credit": {
+          "source": "12797418.94",
+          "entry": "12797418.94",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "current_debit": {
+          "source": "25115349.42",
+          "entry": "24669133.11",
+          "ignored": "0",
+          "zero_skip": "446216.31",
+          "difference": "0.00"
+        },
+        "current_credit": {
+          "source": "25115349.42",
+          "entry": "24669133.11",
+          "ignored": "0",
+          "zero_skip": "446216.31",
+          "difference": "0.00"
+        },
+        "ending_debit": {
+          "source": "19299529.05",
+          "entry": "19299529.05",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "ending_credit": {
+          "source": "14161324.57",
+          "entry": "14161324.57",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        }
+      },
+      "amount_differences": {
+        "opening_debit": 0.0,
+        "opening_credit": 0.0,
+        "current_debit": 0.0,
+        "current_credit": 0.0,
+        "ending_debit": 0.0,
+        "ending_credit": 0.0
+      },
+      "raw_row_count": 154,
+      "mapping_saved_count": 49,
+      "unresolved_leaf_count": 0,
+      "dynamic_unresolved_count": 0,
+      "chengdu_dikang_mismatches": [],
+      "execute_error": "",
+      "t_preview": 0.01,
+      "t_analyze": 0.97,
+      "t_execute": 0.12,
+      "t_total": 1.11
+    },
+    {
+      "file_key": "chengdu_dikang",
+      "file_name": "科目余额表-成都迪康-240930.xls",
+      "customer_label": "成都迪康",
+      "total_rows": 404,
+      "total_nodes": 404,
+      "unique_account_code_count": 404,
+      "unique_account_path_count": 404,
+      "root_node_count": 62,
+      "parent_child_relation_count": 342,
+      "max_level": 5,
+      "level_source_distribution": {
+        "code_prefix": 404
+      },
+      "duplicate_code_count": 0,
+      "duplicate_path_count": 0,
+      "structural_summary_count": 57,
+      "anchor_count": 98,
+      "inherited_count": 125,
+      "breakpoint_count": 4,
+      "explicit_override_count": 0,
+      "unresolved_count": 116,
+      "confirmation_required_count": 107,
+      "participating_leaf_count": 293,
+      "resolved_participating_leaf_count": 184,
+      "full_recommendation_node_count": 213,
+      "inherited_without_recommendation_count": 125,
+      "submit_anchor_count": 218,
+      "fixture_manual_confirm_count": 153,
+      "auto_unique_confirm_count": 65,
+      "auto_highest_confirm_count": 0,
+      "auto_ignored_count": 0,
+      "execute_status": "executed",
+      "entry_count": 293,
+      "execute_participating_leaf_count": 295,
+      "ignored_leaf_count": 0,
+      "zero_amount_skipped_leaf_count": 2,
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "874618452.47",
+          "entry": "874618452.47",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "opening_credit": {
+          "source": "868326649.73",
+          "entry": "868326649.73",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.00"
+        },
+        "current_debit": {
+          "source": "5266253495.60",
+          "entry": "2632266301.21",
+          "ignored": "0",
+          "zero_skip": "2633987194.39",
+          "difference": "0.00"
+        },
+        "current_credit": {
+          "source": "5266253495.60",
+          "entry": "2632266301.21",
+          "ignored": "0",
+          "zero_skip": "2633987194.39",
+          "difference": "0.00"
+        },
+        "ending_debit": {
+          "source": "0",
+          "entry": "0",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0"
+        },
+        "ending_credit": {
+          "source": "0",
+          "entry": "0",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0"
+        }
+      },
+      "amount_differences": {
+        "opening_debit": 0.0,
+        "opening_credit": 0.0,
+        "current_debit": 0.0,
+        "current_credit": 0.0,
+        "ending_debit": 0.0,
+        "ending_credit": 0.0
+      },
+      "raw_row_count": 404,
+      "mapping_saved_count": 202,
+      "unresolved_leaf_count": 0,
+      "dynamic_unresolved_count": 0,
+      "chengdu_dikang_mismatches": [],
+      "execute_error": "",
+      "t_preview": 0.03,
+      "t_analyze": 1.34,
+      "t_execute": 0.42,
+      "t_total": 1.78
+    }
+  ]
+}

@@ -34,6 +34,13 @@ export const MAPPING_ROLES = [
 
 export type MappingRole = (typeof MAPPING_ROLES)[number]
 
+export interface LocalMappingState {
+  selectedByRow: Record<number, MappingCandidate | null | undefined>
+  explicitOverrideRows: Record<number, boolean | undefined>
+  confirmedUnresolvedRows: Record<number, boolean | undefined>
+  ignoredRows: Record<number, boolean | undefined>
+}
+
 /** 需要用户确认 + 提交映射的角色集合（仅 anchor/breakpoint/explicit_override） */
 export const SUBMITTABLE_ROLES: readonly MappingRole[] = [
   'anchor',
@@ -76,6 +83,25 @@ export function rowMappingRole(row: MappingReviewRow): MappingRole {
     return role as MappingRole
   }
   return 'unresolved'
+}
+
+export function effectiveMappingRole(
+  row: MappingReviewRow,
+  state?: Partial<LocalMappingState> | null,
+): MappingRole {
+  const rowIndex = row.row_index
+  if (row.is_ignored || state?.ignoredRows?.[rowIndex]) return 'ignored'
+  const backendRole = rowMappingRole(row)
+  if (backendRole === 'structural_summary' || backendRole === 'ignored') {
+    return backendRole
+  }
+  if (backendRole === 'inherited' && state?.explicitOverrideRows?.[rowIndex]) {
+    return 'explicit_override'
+  }
+  if (backendRole === 'unresolved' && state?.selectedByRow?.[rowIndex]) {
+    return 'anchor'
+  }
+  return backendRole
 }
 
 /** 角色展示标签与标签类型 */
@@ -121,13 +147,20 @@ export function rowMappingRoleTagType(role: MappingRole): string {
  */
 export function rowRequiresMapping(
   row: MappingReviewRow,
+  state?: Partial<LocalMappingState> | null,
 ): boolean {
-  if (row.is_ignored) return false
-  const role = rowMappingRole(row)
+  if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
+  const role = effectiveMappingRole(row, state)
 
   if (INHERITED_LIKE_ROLES.includes(role)) return false
 
   if (role === 'unresolved') return true
+
+  if (role === 'explicit_override') {
+    return !!state?.explicitOverrideRows?.[row.row_index] ||
+      row.rec?.requires_confirmation === true ||
+      !row.rec?.resolved_standard_account_id
+  }
 
   // anchor / breakpoint / explicit_override — 根据 requires_confirmation 决定
   return row.rec?.requires_confirmation === true
@@ -136,9 +169,10 @@ export function rowRequiresMapping(
 /** 该行是否允许显示标准科目选择器（与 is_leaf / participates_in_entry 无关） */
 export function rowCanSelectStandardAccount(
   row: MappingReviewRow,
+  state?: Partial<LocalMappingState> | null,
 ): boolean {
-  if (row.is_ignored) return false
-  const role = rowMappingRole(row)
+  if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
+  const role = effectiveMappingRole(row, state)
   if (INHERITED_LIKE_ROLES.includes(role)) return false
   return true
 }
@@ -153,9 +187,10 @@ export function rowCanSelectStandardAccount(
  */
 export function rowShouldSubmitMapping(
   row: MappingReviewRow,
+  state?: Partial<LocalMappingState> | null,
 ): boolean {
-  if (row.is_ignored) return false
-  const role = rowMappingRole(row)
+  if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
+  const role = effectiveMappingRole(row, state)
   return (SUBMITTABLE_ROLES as readonly string[]).includes(role)
 }
 
@@ -168,6 +203,21 @@ export function rowCanOverride(row: MappingReviewRow): boolean {
     role === 'anchor' ||
     role === 'breakpoint'
   )
+}
+
+export function computeDynamicUnresolvedCount(
+  rows: MappingReviewRow[],
+  state: Partial<LocalMappingState>,
+): number {
+  let count = 0
+  for (const row of rows) {
+    const rowIndex = row.row_index
+    if (row.is_ignored || state.ignoredRows?.[rowIndex]) continue
+    if (rowMappingRole(row) !== 'unresolved') continue
+    if (state.selectedByRow?.[rowIndex]) continue
+    count += 1
+  }
+  return count
 }
 
 /** 该行是否参与金额入库（用于过滤 entry / 数量勾稽） */
@@ -252,11 +302,16 @@ export function rowDisplayStatus(
 export function buildAnchorOnlyConfirmedMappings(
   rows: MappingReviewRow[],
   selectedByRow: Record<number, MappingCandidate | null | undefined>,
+  state?: Partial<LocalMappingState> | null,
 ): ConfirmedMapping[] {
   const out: ConfirmedMapping[] = []
+  const effectiveState: Partial<LocalMappingState> = {
+    ...(state || {}),
+    selectedByRow,
+  }
   for (const row of rows) {
-    if (!rowShouldSubmitMapping(row)) continue
-    const role = rowMappingRole(row)
+    if (!rowShouldSubmitMapping(row, effectiveState)) continue
+    const role = effectiveMappingRole(row, effectiveState)
     const sel = selectedByRow[row.row_index] || null
 
     let standard: MappingCandidate | null | undefined = sel
@@ -334,13 +389,20 @@ export function computeStats(
   warningsConfirmed: boolean,
   blockingErrorCount: number,
   hasWarnings: boolean,
+  state?: Partial<LocalMappingState> | null,
 ): UnmappedAndUnresolvedStats {
+  const effectiveState: Partial<LocalMappingState> = {
+    ...(state || {}),
+    selectedByRow,
+  }
   let unmapped = 0
   for (const row of rows) {
-    if (!rowRequiresMapping(row)) continue
+    if (!rowRequiresMapping(row, effectiveState)) continue
     if (!selectedByRow[row.row_index]) unmapped += 1
   }
-  const unresolved = summary?.unresolved_count ?? 0
+  const unresolved = rows.length > 0
+    ? computeDynamicUnresolvedCount(rows, effectiveState)
+    : (summary?.unresolved_count ?? 0)
   const canConfirm = unmapped === 0 && unresolved === 0 && blockingErrorCount === 0
   const canExecute =
     canConfirm &&

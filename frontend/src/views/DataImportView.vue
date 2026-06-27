@@ -222,7 +222,7 @@
                   <div class="std-anchor-stat-label">结构汇总</div>
                 </div>
                 <div class="std-anchor-stat danger">
-                  <div class="std-anchor-stat-value">{{ stdMappingSummary.unresolved_count }}</div>
+                  <div class="std-anchor-stat-value">{{ stdUnresolvedLeafCount }}</div>
                   <div class="std-anchor-stat-label">未解决</div>
                 </div>
                 <div class="std-anchor-stat emphasis">
@@ -1086,11 +1086,14 @@ import {
   rowCanOverride as utilRowCanOverride,
   rowParticipatesInEntry as utilRowParticipates,
   rowDisplayStatus,
+  effectiveMappingRole,
+  computeDynamicUnresolvedCount,
   buildAnchorOnlyConfirmedMappings as utilBuildAnchorOnlyConfirmed,
   applyExplicitOverride as utilApplyExplicitOverride,
   restoreInheritance as utilRestoreInheritance,
   computeStats,
   normalizeMappingRecommend,
+  type LocalMappingState,
 } from '@/utils/anchorInheritanceMapping'
 import type {
   Company,
@@ -1752,6 +1755,8 @@ type StdReviewRow = {
 
 // 用户确认的映射：row_index → candidate
 const stdConfirmedMap = ref<Record<number, import('@/types').MappingCandidate | null>>({})
+const stdExplicitOverrideRows = ref<Record<number, boolean>>({})
+const stdConfirmedUnresolvedRows = ref<Record<number, boolean>>({})
 const stdIgnoredRows = ref<Record<number, boolean>>({})
 const stdRowFilter = ref<StdRowFilter>('all')
 
@@ -1830,6 +1835,8 @@ async function stdGoAnalyze() {
 
     // TASK-087：使用后端 auto_confirm_candidate 进行安全自动选中
     stdConfirmedMap.value = {}
+    stdExplicitOverrideRows.value = {}
+    stdConfirmedUnresolvedRows.value = {}
     stdIgnoredRows.value = {}
     stdSearchQueries.value = {}
     stdSearchResults.value = {}
@@ -1934,6 +1941,13 @@ const stdIgnoredRowIndexes = computed(() =>
     .sort((a, b) => a - b)
 )
 
+const stdLocalMappingState = computed<LocalMappingState>(() => ({
+  selectedByRow: stdConfirmedMap.value,
+  explicitOverrideRows: stdExplicitOverrideRows.value,
+  confirmedUnresolvedRows: stdConfirmedUnresolvedRows.value,
+  ignoredRows: stdIgnoredRows.value,
+}))
+
 function stdRowHasIdentity(row: StdReviewRow): boolean {
   return !!(row.client_account_code || row.client_account_name)
 }
@@ -1953,7 +1967,7 @@ function stdRowCanSelect(row: StdReviewRow): boolean {
     participates_in_entry: row.participates_in_entry,
     rec: row.rec,
     is_ignored: !!stdIgnoredRows.value[row.row_index],
-  })
+  }, stdLocalMappingState.value)
 }
 
 /**
@@ -2146,19 +2160,33 @@ function stdSelectedMapping(ri: number): import('@/types').MappingCandidate | nu
 
 function stdSelectCandidate(ri: number, candidate: import('@/types').MappingCandidate) {
   stdConfirmedMap.value[ri] = candidate
+  const row = stdReviewRowByIndex(ri)
+  if (row?.rec?.mapping_role === 'unresolved') {
+    stdConfirmedUnresolvedRows.value[ri] = true
+  }
   // 切换映射后重置警告确认
   if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
 }
 
 function stdClearMapping(ri: number) {
   delete stdConfirmedMap.value[ri]
+  delete stdConfirmedUnresolvedRows.value[ri]
   stdSearchQueries.value[ri] = ''
   stdSearchResults.value[ri] = []
 }
 
 // ANCHOR-INHERITANCE-MAPPING：映射角色辅助函数
 function stdMappingRole(row: any): string {
-  return row?.rec?.mapping_role || 'unresolved'
+  return effectiveMappingRole({
+    row_index: row.row_index,
+    client_account_code: row.client_account_code,
+    client_account_name: row.client_account_name,
+    is_leaf: row.is_leaf,
+    is_summary: row.is_summary,
+    participates_in_entry: row.participates_in_entry,
+    rec: row.rec,
+    is_ignored: !!stdIgnoredRows.value[row.row_index],
+  }, stdLocalMappingState.value)
 }
 
 function stdMappingRoleLabel(role: string): string {
@@ -2195,6 +2223,8 @@ function stdCanOverride(row: any): boolean {
 
 // ANCHOR-INHERITANCE-MAPPING：恢复继承（清除单独映射）
 function stdRestoreInheritance(rowIndex: number) {
+  delete stdExplicitOverrideRows.value[rowIndex]
+  delete stdConfirmedUnresolvedRows.value[rowIndex]
   delete stdConfirmedMap.value[rowIndex]
   stdSearchQueries.value[rowIndex] = ''
   stdSearchResults.value[rowIndex] = []
@@ -2205,6 +2235,9 @@ function stdRestoreInheritance(rowIndex: number) {
 function stdSetOverride(rowIndex: number) {
   const row = stdReviewRowByIndex(rowIndex)
   if (!row) return
+  stdExplicitOverrideRows.value[rowIndex] = true
+  delete stdConfirmedMap.value[rowIndex]
+  delete stdConfirmedUnresolvedRows.value[rowIndex]
   // 给当前行设为「显式覆盖」锚点标记
   // 这里通过在 stdConfirmedMap 中加入一行并标记 source
   // 后端会在 execute 阶段把它当作 explicit_override 处理
@@ -2231,6 +2264,8 @@ function stdIgnoreRow(rowIndex: number) {
   stdIgnoredRows.value[rowIndex] = true
   // 清除该行已确认的映射
   delete stdConfirmedMap.value[rowIndex]
+  delete stdExplicitOverrideRows.value[rowIndex]
+  delete stdConfirmedUnresolvedRows.value[rowIndex]
   // 清除该行搜索框和搜索结果
   stdSearchQueries.value[rowIndex] = ''
   stdSearchResults.value[rowIndex] = []
@@ -2311,13 +2346,12 @@ function stdBuildAnchorOnlyConfirmedMappings(): import('@/types').ConfirmedMappi
   for (const row of rows) {
     selectedByRow[row.row_index] = stdSelectedMapping(row.row_index)
   }
-  return utilBuildAnchorOnlyConfirmed(rows, selectedByRow)
+  return utilBuildAnchorOnlyConfirmed(rows, selectedByRow, stdLocalMappingState.value)
 }
 
 // ANCHOR-INHERITANCE-MAPPING：未解决末级数量
 const stdUnresolvedLeafCount = computed(() => {
-  if (!stdMappingSummary.value) return 0
-  return stdMappingSummary.value.unresolved_count
+  return computeDynamicUnresolvedCount(stdReviewRows.value, stdLocalMappingState.value)
 })
 
 // ANCHOR-INHERITANCE-MAPPING：参与入库末级 = 已解析 + 未解析
@@ -2410,6 +2444,10 @@ function stdSelectSearchedAccount(ri: number, sa: any) {
     evidence: ['user_selected'],
   }
   stdConfirmedMap.value[ri] = candidate
+  const row = stdReviewRowByIndex(ri)
+  if (row?.rec?.mapping_role === 'unresolved') {
+    stdConfirmedUnresolvedRows.value[ri] = true
+  }
   stdSearchQueries.value[ri] = ''
   stdSearchResults.value[ri] = []
   if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
@@ -2486,6 +2524,8 @@ function stdResetImport() {
   stdWarnings.value = []
   stdAnalyzeResult.value = null
   stdConfirmedMap.value = {}
+  stdExplicitOverrideRows.value = {}
+  stdConfirmedUnresolvedRows.value = {}
   stdSearchQueries.value = {}
   stdSearchResults.value = {}
   stdWarningsConfirmed.value = false
@@ -2493,6 +2533,47 @@ function stdResetImport() {
   stdExecuteError.value = ''
   progress.value = 0
 }
+
+function __setStdAnalyzeForTest(data: import('@/types').StdAnalyzeResponse) {
+  stdBatchId.value = data.batch_id
+  stdHierarchy.value = data.hierarchy
+  stdMappingRecs.value = data.mapping_recommendations
+  stdAmounts.value = data.amounts
+  stdErrors.value = data.errors
+  stdWarnings.value = data.warnings
+  stdAnalyzeResult.value = data
+  stdConfirmedMap.value = {}
+  stdExplicitOverrideRows.value = {}
+  stdConfirmedUnresolvedRows.value = {}
+  stdIgnoredRows.value = {}
+  stdSearchQueries.value = {}
+  stdSearchResults.value = {}
+  stdWarningsConfirmed.value = false
+  activeStep.value = 2
+}
+
+defineExpose({
+  __setStdAnalyzeForTest,
+  __anchorInheritanceForTest: {
+    dynamicUnresolvedCount: stdUnresolvedLeafCount,
+    canExecute: stdCanExecute,
+    confirmedMappings: stdBuildAnchorOnlyConfirmedMappings,
+    selectCandidate: stdSelectCandidate,
+    setOverride: stdSetOverride,
+    restoreInheritance: stdRestoreInheritance,
+    setWarningsConfirmed(value: boolean) {
+      stdWarningsConfirmed.value = value
+    },
+    effectiveRole(rowIndex: number) {
+      const row = stdReviewRowByIndex(rowIndex)
+      return row ? stdMappingRole(row) : null
+    },
+    canSelect(rowIndex: number) {
+      const row = stdReviewRowByIndex(rowIndex)
+      return row ? stdRowCanSelect(row) : false
+    },
+  },
+})
 
 // When switching to standardized type, clear existing state
 import { watch } from 'vue'

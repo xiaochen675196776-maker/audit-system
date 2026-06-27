@@ -263,6 +263,14 @@ class MappingPlanSummary:
     inherited_without_recommendation_count: int = 0
 
 
+@dataclass
+class MappingPlanResult:
+    tree: "AccountTree"
+    summary: MappingPlanSummary
+    leaf_standard_accounts: dict[int, AnchorResolution] = field(default_factory=dict)
+    validation_errors: list[str] = field(default_factory=list)
+
+
 # ── 工具函数 ─────────────────────────────────────────────
 
 
@@ -350,8 +358,9 @@ def build_account_tree(
         is_ignored = ri in ignored_rows
 
         # 父级 row_index：parent_key 是代码时取 code_to_row；否则尝试作为 row_index
-        parent_row_index: int | None = None
-        if parent_key:
+        has_explicit_parent_row_index = "parent_row_index" in meta
+        parent_row_index: int | None = meta.get("parent_row_index")
+        if parent_row_index is None and parent_key and not has_explicit_parent_row_index:
             if parent_key in code_to_row:
                 parent_row_index = code_to_row[parent_key]
             else:
@@ -1313,6 +1322,110 @@ def resolve_leaf_standard_accounts(
 
 
 # ── 7. 内部辅助 ───────────────────────────────────────────
+
+
+async def resolve_mapping_plan(
+    db: AsyncSession,
+    tree: AccountTree,
+    customer_label: str | None,
+    source_label: str | None,
+    confirmed_mappings: list[dict] | None,
+    ignored_rows: Iterable[int] | None,
+    mode: str,
+    *,
+    recommend_anchor_fn=None,
+    discovery: AnchorDiscoveryResult | None = None,
+) -> MappingPlanResult:
+    """Unified production entry for analyze and execute mapping resolution."""
+    ignored_row_set = set(ignored_rows or [])
+    for row_index in ignored_row_set:
+        node = tree.nodes_by_row.get(row_index)
+        if node is not None:
+            node.is_ignored = True
+            node.mapping_role = "ignored"
+            node.mapping_mode = "none"
+            node.participates_in_entry = False
+
+    confirmed_by_row: dict[int, dict] = {}
+    standard_ids: set[uuid.UUID] = set()
+    for cm in confirmed_mappings or []:
+        try:
+            row_index = int(cm.get("row_index"))
+        except (TypeError, ValueError):
+            continue
+        standard_account_id = cm.get("standard_account_id")
+        if not standard_account_id:
+            continue
+        confirmed_by_row[row_index] = cm
+        try:
+            standard_ids.add(uuid.UUID(str(standard_account_id)))
+        except (TypeError, ValueError):
+            continue
+
+    standard_by_id: dict[str, StandardAccount] = {}
+    if standard_ids:
+        result = await db.execute(
+            select(StandardAccount).where(StandardAccount.id.in_(list(standard_ids)))
+        )
+        for sa in result.scalars().all():
+            standard_by_id[str(sa.id)] = sa
+
+    explicit_overrides: dict[int, str] = {}
+    for row_index, cm in confirmed_by_row.items():
+        if cm.get("mapping_action") == "override":
+            explicit_overrides[row_index] = str(cm.get("standard_account_id"))
+
+    async def _confirmed_or_recommended_anchor(node: AccountTreeNode) -> AnchorResolution | None:
+        cm = confirmed_by_row.get(node.row_index)
+        if cm is not None:
+            sa = standard_by_id.get(str(cm.get("standard_account_id")))
+            if sa is None:
+                return AnchorResolution(
+                    standard_account_id=None,
+                    standard_account_code=None,
+                    standard_account_name=None,
+                    source=None,
+                    reason="confirmed standard account not found",
+                    is_resolved=False,
+                    auto_confirm_status="none",
+                    auto_confirm_reason="confirmed standard account not found",
+                )
+            return AnchorResolution(
+                standard_account_id=str(sa.id),
+                standard_account_code=sa.account_code,
+                standard_account_name=sa.account_name,
+                source=cm.get("selection_source") or "user_confirmed",
+                reason=cm.get("review_reason") or cm.get("selection_source") or "user_confirmed",
+                is_resolved=True,
+                auto_confirm_status="user_confirmed",
+                auto_confirm_reason=cm.get("review_reason") or "user confirmed mapping",
+                suggested_standard_account_id=str(sa.id),
+                suggested_standard_account_code=sa.account_code,
+                suggested_standard_account_name=sa.account_name,
+                suggested_source=cm.get("selection_source") or "user_confirmed",
+                suggested_reason=cm.get("review_reason") or "user confirmed mapping",
+            )
+        if recommend_anchor_fn is None:
+            return None
+        return await recommend_anchor_fn(node)
+
+    resolved_tree, summary = await build_mapping_plan(
+        tree=tree,
+        db=db,
+        customer_label=customer_label,
+        source_label=source_label,
+        recommend_anchor_fn=_confirmed_or_recommended_anchor,
+        explicit_overrides=explicit_overrides,
+        discovery=discovery,
+    )
+    errors = validate_mapping_plan(resolved_tree, explicit_overrides)
+    leaf_accounts = resolve_leaf_standard_accounts(resolved_tree)
+    return MappingPlanResult(
+        tree=resolved_tree,
+        summary=summary,
+        leaf_standard_accounts=leaf_accounts,
+        validation_errors=errors,
+    )
 
 
 _sa_cache: dict[str, StandardAccount] = {}

@@ -1,0 +1,1077 @@
+{
+  "file_key": "chengdu_dikang",
+  "confirmed_mappings": [
+    {
+      "row_index": 5,
+      "client_account_code": "1002010101",
+      "client_account_name": "农行成都金地花园支行-22920201040008410",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 7,
+      "client_account_code": "1002010301",
+      "client_account_name": "招行成都金牛支行-128909549010603",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 9,
+      "client_account_code": "1002010501",
+      "client_account_name": "工行成都盐市口支行-4402902019100568903",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 11,
+      "client_account_code": "1002010601",
+      "client_account_name": "兴业银行成都郫都支行-431200100100182414",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 12,
+      "client_account_code": "1002010602",
+      "client_account_name": "兴业银行武汉武昌支行-416140100100248303",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 14,
+      "client_account_code": "1002010701",
+      "client_account_name": "民生银行成都分行营业部-675009688",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 16,
+      "client_account_code": "1002011101",
+      "client_account_name": "成都银行郫都支行-1001300000737723",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 18,
+      "client_account_code": "1002011201",
+      "client_account_name": "大连银行成都分行-101604209021696",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 20,
+      "client_account_code": "1002011501",
+      "client_account_name": "成都农商行商业城支行-1000050007459851",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 23,
+      "client_account_code": "1002020101",
+      "client_account_name": "农行成都蜀都支行（美元户）22920114040000933",
+      "standard_account_code": "1002",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 29,
+      "client_account_code": "1121010101",
+      "client_account_name": "农行成都金地花园支行-22920201040008410",
+      "standard_account_code": "112101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 31,
+      "client_account_code": "1121010601",
+      "client_account_name": "兴业银行成都郫都支行-431200100100182414",
+      "standard_account_code": "112101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 55,
+      "client_account_code": "122201",
+      "client_account_name": "往来款",
+      "standard_account_code": "1403",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 56,
+      "client_account_code": "122202",
+      "client_account_name": "代收代付",
+      "standard_account_code": "1403",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 63,
+      "client_account_code": "1409",
+      "client_account_name": "自制半成品",
+      "standard_account_code": "1409",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 64,
+      "client_account_code": "1410",
+      "client_account_name": "包装材料",
+      "standard_account_code": "1410",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 70,
+      "client_account_code": "147199",
+      "client_account_name": "其他存货",
+      "standard_account_code": "1012",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 72,
+      "client_account_code": "151101",
+      "client_account_name": "投资成本",
+      "standard_account_code": "151101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 73,
+      "client_account_code": "1601",
+      "client_account_name": "固定资产",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 75,
+      "client_account_code": "160102",
+      "client_account_name": "专用设备",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 76,
+      "client_account_code": "160103",
+      "client_account_name": "运输设备",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 77,
+      "client_account_code": "160106",
+      "client_account_name": "通用设备",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 78,
+      "client_account_code": "160199",
+      "client_account_name": "其他",
+      "standard_account_code": "160101",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 80,
+      "client_account_code": "160201",
+      "client_account_name": "房屋、建筑物",
+      "standard_account_code": "1602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 81,
+      "client_account_code": "160202",
+      "client_account_name": "专用设备",
+      "standard_account_code": "1602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 82,
+      "client_account_code": "160203",
+      "client_account_name": "运输设备",
+      "standard_account_code": "1602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 83,
+      "client_account_code": "160206",
+      "client_account_name": "通用设备",
+      "standard_account_code": "1602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 84,
+      "client_account_code": "160299",
+      "client_account_name": "其他",
+      "standard_account_code": "1602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 89,
+      "client_account_code": "1606",
+      "client_account_name": "固定资产清理",
+      "standard_account_code": "1606",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 90,
+      "client_account_code": "160602",
+      "client_account_name": "机器设备清理",
+      "standard_account_code": "1606",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 91,
+      "client_account_code": "160603",
+      "client_account_name": "运输设备清理",
+      "standard_account_code": "1606",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 92,
+      "client_account_code": "160699",
+      "client_account_name": "其他设备清理",
+      "standard_account_code": "1606",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 99,
+      "client_account_code": "170201",
+      "client_account_name": "土地使用权",
+      "standard_account_code": "1702",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 100,
+      "client_account_code": "170202",
+      "client_account_name": "专利权",
+      "standard_account_code": "1702",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 101,
+      "client_account_code": "170203",
+      "client_account_name": "非专利技术",
+      "standard_account_code": "1702",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 102,
+      "client_account_code": "170205",
+      "client_account_name": "软件",
+      "standard_account_code": "1702",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 108,
+      "client_account_code": "18110103",
+      "client_account_name": "存货跌价准备",
+      "standard_account_code": "1811",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 109,
+      "client_account_code": "18110107",
+      "client_account_name": "固定资产",
+      "standard_account_code": "1602",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 111,
+      "client_account_code": "1901",
+      "client_account_name": "待处理财产损溢",
+      "standard_account_code": "1901",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 112,
+      "client_account_code": "190101",
+      "client_account_name": "流动资产损溢",
+      "standard_account_code": "1901",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 116,
+      "client_account_code": "22020101",
+      "client_account_name": "内部供应商款",
+      "standard_account_code": "2202",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 117,
+      "client_account_code": "22020102",
+      "client_account_name": "暂估内部供应商款",
+      "standard_account_code": "2202",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 119,
+      "client_account_code": "22020204",
+      "client_account_name": "外部供应商",
+      "standard_account_code": "2202",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 120,
+      "client_account_code": "22020205",
+      "client_account_name": "暂估外部供应商",
+      "standard_account_code": "2202",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 127,
+      "client_account_code": "2211010101",
+      "client_account_name": "月度工资",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 129,
+      "client_account_code": "22110201",
+      "client_account_name": "工作餐",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 130,
+      "client_account_code": "22110202",
+      "client_account_name": "节假日福利",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 131,
+      "client_account_code": "22110299",
+      "client_account_name": "其他",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 133,
+      "client_account_code": "22110301",
+      "client_account_name": "养老保险",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 134,
+      "client_account_code": "22110302",
+      "client_account_name": "医疗保险费",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 135,
+      "client_account_code": "22110303",
+      "client_account_name": "工伤保险费",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 136,
+      "client_account_code": "22110305",
+      "client_account_name": "失业保险",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 137,
+      "client_account_code": "22110399",
+      "client_account_name": "其他",
+      "standard_account_code": "2211",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 147,
+      "client_account_code": "2221010101",
+      "client_account_name": "增值税专用发票",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 148,
+      "client_account_code": "2221010102",
+      "client_account_name": "购进农产品计算抵扣",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 149,
+      "client_account_code": "2221010104",
+      "client_account_name": "旅客运输服务计算抵扣",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 150,
+      "client_account_code": "2221010105",
+      "client_account_name": "路桥通行费进项税额",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 151,
+      "client_account_code": "2221010107",
+      "client_account_name": "代扣代缴完税凭证",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 153,
+      "client_account_code": "2221010202",
+      "client_account_name": "销项税销项税13％",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 154,
+      "client_account_code": "2221010207",
+      "client_account_name": "销项税销项税6％",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 155,
+      "client_account_code": "2221010208",
+      "client_account_name": "销项税销项税5％",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 156,
+      "client_account_code": "2221010209",
+      "client_account_name": "销项税销项税3％",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 157,
+      "client_account_code": "2221010211",
+      "client_account_name": "销项税销项税2％",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 158,
+      "client_account_code": "22210105",
+      "client_account_name": "转出未交增值税",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 159,
+      "client_account_code": "22210109",
+      "client_account_name": "进项税额转出",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 161,
+      "client_account_code": "22210201",
+      "client_account_name": "本期转入数",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 167,
+      "client_account_code": "22211102",
+      "client_account_name": "从价计征",
+      "standard_account_code": "2221",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 179,
+      "client_account_code": "2241020201",
+      "client_account_name": "质量保证金",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 180,
+      "client_account_code": "2241020202",
+      "client_account_name": "货款保证金",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 181,
+      "client_account_code": "2241020203",
+      "client_account_name": "招标保证金",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 182,
+      "client_account_code": "2241020205",
+      "client_account_name": "履约保证金",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 183,
+      "client_account_code": "2241020299",
+      "client_account_name": "其他保证金",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 184,
+      "client_account_code": "22410211",
+      "client_account_name": "暂估工程款",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 185,
+      "client_account_code": "22410213",
+      "client_account_name": "代扣工会经费",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 187,
+      "client_account_code": "2241021401",
+      "client_account_name": "笔记本电脑款",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 188,
+      "client_account_code": "2241021405",
+      "client_account_name": "个人认缴爱心互助金",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 191,
+      "client_account_code": "2241029901",
+      "client_account_name": "返还手续费",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 192,
+      "client_account_code": "2241029902",
+      "client_account_name": "卸货费",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 193,
+      "client_account_code": "2241029999",
+      "client_account_name": "其他",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 195,
+      "client_account_code": "22410401",
+      "client_account_name": "房租及综合服务费",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 196,
+      "client_account_code": "22410402",
+      "client_account_name": "市场费用",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 197,
+      "client_account_code": "22410405",
+      "client_account_name": "营销部运费",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 198,
+      "client_account_code": "22410408",
+      "client_account_name": "销售返利",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 199,
+      "client_account_code": "22410499",
+      "client_account_name": "其他费用",
+      "standard_account_code": "2241",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 202,
+      "client_account_code": "2501",
+      "client_account_name": "长期借款",
+      "standard_account_code": "2502",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 205,
+      "client_account_code": "2702",
+      "client_account_name": "未确认融资费用",
+      "standard_account_code": "2702",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 214,
+      "client_account_code": "4103",
+      "client_account_name": "本年利润",
+      "standard_account_code": "4103",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 224,
+      "client_account_code": "51010101",
+      "client_account_name": "工资",
+      "standard_account_code": "5101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 225,
+      "client_account_code": "51010102",
+      "client_account_name": "职工福利",
+      "standard_account_code": "5101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 226,
+      "client_account_code": "51010103",
+      "client_account_name": "员工保险费",
+      "standard_account_code": "5101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 227,
+      "client_account_code": "51010104",
+      "client_account_name": "住房公积金",
+      "standard_account_code": "5101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 228,
+      "client_account_code": "51010105",
+      "client_account_name": "工会经费",
+      "standard_account_code": "5101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 229,
+      "client_account_code": "51010108",
+      "client_account_name": "劳务用工",
+      "standard_account_code": "5101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 244,
+      "client_account_code": "5301010101",
+      "client_account_name": "工资",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 245,
+      "client_account_code": "5301010102",
+      "client_account_name": "职工福利",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 246,
+      "client_account_code": "5301010103",
+      "client_account_name": "员工保险费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 247,
+      "client_account_code": "5301010104",
+      "client_account_name": "住房公积金",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 248,
+      "client_account_code": "5301010105",
+      "client_account_name": "工会经费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 249,
+      "client_account_code": "5301010106",
+      "client_account_name": "职工教育经费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 250,
+      "client_account_code": "5301010107",
+      "client_account_name": "劳务用工",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 252,
+      "client_account_code": "5301010201",
+      "client_account_name": "检测费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 253,
+      "client_account_code": "5301010202",
+      "client_account_name": "材料费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 254,
+      "client_account_code": "5301010205",
+      "client_account_name": "维修费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 255,
+      "client_account_code": "5301010206",
+      "client_account_name": "水电费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 256,
+      "client_account_code": "53010103",
+      "client_account_name": "折旧摊销费用与长期待摊费用",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 260,
+      "client_account_code": "53010106",
+      "client_account_name": "委托外部研究开发费用",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 262,
+      "client_account_code": "5301019902",
+      "client_account_name": "差旅费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 263,
+      "client_account_code": "5301019903",
+      "client_account_name": "办公费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 264,
+      "client_account_code": "5301019904",
+      "client_account_name": "业务招待费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 265,
+      "client_account_code": "5301019906",
+      "client_account_name": "会务费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 266,
+      "client_account_code": "5301019999",
+      "client_account_name": "其他",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 269,
+      "client_account_code": "5301020201",
+      "client_account_name": "检测费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 270,
+      "client_account_code": "5301020202",
+      "client_account_name": "材料费",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 271,
+      "client_account_code": "53010205",
+      "client_account_name": "委托外部研究开发费用",
+      "standard_account_code": "660201",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 274,
+      "client_account_code": "60010301",
+      "client_account_name": "产品收入",
+      "standard_account_code": "6001",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 275,
+      "client_account_code": "60010302",
+      "client_account_name": "加工收入",
+      "standard_account_code": "6001",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 278,
+      "client_account_code": "60510301",
+      "client_account_name": "租金",
+      "standard_account_code": "6051",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 279,
+      "client_account_code": "60510303",
+      "client_account_name": "废品销售收入",
+      "standard_account_code": "6051",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 280,
+      "client_account_code": "60510304",
+      "client_account_name": "劳务收入",
+      "standard_account_code": "6051",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 281,
+      "client_account_code": "60510305",
+      "client_account_name": "受托研发收入",
+      "standard_account_code": "6051",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 282,
+      "client_account_code": "60510399",
+      "client_account_name": "其他",
+      "standard_account_code": "6051",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 283,
+      "client_account_code": "6115",
+      "client_account_name": "资产处置损益",
+      "standard_account_code": "6115",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 284,
+      "client_account_code": "611502",
+      "client_account_name": "处置未划分为持有待售的非流动资产的利得或损失",
+      "standard_account_code": "6115",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 294,
+      "client_account_code": "64010301",
+      "client_account_name": "产品成本",
+      "standard_account_code": "6401",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 295,
+      "client_account_code": "64010302",
+      "client_account_name": "加工成本",
+      "standard_account_code": "6401",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 296,
+      "client_account_code": "64010303",
+      "client_account_name": "运输成本",
+      "standard_account_code": "6401",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 300,
+      "client_account_code": "64020304",
+      "client_account_name": "受托研发成本",
+      "standard_account_code": "6402",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 301,
+      "client_account_code": "64020399",
+      "client_account_name": "其他",
+      "standard_account_code": "6402",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 314,
+      "client_account_code": "660101010101",
+      "client_account_name": "月度工资",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 316,
+      "client_account_code": "6601010206",
+      "client_account_name": "社会保险费",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 317,
+      "client_account_code": "66010103",
+      "client_account_name": "住房公积金",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 318,
+      "client_account_code": "66010104",
+      "client_account_name": "职工福利",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 319,
+      "client_account_code": "66010105",
+      "client_account_name": "工会经费",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 320,
+      "client_account_code": "66010110",
+      "client_account_name": "销售提成",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 324,
+      "client_account_code": "66010701",
+      "client_account_name": "办公用品",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 325,
+      "client_account_code": "66010704",
+      "client_account_name": "矿泉水费",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 326,
+      "client_account_code": "66010799",
+      "client_account_name": "其他",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 342,
+      "client_account_code": "660201",
+      "client_account_name": "人员费用",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 345,
+      "client_account_code": "660201010101",
+      "client_account_name": "月度工资",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 347,
+      "client_account_code": "6602010206",
+      "client_account_name": "社保保险",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 348,
+      "client_account_code": "66020103",
+      "client_account_name": "住房公积金",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 349,
+      "client_account_code": "66020104",
+      "client_account_name": "职工福利",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 350,
+      "client_account_code": "66020105",
+      "client_account_name": "工会经费",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 351,
+      "client_account_code": "66020106",
+      "client_account_name": "职工教育经费",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 352,
+      "client_account_code": "66020107",
+      "client_account_name": "辞退福利",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 358,
+      "client_account_code": "66020701",
+      "client_account_name": "办公用品",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 359,
+      "client_account_code": "66020702",
+      "client_account_name": "矿泉水费",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 360,
+      "client_account_code": "66020704",
+      "client_account_name": "文化建设及宣传",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 361,
+      "client_account_code": "66020799",
+      "client_account_name": "其他",
+      "standard_account_code": "6602",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 390,
+      "client_account_code": "660301",
+      "client_account_name": "利息收支",
+      "standard_account_code": "6603",
+      "review_reason": "????????????"
+    },
+    {
+      "row_index": 391,
+      "client_account_code": "66030101",
+      "client_account_name": "利息收入",
+      "standard_account_code": "660302",
+      "review_reason": "????????"
+    },
+    {
+      "row_index": 392,
+      "client_account_code": "66030102",
+      "client_account_name": "利息支出",
+      "standard_account_code": "660301",
+      "review_reason": "????????"
+    },
+    {
+      "row_index": 396,
+      "client_account_code": "670202",
+      "client_account_name": "其他应收款",
+      "standard_account_code": "122101",
+      "review_reason": "????????????"
+    }
+  ],
+  "ignored_rows": []
+}

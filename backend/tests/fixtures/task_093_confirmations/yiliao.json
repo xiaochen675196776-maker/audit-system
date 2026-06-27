@@ -1,0 +1,83 @@
+{
+  "file_key": "yiliao",
+  "confirmed_mappings": [
+    {
+      "row_index": 28,
+      "client_account_code": "1471",
+      "client_account_name": "存货跌价准备",
+      "standard_account_code": "147101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 29,
+      "client_account_code": "1601",
+      "client_account_name": "固定资产",
+      "standard_account_code": "160101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 30,
+      "client_account_code": "160102",
+      "client_account_name": "固定资产\\机器设备",
+      "standard_account_code": "160101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 31,
+      "client_account_code": "160104",
+      "client_account_name": "固定资产\\电子设备",
+      "standard_account_code": "160101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 32,
+      "client_account_code": "160105",
+      "client_account_name": "固定资产\\其他设备",
+      "standard_account_code": "160101",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 38,
+      "client_account_code": "165101",
+      "client_account_name": "使用权资产\\房屋及建筑物",
+      "standard_account_code": "164101",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 77,
+      "client_account_code": "27050101",
+      "client_account_name": "租赁负债\\租赁付款额\\合同金额",
+      "standard_account_code": "270201",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 78,
+      "client_account_code": "27050102",
+      "client_account_name": "租赁负债\\租赁付款额\\已付款",
+      "standard_account_code": "270201",
+      "review_reason": "???????????"
+    },
+    {
+      "row_index": 83,
+      "client_account_code": "4103",
+      "client_account_name": "本年利润",
+      "standard_account_code": "4103",
+      "review_reason": "???????????????"
+    },
+    {
+      "row_index": 114,
+      "client_account_code": "660113",
+      "client_account_name": "销售费用\\租房成本",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    },
+    {
+      "row_index": 115,
+      "client_account_code": "66011301",
+      "client_account_name": "销售费用\\租房成本\\租金",
+      "standard_account_code": "6601",
+      "review_reason": "??????????"
+    }
+  ],
+  "ignored_rows": []
+}
