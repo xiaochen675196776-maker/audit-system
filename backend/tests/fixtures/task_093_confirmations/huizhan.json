@@ -1,96 +1,232 @@
 {
   "file_key": "huizhan",
+  "fixture_version": 2,
+  "data_classification": "deidentified_test_fixture",
+  "reviewed_at": "2026-06-27",
+  "reviewed_by": "reviewer_internal_id",
+  "review_method": "manual_accounting_review",
+  "fixture_source": "原 huizhan.xlsx 是某会展企业的科目余额表,口径较简单,主要复核固定资产/长期借款/本年利润。",
   "confirmed_mappings": [
     {
+      "row_key": "sha256:30c5c0c2ea3e97a9c7978b7abbb66121",
       "row_index": 2,
-      "client_account_code": "1122",
-      "client_account_name": "1122\\应收账款",
+      "source_account_code": "1122",
+      "source_account_name_masked": "应收账款",
       "standard_account_code": "112201",
-      "review_reason": "????????"
+      "standard_account_name": "应收账款",
+      "review_reason": "源科目 1122 '应收账款' 对应标准科目 112201 '应收账款',反映企业因销售商品、提供劳务等应向购货单位/接受劳务单位收取的款项,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:11f35f51b9cf5b1b7bf30822e24698fc",
       "row_index": 13,
-      "client_account_code": "123101",
-      "client_account_name": "123101\\坏账准备\\应收账款",
+      "source_account_code": "123101",
+      "source_account_name_masked": "坏账准备-应收账款",
       "standard_account_code": "112202",
-      "review_reason": "????-????????"
+      "standard_account_name": "减：应收账款-坏账准备",
+      "review_reason": "源科目 123101 '坏账准备-应收账款' 对应标准科目 112202 '减:应收账款-坏账准备',反映应收账款计提的坏账准备,余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:f995e5ee71967a7767bab7432017aa96",
       "row_index": 17,
-      "client_account_code": "1601",
-      "client_account_name": "1601\\固定资产",
+      "source_account_code": "1601",
+      "source_account_name_masked": "固定资产",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 1601 '固定资产' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:f6b87b567959f02d618e19b6b1d5d964",
       "row_index": 18,
-      "client_account_code": "160101",
-      "client_account_name": "160101\\固定资产\\房屋、建筑物",
+      "source_account_code": "160101",
+      "source_account_name_masked": "固定资产-房屋、建筑物",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 160101 '固定资产-房屋、建筑物' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:e18834fb4876c9095cca4c838d6f3b5a",
       "row_index": 19,
-      "client_account_code": "160102",
-      "client_account_name": "160102\\固定资产\\专用设备",
+      "source_account_code": "160102",
+      "source_account_name_masked": "固定资产-专用设备",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 160102 '固定资产-专用设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:7969f13742dd7d7285f13e0b90cbd404",
       "row_index": 20,
-      "client_account_code": "160103",
-      "client_account_name": "160103\\固定资产\\运输设备",
+      "source_account_code": "160103",
+      "source_account_name_masked": "固定资产-运输设备",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 160103 '固定资产-运输设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:cbe76b82941dde7c96ea1838c095006b",
       "row_index": 21,
-      "client_account_code": "160104",
-      "client_account_name": "160104\\固定资产\\办公设备",
+      "source_account_code": "160104",
+      "source_account_name_masked": "固定资产-办公设备",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 160104 '固定资产-办公设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:9a99f40d54cc98cca0ad8b8ed11c8db3",
       "row_index": 22,
-      "client_account_code": "160105",
-      "client_account_name": "160105\\固定资产\\办公家具",
+      "source_account_code": "160105",
+      "source_account_name_masked": "固定资产-办公家具",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 160105 '固定资产-办公家具' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:0ef9dd1660a798b05311a66380378cdb",
       "row_index": 23,
-      "client_account_code": "160199",
-      "client_account_name": "160199\\固定资产\\其他",
+      "source_account_code": "160199",
+      "source_account_name_masked": "固定资产-其他",
       "standard_account_code": "160101",
-      "review_reason": "????????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目 160199 '固定资产-其他' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:9b8b574e007e32e32f7adec5fde610ef",
       "row_index": 75,
-      "client_account_code": "22210101",
-      "client_account_name": "22210101\\应交税费\\应交增值税\\进项税",
+      "source_account_code": "22210101",
+      "source_account_name_masked": "应交税费-应交增值税-进项税",
       "standard_account_code": "2221",
-      "review_reason": "?????????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 22210101 '应交税费-应交增值税-进项税' 对应标准科目 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:8e7cf1ca97d4179c828807a765e84fb4",
       "row_index": 78,
-      "client_account_code": "22210102",
-      "client_account_name": "22210102\\应交税费\\应交增值税\\销项税",
+      "source_account_code": "22210102",
+      "source_account_name_masked": "应交税费-应交增值税-销项税",
       "standard_account_code": "2221",
-      "review_reason": "?????????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 22210102 '应交税费-应交增值税-销项税' 对应标准科目 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:0f9b6ef641f9e85af7957173b88b8460",
       "row_index": 111,
-      "client_account_code": "2501",
-      "client_account_name": "2501\\长期借款",
+      "source_account_code": "2501",
+      "source_account_name_masked": "长期借款",
       "standard_account_code": "2502",
-      "review_reason": "????????"
+      "standard_account_name": "长期借款",
+      "review_reason": "源科目 2501 '长期借款' 对应标准科目 2502 '长期借款',反映企业向银行或其他金融机构借入的偿还期在一年以上的借款,余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:3d5ba1c7c38a9a0200cbe579fba85284",
       "row_index": 119,
-      "client_account_code": "4103",
-      "client_account_name": "4103\\本年利润",
+      "source_account_code": "4103",
+      "source_account_name_masked": "本年利润",
       "standard_account_code": "4103",
-      "review_reason": "???????????????"
+      "standard_account_name": "未分配利润",
+      "review_reason": "源科目 4103 '本年利润' 按年末结转统一映射至 4103 '未分配利润',余额方向贷方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     }
   ],
   "ignored_rows": []

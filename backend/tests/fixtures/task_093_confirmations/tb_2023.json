@@ -1,572 +1,1388 @@
 {
   "file_key": "tb_2023",
+  "fixture_version": 2,
+  "data_classification": "deidentified_test_fixture",
+  "reviewed_at": "2026-06-27",
+  "reviewed_by": "reviewer_internal_id",
+  "review_method": "manual_accounting_review",
+  "fixture_source": "原 tb_2023.xls 是某化工企业的科目余额表,已脱敏所有供应商/客户/科目明细名后入册。",
   "confirmed_mappings": [
     {
+      "row_key": "sha256:3f00a2aebd481ae8b3601c4490c6a81c",
       "row_index": 0,
-      "client_account_code": "101",
-      "client_account_name": "现金",
+      "source_account_code": "101",
+      "source_account_name_masked": "现金",
       "standard_account_code": "1001",
-      "review_reason": "?????????"
+      "standard_account_name": "库存现金",
+      "review_reason": "源科目编码 101 属于传统小企业科目编码,'现金'对应标准科目 1001 '库存现金',反映企业库存现金余额,余额方向为借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:5617abc5650cce8acb4735a0c2022bde",
       "row_index": 60,
-      "client_account_code": "137",
-      "client_account_name": "产成品",
+      "source_account_code": "137",
+      "source_account_name_masked": "产成品",
       "standard_account_code": "1405",
-      "review_reason": "?????????"
+      "standard_account_name": "库存商品",
+      "review_reason": "源科目'产成品'在传统小企业科目编码下属于存货,标准科目映射至 1405 '库存商品',反映企业已完工入库待销售产品的成本,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:451fc88c625698bb82385fba47db0d0f",
       "row_index": 61,
-      "client_account_code": "161",
-      "client_account_name": "固定资产",
+      "source_account_code": "161",
+      "source_account_name_masked": "固定资产",
       "standard_account_code": "160101",
-      "review_reason": "?????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目编码 161 对应'固定资产',按现行企业会计准则统一映射至 160101 '固定资产-原值',反映固定资产入账原值,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:8934464da735742def787b1ba0af0aef",
       "row_index": 63,
-      "client_account_code": "169.001",
-      "client_account_name": "化工部上海化工研究院",
+      "source_account_code": "169.001",
+      "source_account_name_masked": "供应商A-在建工程设备",
       "standard_account_code": "160401",
-      "review_reason": "??????????"
+      "standard_account_name": "在建工程-原值",
+      "review_reason": "源科目 169.001 'A' 属于 169 在建工程供应商明细(已脱敏为'供应商A'),统一映射至 160401 '在建工程-原值',反映项目实施中供应商对应设备的累计成本,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:268ec0aaac8ea41d0c6c46a1a36d7918",
       "row_index": 64,
-      "client_account_code": "169.002",
-      "client_account_name": "无锡建保环境保护公司",
+      "source_account_code": "169.002",
+      "source_account_name_masked": "供应商B-在建工程设备",
       "standard_account_code": "160401",
-      "review_reason": "??????????"
+      "standard_account_name": "在建工程-原值",
+      "review_reason": "源科目 169.002 'B' 属于 169 在建工程供应商明细(已脱敏为'供应商B'),统一映射至 160401 '在建工程-原值',反映项目实施中供应商对应设备的累计成本,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:e02deeda5f8ed0c7f06ed44b0272f436",
       "row_index": 65,
-      "client_account_code": "169.003",
-      "client_account_name": "江阴干燥机械厂",
+      "source_account_code": "169.003",
+      "source_account_name_masked": "供应商C-在建工程设备",
       "standard_account_code": "160401",
-      "review_reason": "??????????"
+      "standard_account_name": "在建工程-原值",
+      "review_reason": "源科目 169.003 'C' 属于 169 在建工程供应商明细(已脱敏为'供应商C'),统一映射至 160401 '在建工程-原值',反映项目实施中供应商对应设备的累计成本,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:c303e30ae60762a1901aa2a7804d552c",
       "row_index": 66,
-      "client_account_code": "169.004",
-      "client_account_name": "武进优力干燥设备公司",
+      "source_account_code": "169.004",
+      "source_account_name_masked": "供应商D-在建工程设备",
       "standard_account_code": "160401",
-      "review_reason": "??????????"
+      "standard_account_name": "在建工程-原值",
+      "review_reason": "源科目 169.004 'D' 属于 169 在建工程供应商明细(已脱敏为'供应商D'),统一映射至 160401 '在建工程-原值',反映项目实施中供应商对应设备的累计成本,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:3d5252af121000998136f8f89ef62b8a",
       "row_index": 67,
-      "client_account_code": "169.005",
-      "client_account_name": "天津华邦科技发展公司",
+      "source_account_code": "169.005",
+      "source_account_name_masked": "供应商E-在建工程设备",
       "standard_account_code": "160401",
-      "review_reason": "??????????"
+      "standard_account_name": "在建工程-原值",
+      "review_reason": "源科目 169.005 'E' 属于 169 在建工程供应商明细(已脱敏为'供应商E'),统一映射至 160401 '在建工程-原值',反映项目实施中供应商对应设备的累计成本,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:fd7ec8fb0cd479a8fce9444983852b2a",
       "row_index": 68,
-      "client_account_code": "169.006",
-      "client_account_name": "锡山林洲干燥机厂",
+      "source_account_code": "169.006",
+      "source_account_name_masked": "供应商F-在建工程设备",
       "standard_account_code": "160401",
-      "review_reason": "??????????"
+      "standard_account_name": "在建工程-原值",
+      "review_reason": "源科目 169.006 'F' 属于 169 在建工程供应商明细(已脱敏为'供应商F'),统一映射至 160401 '在建工程-原值',反映项目实施中供应商对应设备的累计成本,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:5d42cccf137978e4162163dd0cb75ac0",
       "row_index": 69,
-      "client_account_code": "201",
-      "client_account_name": "短期借款",
+      "source_account_code": "201",
+      "source_account_name_masked": "短期借款",
       "standard_account_code": "2001",
-      "review_reason": "?????????"
+      "standard_account_name": "短期借款",
+      "review_reason": "源科目'短期借款'直接对应标准科目 2001 '短期借款',反映企业向银行或其他金融机构借入的偿还期在一年以内的借款,余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:0d2c7649b9adbf07531bfe0324a579b4",
       "row_index": 73,
-      "client_account_code": "211",
-      "client_account_name": "应付工资",
+      "source_account_code": "211",
+      "source_account_name_masked": "应付工资",
       "standard_account_code": "2211",
-      "review_reason": "?????????"
+      "standard_account_name": "应付职工薪酬",
+      "review_reason": "源科目'应付工资'按现行准则统一映射至 2211 '应付职工薪酬',反映企业应支付给职工的工资、奖金、津贴等,余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:2687216133abb284d49ecc7cac3668fd",
       "row_index": 76,
-      "client_account_code": "221.01.01",
-      "client_account_name": "进项税",
+      "source_account_code": "221.01.01",
+      "source_account_name_masked": "进项税",
       "standard_account_code": "2221",
-      "review_reason": "??????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 '进项税' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:329416cad1724ef97fdd3f5b141f82da",
       "row_index": 77,
-      "client_account_code": "221.01.02",
-      "client_account_name": "销项税",
+      "source_account_code": "221.01.02",
+      "source_account_name_masked": "销项税",
       "standard_account_code": "2221",
-      "review_reason": "??????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 '销项税' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:7b791667c4717f3318f6c06d74a05439",
       "row_index": 78,
-      "client_account_code": "221.01.03",
-      "client_account_name": "已交税金",
+      "source_account_code": "221.01.03",
+      "source_account_name_masked": "已交税金",
       "standard_account_code": "2221",
-      "review_reason": "??????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 '已交税金' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:6da68540486b7d4d806995e52feb1784",
       "row_index": 79,
-      "client_account_code": "221.01.04",
-      "client_account_name": "未交税金",
+      "source_account_code": "221.01.04",
+      "source_account_name_masked": "未交税金",
       "standard_account_code": "2221",
-      "review_reason": "??????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 '未交税金' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:73fcc8ac39ac9d4f61f2902085641025",
       "row_index": 80,
-      "client_account_code": "221.01.05",
-      "client_account_name": "进项税额转出",
+      "source_account_code": "221.01.05",
+      "source_account_name_masked": "进项税额转出",
       "standard_account_code": "2221",
-      "review_reason": "??????????"
+      "standard_account_name": "应交税费",
+      "review_reason": "源科目 '进项税额转出' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:539743fdc8996bd5ddc684f58f922db6",
       "row_index": 83,
-      "client_account_code": "229.03",
-      "client_account_name": "教育事业附加费",
+      "source_account_code": "229.03",
+      "source_account_name_masked": "教育事业附加费",
       "standard_account_code": "2241",
-      "review_reason": "?????????"
+      "standard_account_name": "其他应付款",
+      "review_reason": "源科目 '教育事业附加费' 在 2241 '其他应付款' 下汇总反映附加税及附加未缴余额,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:e76a9112d9f5d9cd18c85fa6d456ed86",
       "row_index": 84,
-      "client_account_code": "229.07",
-      "client_account_name": "工会经费",
+      "source_account_code": "229.07",
+      "source_account_name_masked": "工会经费",
       "standard_account_code": "2241",
-      "review_reason": "?????????"
+      "standard_account_name": "其他应付款",
+      "review_reason": "源科目 '工会经费' 在 2241 '其他应付款' 下汇总反映附加税及附加未缴余额,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:a13971409bc5e7b250c09b56589b8b6a",
       "row_index": 85,
-      "client_account_code": "229.08",
-      "client_account_name": "地方教育费附加",
+      "source_account_code": "229.08",
+      "source_account_name_masked": "地方教育费附加",
       "standard_account_code": "2241",
-      "review_reason": "?????????"
+      "standard_account_name": "其他应付款",
+      "review_reason": "源科目 '地方教育费附加' 在 2241 '其他应付款' 下汇总反映附加税及附加未缴余额,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:2b355aa6b67ca72076e19b75e321d16f",
       "row_index": 90,
-      "client_account_code": "321",
-      "client_account_name": "本年利润",
+      "source_account_code": "321",
+      "source_account_name_masked": "本年利润",
       "standard_account_code": "4103",
-      "review_reason": "?????????"
+      "standard_account_name": "未分配利润",
+      "review_reason": "源科目'本年利润'按年末结转逻辑统一映射至 4103 '未分配利润',反映企业期末累计未分配利润,余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:e4af4b170f1c141f8230ec76240bd9bb",
       "row_index": 103,
-      "client_account_code": "501.001",
-      "client_account_name": "防腐剂",
+      "source_account_code": "501.001",
+      "source_account_name_masked": "产品A-防腐剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.001 属于 501 主营业务收入下的'产品A'细分(已脱敏为防腐剂),反映企业销售防腐剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:78a6f0e94b4058e32f374815a34e0c4c",
       "row_index": 104,
-      "client_account_code": "501.002",
-      "client_account_name": "柴油改进剂",
+      "source_account_code": "501.002",
+      "source_account_name_masked": "产品B-柴油改进剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.002 属于 501 主营业务收入下的'产品B'细分(已脱敏为柴油改进剂),反映企业销售柴油改进剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:4159f148dd1ff078ea5fb935d3315814",
       "row_index": 105,
-      "client_account_code": "501.003",
-      "client_account_name": "破乳剂",
+      "source_account_code": "501.003",
+      "source_account_name_masked": "产品C-破乳剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.003 属于 501 主营业务收入下的'产品C'细分(已脱敏为破乳剂),反映企业销售破乳剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:5d0959178c6186c7a0c56898a8e8cb32",
       "row_index": 106,
-      "client_account_code": "501.004",
-      "client_account_name": "抗垢剂",
+      "source_account_code": "501.004",
+      "source_account_name_masked": "产品D-抗垢剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.004 属于 501 主营业务收入下的'产品D'细分(已脱敏为抗垢剂),反映企业销售抗垢剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:80fb47efcca03862b6a8c6ac3460e685",
       "row_index": 107,
-      "client_account_code": "501.005",
-      "client_account_name": "脱硫剂",
+      "source_account_code": "501.005",
+      "source_account_name_masked": "产品E-脱硫剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.005 属于 501 主营业务收入下的'产品E'细分(已脱敏为脱硫剂),反映企业销售脱硫剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:c4c55fca74b30ad54a17e3aac5628f85",
       "row_index": 108,
-      "client_account_code": "501.006",
-      "client_account_name": "钝化剂",
+      "source_account_code": "501.006",
+      "source_account_name_masked": "产品F-钝化剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.006 属于 501 主营业务收入下的'产品F'细分(已脱敏为钝化剂),反映企业销售钝化剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:7efe539355b38a361a144d8e33004c24",
       "row_index": 109,
-      "client_account_code": "501.007",
-      "client_account_name": "活化剂",
+      "source_account_code": "501.007",
+      "source_account_name_masked": "产品G-活化剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.007 属于 501 主营业务收入下的'产品G'细分(已脱敏为活化剂),反映企业销售活化剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:f5be42ef5a54e14a684f4f083c893c8b",
       "row_index": 110,
-      "client_account_code": "501.008",
-      "client_account_name": "复合助剂",
+      "source_account_code": "501.008",
+      "source_account_name_masked": "产品H-复合助剂",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.008 属于 501 主营业务收入下的'产品H'细分(已脱敏为复合助剂),反映企业销售复合助剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:6f83e450aad06831f07011934f4f5867",
       "row_index": 111,
-      "client_account_code": "501.009",
-      "client_account_name": "抗氧剂168",
+      "source_account_code": "501.009",
+      "source_account_name_masked": "产品I-抗氧剂168",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.009 属于 501 主营业务收入下的'产品I'细分(已脱敏为抗氧剂168),反映企业销售抗氧剂168的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:c2f8cd6c5d4ace66d8c63d6720c26fcf",
       "row_index": 112,
-      "client_account_code": "501.010",
-      "client_account_name": "抗氧剂1010",
+      "source_account_code": "501.010",
+      "source_account_name_masked": "产品J-抗氧剂1010",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.010 属于 501 主营业务收入下的'产品J'细分(已脱敏为抗氧剂1010),反映企业销售抗氧剂1010的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:a34e386593661d83678af3090f55675f",
       "row_index": 113,
-      "client_account_code": "501.011",
-      "client_account_name": "抗氧剂1076",
+      "source_account_code": "501.011",
+      "source_account_name_masked": "产品K-抗氧剂1076",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.011 属于 501 主营业务收入下的'产品K'细分(已脱敏为抗氧剂1076),反映企业销售抗氧剂1076的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:dc2b1ed2d843a484775ef3dd24e49f37",
       "row_index": 114,
-      "client_account_code": "501.012",
-      "client_account_name": "硬脂酸钙",
+      "source_account_code": "501.012",
+      "source_account_name_masked": "产品L-硬脂酸钙",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.012 属于 501 主营业务收入下的'产品L'细分(已脱敏为硬脂酸钙),反映企业销售硬脂酸钙的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:4bc6974f795bc33b39ae2715a3698589",
       "row_index": 115,
-      "client_account_code": "501.013",
-      "client_account_name": "硬脂酸锌",
+      "source_account_code": "501.013",
+      "source_account_name_masked": "产品M-硬脂酸锌",
       "standard_account_code": "6001",
-      "review_reason": "????????????"
+      "standard_account_name": "其中：主营业务收入",
+      "review_reason": "源科目 501.013 属于 501 主营业务收入下的'产品M'细分(已脱敏为硬脂酸锌),反映企业销售硬脂酸锌的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:32d88b2398dd0d4c8e6e25b5e06e3f6c",
       "row_index": 116,
-      "client_account_code": "502",
-      "client_account_name": "产品销售成本",
+      "source_account_code": "502",
+      "source_account_name_masked": "产品销售成本",
       "standard_account_code": "6401",
-      "review_reason": "?????????"
+      "standard_account_name": "其中：主营业务成本",
+      "review_reason": "源科目'产品销售成本'为传统小企业科目,按现行准则统一映射至 6401 '其中:主营业务成本',反映已销售产品的直接成本,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:15a8207c648df1985dfc99ccf3576155",
       "row_index": 117,
-      "client_account_code": "503",
-      "client_account_name": "产品销售费用",
+      "source_account_code": "503",
+      "source_account_name_masked": "产品销售费用",
       "standard_account_code": "6601",
-      "review_reason": "?????????"
+      "standard_account_name": "减：销售费用",
+      "review_reason": "源科目'产品销售费用'为传统小企业科目,按现行准则统一映射至 6601 '减:销售费用',反映企业销售环节发生的费用,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:e874329c5fee0206e6e48722766de189",
       "row_index": 118,
-      "client_account_code": "503.001",
-      "client_account_name": "运输费",
+      "source_account_code": "503.001",
+      "source_account_name_masked": "运输费",
       "standard_account_code": "6601",
-      "review_reason": "?????????????"
+      "standard_account_name": "减：销售费用",
+      "review_reason": "源科目 '运输费' 为销售费用明细,统一映射至 6601 '减:销售费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:b69ad38d07a468287ffac427cbf297c8",
       "row_index": 119,
-      "client_account_code": "503.003",
-      "client_account_name": "差旅费",
+      "source_account_code": "503.003",
+      "source_account_name_masked": "差旅费",
       "standard_account_code": "6601",
-      "review_reason": "?????????????"
+      "standard_account_name": "减：销售费用",
+      "review_reason": "源科目 '差旅费' 为销售费用明细,统一映射至 6601 '减:销售费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:ae8084da67d530e19b414445da0fde4f",
       "row_index": 120,
-      "client_account_code": "503.004",
-      "client_account_name": "其他费用",
+      "source_account_code": "503.004",
+      "source_account_name_masked": "其他费用",
       "standard_account_code": "6601",
-      "review_reason": "?????????????"
+      "standard_account_name": "减：销售费用",
+      "review_reason": "源科目 '其他费用' 为销售费用明细,统一映射至 6601 '减:销售费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:0ffafacf8436f73c00b29bdf06791d42",
       "row_index": 122,
-      "client_account_code": "511",
-      "client_account_name": "其他业务收入",
+      "source_account_code": "511",
+      "source_account_name_masked": "其他业务收入",
       "standard_account_code": "6051",
-      "review_reason": "?????????"
+      "standard_account_name": "其中：其他业务收入",
+      "review_reason": "源科目'其他业务收入'对应标准科目 6051 '其中:其他业务收入',反映企业主营业务以外的其他经营活动收入,余额方向贷方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:40a248bbf5a2eec39c614267e3f91937",
       "row_index": 124,
-      "client_account_code": "521.001",
-      "client_account_name": "差旅费",
+      "source_account_code": "521.001",
+      "source_account_name_masked": "差旅费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '差旅费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:67038cf1adaaf97c9f8ae678e264efad",
       "row_index": 125,
-      "client_account_code": "521.002",
-      "client_account_name": "办公费",
+      "source_account_code": "521.002",
+      "source_account_name_masked": "办公费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '办公费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:f1d384bfe3fb77a216e2ad8cf6d6cbdd",
       "row_index": 126,
-      "client_account_code": "521.003",
-      "client_account_name": "修理费",
+      "source_account_code": "521.003",
+      "source_account_name_masked": "修理费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '修理费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:956c32bfcca23bb161b1748280f46460",
       "row_index": 127,
-      "client_account_code": "521.004",
-      "client_account_name": "汽车",
+      "source_account_code": "521.004",
+      "source_account_name_masked": "汽车",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '汽车' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:9379285b64da86ad80a723693fabff03",
       "row_index": 128,
-      "client_account_code": "521.005",
-      "client_account_name": "业务招待费",
+      "source_account_code": "521.005",
+      "source_account_name_masked": "业务招待费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '业务招待费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:0b64b751e1cfe4fa866cb50224156bb5",
       "row_index": 129,
-      "client_account_code": "521.006",
-      "client_account_name": "其他管理费用",
+      "source_account_code": "521.006",
+      "source_account_name_masked": "其他管理费用",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '其他管理费用' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:3561848b5c60736504047f3655f019c1",
       "row_index": 130,
-      "client_account_code": "521.008",
-      "client_account_name": "职工福利费",
+      "source_account_code": "521.008",
+      "source_account_name_masked": "职工福利费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '职工福利费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:5ab579151246d0b1a307d9514bc00e3e",
       "row_index": 131,
-      "client_account_code": "521.010",
-      "client_account_name": "电话费",
+      "source_account_code": "521.010",
+      "source_account_name_masked": "电话费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '电话费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:36182b59ceeb011f5d89a10a3fce8139",
       "row_index": 132,
-      "client_account_code": "521.011",
-      "client_account_name": "税金",
+      "source_account_code": "521.011",
+      "source_account_name_masked": "税金",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '税金' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:dcb8c15118bc013a443b9dc49f92728e",
       "row_index": 133,
-      "client_account_code": "521.012",
-      "client_account_name": "安全生产费用",
+      "source_account_code": "521.012",
+      "source_account_name_masked": "安全生产费用",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '安全生产费用' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
-      "row_index": 137,
-      "client_account_code": "521.013.062.002",
-      "client_account_name": "工资",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 138,
-      "client_account_code": "521.013.062.003",
-      "client_account_name": "折旧",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 139,
-      "client_account_code": "521.013.062.004",
-      "client_account_name": "养老金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 140,
-      "client_account_code": "521.013.062.005",
-      "client_account_name": "住房公积金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 143,
-      "client_account_code": "521.013.063.002",
-      "client_account_name": "工资",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 144,
-      "client_account_code": "521.013.063.003",
-      "client_account_name": "折旧",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 145,
-      "client_account_code": "521.013.063.004",
-      "client_account_name": "保险费",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 146,
-      "client_account_code": "521.013.063.005",
-      "client_account_name": "住房公积金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 147,
-      "client_account_code": "521.013.063.006",
-      "client_account_name": "其他费用",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 150,
-      "client_account_code": "521.013.064.002",
-      "client_account_name": "工资",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 151,
-      "client_account_code": "521.013.064.003",
-      "client_account_name": "折旧",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 152,
-      "client_account_code": "521.013.064.004",
-      "client_account_name": "养老金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 153,
-      "client_account_code": "521.013.064.005",
-      "client_account_name": "住房公积金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 156,
-      "client_account_code": "521.013.065.002",
-      "client_account_name": "工资",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 157,
-      "client_account_code": "521.013.065.003",
-      "client_account_name": "折旧",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 158,
-      "client_account_code": "521.013.065.004",
-      "client_account_name": "养老金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 159,
-      "client_account_code": "521.013.065.005",
-      "client_account_name": "住房公积金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 162,
-      "client_account_code": "521.013.066.002",
-      "client_account_name": "工资",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 163,
-      "client_account_code": "521.013.066.003",
-      "client_account_name": "折旧",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 164,
-      "client_account_code": "521.013.066.004",
-      "client_account_name": "养老金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
-      "row_index": 165,
-      "client_account_code": "521.013.066.005",
-      "client_account_name": "住房公积金",
-      "standard_account_code": "6602",
-      "review_reason": "??????????"
-    },
-    {
+      "row_key": "sha256:34af2b480f4f762478f0cfff882ff49f",
       "row_index": 166,
-      "client_account_code": "521.015",
-      "client_account_name": "养老保险费",
+      "source_account_code": "521.015",
+      "source_account_name_masked": "养老保险费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '养老保险费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:4d36913dfb942bacc382a631acf22328",
       "row_index": 167,
-      "client_account_code": "521.016",
-      "client_account_name": "住房公积金",
+      "source_account_code": "521.016",
+      "source_account_name_masked": "住房公积金",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '住房公积金' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:c707a9c2622863ca7ab9197f903d31a8",
       "row_index": 168,
-      "client_account_code": "521.017",
-      "client_account_name": "环保税",
+      "source_account_code": "521.017",
+      "source_account_name_masked": "环保税",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '环保税' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:8c2ab4f192bed1a56795392209b101c0",
       "row_index": 169,
-      "client_account_code": "521.018",
-      "client_account_name": "预提税务申报利润差异成本",
+      "source_account_code": "521.018",
+      "source_account_name_masked": "预提税务申报利润差异成本",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '预提税务申报利润差异成本' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:8cbffefcc6a73e88b4158b1cad2a7e0c",
       "row_index": 170,
-      "client_account_code": "521.019",
-      "client_account_name": "广告费",
+      "source_account_code": "521.019",
+      "source_account_name_masked": "广告费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '广告费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:cd184f436bf5b935fa2c88592ec6f56e",
       "row_index": 171,
-      "client_account_code": "521.020",
-      "client_account_name": "垃圾处理费",
+      "source_account_code": "521.020",
+      "source_account_name_masked": "垃圾处理费",
       "standard_account_code": "6602",
-      "review_reason": "??????????"
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '垃圾处理费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:d375387ddc42dabcd90e07232ee25cfc",
+      "row_index": 137,
+      "source_account_code": "521.013.062.002",
+      "source_account_name_masked": "工资",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '工资' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:a2983888ded0b2029484619bee0f566d",
+      "row_index": 138,
+      "source_account_code": "521.013.062.003",
+      "source_account_name_masked": "折旧",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '折旧' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:dd59675b88bdd89c14435aa6d1a05cd4",
+      "row_index": 139,
+      "source_account_code": "521.013.062.004",
+      "source_account_name_masked": "养老金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '养老金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:b5362098a05b016d3bb4e9056cfabe05",
+      "row_index": 140,
+      "source_account_code": "521.013.062.005",
+      "source_account_name_masked": "住房公积金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '住房公积金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:ef4d8de33edddc6f0fe9b3dd20e6d915",
+      "row_index": 143,
+      "source_account_code": "521.013.063.002",
+      "source_account_name_masked": "工资",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '工资' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:c25a598c25581697e8fd8b1061cd85e5",
+      "row_index": 144,
+      "source_account_code": "521.013.063.003",
+      "source_account_name_masked": "折旧",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '折旧' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:7f622a13eb90ce6fc62eead8d844bd4f",
+      "row_index": 145,
+      "source_account_code": "521.013.063.004",
+      "source_account_name_masked": "保险费",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '保险费' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:470a1f88e0cd5d70e76e2e72a6527480",
+      "row_index": 146,
+      "source_account_code": "521.013.063.005",
+      "source_account_name_masked": "住房公积金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '住房公积金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:c9670e18e387f9ba25a8eb0d4f23e457",
+      "row_index": 147,
+      "source_account_code": "521.013.063.006",
+      "source_account_name_masked": "其他费用",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '其他费用' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:645b37b3b6aa281bf2fa4e9bad586486",
+      "row_index": 150,
+      "source_account_code": "521.013.064.002",
+      "source_account_name_masked": "工资",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '工资' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:9433779a766d8d7bb9738bda04a096e1",
+      "row_index": 151,
+      "source_account_code": "521.013.064.003",
+      "source_account_name_masked": "折旧",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '折旧' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:7082c590b8b37fb0e3a964544b8ad10b",
+      "row_index": 152,
+      "source_account_code": "521.013.064.004",
+      "source_account_name_masked": "养老金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '养老金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:a4b99ccc7a1e12830eaf220b44ade5c7",
+      "row_index": 153,
+      "source_account_code": "521.013.064.005",
+      "source_account_name_masked": "住房公积金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '住房公积金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:77eb418773cfeb9f4a72626ad17d8cb8",
+      "row_index": 156,
+      "source_account_code": "521.013.065.002",
+      "source_account_name_masked": "工资",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '工资' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:c58b038fd93a808cb4f3606af70344a2",
+      "row_index": 157,
+      "source_account_code": "521.013.065.003",
+      "source_account_name_masked": "折旧",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '折旧' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:05b709652070fb29016a5c6f0ad6f4c4",
+      "row_index": 158,
+      "source_account_code": "521.013.065.004",
+      "source_account_name_masked": "养老金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '养老金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:da66cb8ddf597d2de698d81513583e7f",
+      "row_index": 159,
+      "source_account_code": "521.013.065.005",
+      "source_account_name_masked": "住房公积金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '住房公积金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:f2050a64113582ed03b9ee5213f5e987",
+      "row_index": 162,
+      "source_account_code": "521.013.066.002",
+      "source_account_name_masked": "工资",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '工资' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:32a94961201c665655f484e40cf688c1",
+      "row_index": 163,
+      "source_account_code": "521.013.066.003",
+      "source_account_name_masked": "折旧",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '折旧' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:12fcc128e425d12f7044604d9798ce27",
+      "row_index": 164,
+      "source_account_code": "521.013.066.004",
+      "source_account_name_masked": "养老金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '养老金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:8a40314d51582efa50636bf622d2309f",
+      "row_index": 165,
+      "source_account_code": "521.013.066.005",
+      "source_account_name_masked": "住房公积金",
+      "standard_account_code": "6602",
+      "standard_account_name": "减：管理费用",
+      "review_reason": "源科目 '住房公积金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
+    },
+    {
+      "row_key": "sha256:f18a9af7c7547d7dd06d05a8126c88d6",
       "row_index": 172,
-      "client_account_code": "522",
-      "client_account_name": "财务费用",
+      "source_account_code": "522",
+      "source_account_name_masked": "财务费用",
       "standard_account_code": "6603",
-      "review_reason": "?????????"
+      "standard_account_name": "减：财务费用",
+      "review_reason": "源科目'财务费用'对应标准科目 6603 '减:财务费用',反映企业为筹集生产经营所需资金等发生的费用,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:6f170d3b5b4beb5b0285876979f1806e",
       "row_index": 173,
-      "client_account_code": "522.001",
-      "client_account_name": "利息费",
+      "source_account_code": "522.001",
+      "source_account_name_masked": "利息费",
       "standard_account_code": "6603",
-      "review_reason": "??????????"
+      "standard_account_name": "减：财务费用",
+      "review_reason": "源科目 '利息费' 为财务费用明细,统一映射至 6603 '减:财务费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:f2f3fedce445cdd40f949a95a9f0685a",
       "row_index": 174,
-      "client_account_code": "522.002",
-      "client_account_name": "银行业务收费",
+      "source_account_code": "522.002",
+      "source_account_name_masked": "银行业务收费",
       "standard_account_code": "6603",
-      "review_reason": "??????????"
+      "standard_account_name": "减：财务费用",
+      "review_reason": "源科目 '银行业务收费' 为财务费用明细,统一映射至 6603 '减:财务费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:f2169af009f95a19f2d696e2f279f455",
       "row_index": 175,
-      "client_account_code": "522.004",
-      "client_account_name": "利息收入",
+      "source_account_code": "522.004",
+      "source_account_name_masked": "利息收入",
       "standard_account_code": "6603",
-      "review_reason": "??????????"
+      "standard_account_name": "减：财务费用",
+      "review_reason": "源科目 '利息收入' 为财务费用明细,统一映射至 6603 '减:财务费用',余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:5516536ea66dc2f335d11fc441473688",
       "row_index": 178,
-      "client_account_code": "550",
-      "client_account_name": "所得税",
+      "source_account_code": "550",
+      "source_account_name_masked": "所得税",
       "standard_account_code": "6801",
-      "review_reason": "?????????"
+      "standard_account_name": "所得税费用",
+      "review_reason": "源科目'所得税'按现行准则统一映射至 6801 '所得税费用',反映企业按税法规定应缴纳的企业所得税,余额方向借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     }
   ],
   "ignored_rows": []

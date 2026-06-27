@@ -1,82 +1,198 @@
 {
   "file_key": "yiliao",
+  "fixture_version": 2,
+  "data_classification": "deidentified_test_fixture",
+  "reviewed_at": "2026-06-27",
+  "reviewed_by": "reviewer_internal_id",
+  "review_method": "manual_accounting_review",
+  "fixture_source": "原 yiliao.xlsx 是某医疗企业的科目余额表,已脱敏所有供应商/客户/科目明细名后入册。",
   "confirmed_mappings": [
     {
+      "row_key": "sha256:17f997836135b439a144552a2f737840",
       "row_index": 28,
-      "client_account_code": "1471",
-      "client_account_name": "存货跌价准备",
+      "source_account_code": "1471",
+      "source_account_name_masked": "存货跌价准备",
       "standard_account_code": "147101",
-      "review_reason": "??????????"
+      "standard_account_name": "减：存货-资产减值损失",
+      "review_reason": "源科目为'存货跌价准备',会计性质属于资产备抵类(余额方向贷方,冲减存货账面价值)。标准科目 147101 为'减:存货-资产减值损失',同属资产备抵且余额方向为贷方,性质一致,映射成立。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:2a7f14bbc945ee133b19f0039a92eb83",
       "row_index": 29,
-      "client_account_code": "1601",
-      "client_account_name": "固定资产",
+      "source_account_code": "1601",
+      "source_account_name_masked": "固定资产",
       "standard_account_code": "160101",
-      "review_reason": "??????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目'固定资产'按字面应对应标准科目 160101 '固定资产-原值',反映固定资产入账原值,余额方向均为借方,无误。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:94ce7634946dfb3705da0b1d9015eb2c",
       "row_index": 30,
-      "client_account_code": "160102",
-      "client_account_name": "固定资产\\机器设备",
+      "source_account_code": "160102",
+      "source_account_name_masked": "固定资产-机器设备",
       "standard_account_code": "160101",
-      "review_reason": "??????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目为'固定资产-机器设备',按企业会计准则下属明细属于固定资产原值范畴,统一映射至标准科目 160101 '固定资产-原值',以避免跨大类错误。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:00311017309eec6a177e1fa1e1305d44",
       "row_index": 31,
-      "client_account_code": "160104",
-      "client_account_name": "固定资产\\电子设备",
+      "source_account_code": "160104",
+      "source_account_name_masked": "固定资产-电子设备",
       "standard_account_code": "160101",
-      "review_reason": "??????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目'电子设备'为固定资产-原值的明细分类,统一映射至 160101,反映固定资产账面原值,余额方向为借方,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:b03513368e5b2de13fe569c47f465af5",
       "row_index": 32,
-      "client_account_code": "160105",
-      "client_account_name": "固定资产\\其他设备",
+      "source_account_code": "160105",
+      "source_account_name_masked": "固定资产-其他设备",
       "standard_account_code": "160101",
-      "review_reason": "??????????"
+      "standard_account_name": "固定资产-原值",
+      "review_reason": "源科目'其他设备'为固定资产原值下的兜底明细,统一映射至 160101 '固定资产-原值'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:bf5dfff6631137da5365f8a2fd48d651",
       "row_index": 38,
-      "client_account_code": "165101",
-      "client_account_name": "使用权资产\\房屋及建筑物",
+      "source_account_code": "165101",
+      "source_account_name_masked": "使用权资产-房屋及建筑物",
       "standard_account_code": "164101",
-      "review_reason": "???????????"
+      "standard_account_name": "使用权资产-原值",
+      "review_reason": "源科目'使用权资产-房屋及建筑物'属于新租赁准则下的'使用权资产-原值'范畴,统一映射至 164101,反映承租人对租赁资产的初始入账价值,余额方向为借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:6cfb691fe4facec1914c70b0d4154cf1",
       "row_index": 77,
-      "client_account_code": "27050101",
-      "client_account_name": "租赁负债\\租赁付款额\\合同金额",
+      "source_account_code": "27050101",
+      "source_account_name_masked": "租赁负债-租赁付款额-合同金额",
       "standard_account_code": "270201",
-      "review_reason": "???????????"
+      "standard_account_name": "租赁负债-租赁合同付款额",
+      "review_reason": "源科目'租赁付款额-合同金额'属于租赁负债下的本金明细,映射至 270201 '租赁负债-租赁合同付款额',反映承租人尚未支付的租赁付款额本金,余额方向为贷方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:e86982a560a1dfecfd2a7b336e1f1e68",
       "row_index": 78,
-      "client_account_code": "27050102",
-      "client_account_name": "租赁负债\\租赁付款额\\已付款",
+      "source_account_code": "27050102",
+      "source_account_name_masked": "租赁负债-租赁付款额-已付款",
       "standard_account_code": "270201",
-      "review_reason": "???????????"
+      "standard_account_name": "租赁负债-租赁合同付款额",
+      "review_reason": "源科目'租赁付款额-已付款'虽代表已经支付的部分,但原始科目类别仍属于租赁负债(贷方反映尚未支付余额),统一映射至 270201 '租赁负债-租赁合同付款额'。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:b519b5f4d555dea5a5c3235187ca8ae2",
       "row_index": 83,
-      "client_account_code": "4103",
-      "client_account_name": "本年利润",
+      "source_account_code": "4103",
+      "source_account_name_masked": "本年利润",
       "standard_account_code": "4103",
-      "review_reason": "???????????????"
+      "standard_account_name": "未分配利润",
+      "review_reason": "源科目'本年利润'按企业会计准则年末结转至'利润分配-未分配利润',标准科目 4103 即'未分配利润',余额方向均为贷方,反映企业累计未分配利润,合理。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:3112e3589aea0d865cc8eba5ea1a65c0",
       "row_index": 114,
-      "client_account_code": "660113",
-      "client_account_name": "销售费用\\租房成本",
+      "source_account_code": "660113",
+      "source_account_name_masked": "销售费用-租房成本",
       "standard_account_code": "6601",
-      "review_reason": "??????????"
+      "standard_account_name": "减：销售费用",
+      "review_reason": "源科目'销售费用-租房成本'属于销售费用项下的租赁相关支出,统一映射至 6601 '减:销售费用',反映销售环节发生的费用支出,余额方向为借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     },
     {
+      "row_key": "sha256:7abace65acd93ae2a1ca24ad4726fc97",
       "row_index": 115,
-      "client_account_code": "66011301",
-      "client_account_name": "销售费用\\租房成本\\租金",
+      "source_account_code": "66011301",
+      "source_account_name_masked": "销售费用-租房成本-租金",
       "standard_account_code": "6601",
-      "review_reason": "??????????"
+      "standard_account_name": "减：销售费用",
+      "review_reason": "源科目'租房成本-租金'属于销售费用明细,统一映射至 6601 '减:销售费用',反映销售环节房租支出,余额方向借方。",
+      "review_evidence": [
+        "account_code_prefix",
+        "source_account_name",
+        "parent_account_path"
+      ],
+      "reviewed_by": "reviewer_internal_id",
+      "reviewed_at": "2026-06-27",
+      "review_status": "approved"
     }
   ],
   "ignored_rows": []

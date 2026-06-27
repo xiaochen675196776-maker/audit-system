@@ -1,6 +1,6 @@
 {
   "task": "TASK-093",
-  "generated_at": "2026-06-27 12:50:12",
+  "generated_at": "2026-06-27 16:35:10",
   "strategy": "anchor_inheritance_v2",
   "strategy_version": 2,
   "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
@@ -24,7 +24,7 @@
     "total_inherited": 915,
     "total_breakpoints": 22,
     "total_submit_anchors": 19782,
-    "total_t_seconds": 134.99,
+    "total_t_seconds": 152.54,
     "inheritance_reduction_ratio": 0.0469
   },
   "rows": [
@@ -124,9 +124,9 @@
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
       "t_preview": 0.02,
-      "t_analyze": 1.67,
-      "t_execute": 0.12,
-      "t_total": 1.81
+      "t_analyze": 1.83,
+      "t_execute": 0.15,
+      "t_total": 2.0
     },
     {
       "file_key": "112",
@@ -224,10 +224,10 @@
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
-      "t_preview": 0.04,
-      "t_analyze": 2.26,
-      "t_execute": 0.75,
-      "t_total": 3.05
+      "t_preview": 0.06,
+      "t_analyze": 2.46,
+      "t_execute": 0.8,
+      "t_total": 3.33
     },
     {
       "file_key": "205201",
@@ -325,10 +325,10 @@
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
-      "t_preview": 2.09,
-      "t_analyze": 58.66,
-      "t_execute": 65.74,
-      "t_total": 126.49
+      "t_preview": 1.74,
+      "t_analyze": 66.9,
+      "t_execute": 74.68,
+      "t_total": 143.32
     },
     {
       "file_key": "tb_2023",
@@ -426,10 +426,10 @@
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
-      "t_preview": 0.01,
-      "t_analyze": 0.52,
-      "t_execute": 0.21,
-      "t_total": 0.75
+      "t_preview": 0.02,
+      "t_analyze": 0.55,
+      "t_execute": 0.2,
+      "t_total": 0.77
     },
     {
       "file_key": "yiliao",
@@ -526,10 +526,10 @@
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
-      "t_preview": 0.01,
-      "t_analyze": 0.97,
-      "t_execute": 0.12,
-      "t_total": 1.11
+      "t_preview": 0.02,
+      "t_analyze": 1.05,
+      "t_execute": 0.14,
+      "t_total": 1.21
     },
     {
       "file_key": "chengdu_dikang",
@@ -570,15 +570,15 @@
       "zero_amount_skipped_leaf_count": 2,
       "amount_reconciliation": {
         "opening_debit": {
-          "source": "874618452.47",
-          "entry": "874618452.47",
+          "source": "874607328.71",
+          "entry": "874607328.71",
           "ignored": "0",
           "zero_skip": "0",
           "difference": "0.00"
         },
         "opening_credit": {
-          "source": "868326649.73",
-          "entry": "868326649.73",
+          "source": "868337773.49",
+          "entry": "868337773.49",
           "ignored": "0",
           "zero_skip": "0",
           "difference": "0.00"
@@ -627,9 +627,9 @@
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
       "t_preview": 0.03,
-      "t_analyze": 1.34,
-      "t_execute": 0.42,
-      "t_total": 1.78
+      "t_analyze": 1.42,
+      "t_execute": 0.46,
+      "t_total": 1.91
     }
   ]
 }

@@ -1,6 +1,6 @@
 # TASK-093 锚点继承式映射真实生产闭环回归报告
 
-**生成时间**: 2026-06-27 12:50:12
+**生成时间**: 2026-06-27 16:35:10
 
 **策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)
 
@@ -23,18 +23,18 @@
 - 人工 fixture 确认: 2008
 - 唯一安全候选自动确认: 17774
 - 继承减少比: 0.0469
-- 总耗时: 134.99s
+- 总耗时: 152.54s
 
 ## 2. 逐表统计
 
 | 文件 | Analyze | 前端确认模拟 | Execute | entry | 参与末级 | ignored | zero skip | 动态未解决 | inherited | 耗时 |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| 会展中心余额表.xlsx | success | fixture 13 + unique 38 | executed | 66 | 196 | 0 | 130 | 0 | 39 | 1.81 |
-| 1-12科目余额表.xls | success | fixture 222 + unique 154 | executed | 924 | 931 | 0 | 7 | 0 | 591 | 3.05 |
-| 205201-2023.xls | success | fixture 1543 + unique 17448 | executed | 18984 | 48199 | 0 | 29215 | 0 | 4 | 126.49 |
-| 科目余额表2023年导入.xls | success | fixture 66 + unique 26 | executed | 160 | 162 | 0 | 2 | 0 | 77 | 0.75 |
-| 医疗3月31日序时账及余额表.xlsx | success | fixture 11 + unique 43 | executed | 87 | 97 | 0 | 10 | 0 | 79 | 1.11 |
-| 科目余额表-成都迪康-240930.xls | success | fixture 153 + unique 65 | executed | 293 | 295 | 0 | 2 | 0 | 125 | 1.78 |
+| 会展中心余额表.xlsx | success | fixture 13 + unique 38 | executed | 66 | 196 | 0 | 130 | 0 | 39 | 2.0 |
+| 1-12科目余额表.xls | success | fixture 222 + unique 154 | executed | 924 | 931 | 0 | 7 | 0 | 591 | 3.33 |
+| 205201-2023.xls | success | fixture 1543 + unique 17448 | executed | 18984 | 48199 | 0 | 29215 | 0 | 4 | 143.32 |
+| 科目余额表2023年导入.xls | success | fixture 66 + unique 26 | executed | 160 | 162 | 0 | 2 | 0 | 77 | 0.77 |
+| 医疗3月31日序时账及余额表.xlsx | success | fixture 11 + unique 43 | executed | 87 | 97 | 0 | 10 | 0 | 79 | 1.21 |
+| 科目余额表-成都迪康-240930.xls | success | fixture 153 + unique 65 | executed | 293 | 295 | 0 | 2 | 0 | 125 | 1.91 |
 
 ## 3. 金额勾稽
 
@@ -53,4 +53,4 @@
 - 自动 ignored 数量: 0
 - 六表 6/6 成功: 6/6
 - 动态未解决合计: 0
-- 总耗时: 134.99s
+- 总耗时: 152.54s
