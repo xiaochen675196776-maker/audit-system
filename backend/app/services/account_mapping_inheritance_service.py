@@ -1,36 +1,31 @@
-"""上级锚点与下级继承式映射服务 — ANCHOR-INHERITANCE-MAPPING
+"""上级锚点与下级继承式映射服务 — ANCHOR-INHERITANCE-MAPPING v2
 
-本模块取代「每个末级客户科目独立匹配标准科目」的主流程。新的主流程：
+TASK-092：本版本将生产闭环拆成两阶段推荐：
 
-1. 先解析完整客户科目树（build_account_tree）
-2. 识别结构汇总节点（is_structural_summary）
-3. 发现首批映射锚点（discover_mapping_anchors）
-4. 沿树向下传播，每个子节点判断是否需要中断继承
-   （evaluate_inheritance_boundary）
-5. 生成完整映射计划（build_mapping_plan / propagate_anchor_mapping）
-6. 执行阶段重新构建同一棵树，校验锚点并解析叶子的标准科目
-   （validate_mapping_plan / resolve_leaf_standard_accounts）
+1. 轻量阶段 — 仅构建客户科目树、识别结构汇总和强信号（discover_anchor_candidates），
+   对每个节点只判断：structural_summary / account_anchor_candidate / ordinary_detail。
+   不调用 recommend_mappings 的全局模糊兜底。
+2. 完整推荐阶段 — 仅对 anchor / breakpoint / explicit_override / unresolved root
+   调用 recommend_mappings；普通 inherited / structural_summary / ignored 节点不再
+   进入完整推荐。
 
-普通子节点不再调用 recommend_mappings 的全局兜底逻辑（name_similarity、
-code_prefix_parent、code_category_anchor、name_anchor）。只有 anchor /
-breakpoint / explicit_override 节点才会触发完整推荐。
+主流程：
+
+1. build_account_tree：构建完整客户科目树（支持 3+ 级）
+2. discover_anchor_candidates：先做轻量语义识别与强信号收集，
+   划分 structural_summary / anchor_candidate / breakpoint_candidate /
+   inherited_candidate / ordinary_detail，并统计完整推荐节点数。
+3. build_mapping_plan：仅对 anchor / breakpoint / explicit_override 调用完整推荐。
+4. validate_mapping_plan / resolve_leaf_standard_accounts：参与末级未解析 → 阻断。
+5. Execute 复用同一份 build_account_tree + build_mapping_plan 重新解析。
 
 硬约束：
 - 不得为任何客户、任何 Excel、任何具体科目代码写硬编码。
-- 不得使用 candidates[0] 对未确认行兜底。
+- 不得使用 candidates[0] 对未确认行兜底；生产代码统一使用
+  pick_unique_auto_confirm_candidate / _is_safe_candidate 决定。
 - 普通 inherited 行不保存为映射经验。
 - 任一参与入库的末级若未解析唯一标准科目，必须阻止 execute。
-
-继承中断点（强信号）必须由以下证据之一触发：
-- 用户/公司历史明确覆盖；
-- 精确标准代码命中不同目标；
-- 精确标准名称/明确语义命中不同目标；
-- 原值与备抵变化（累计折旧、减值准备、坏账准备等）；
-- 研发费用化与资本化方向变化；
-- 资产与负债方向变化（应收/应付 等）；
-- 收入/成本/费用性质变化；
-- 会计大类变化（资产/负债/权益/收入/成本/费用）；
-- 用户在前端显式单独映射。
+- 普通明细节点（mapping_role=inherited）不得调用 recommend_mappings。
 """
 
 from __future__ import annotations
@@ -78,6 +73,41 @@ STRUCTURAL_SUMMARY_NAMES: set[str] = {
     # 研发相关：未明确方向的研发科目视为结构节点
     "研发支出",
 }
+
+
+# 明确会计科目锚点词：即使非末级，也应成为锚点候选（不是结构汇总）
+# 注意：这些是常见的明确会计科目，本身应建立锚点让子级继承，
+# 而不是作为分类标题下沉。
+ACCOUNT_ANCHOR_TOKENS: tuple[str, ...] = (
+    "银行存款", "库存现金", "其他货币资金",
+    "应收账款", "预付账款", "其他应收款", "坏账准备", "应收票据",
+    "应付账款", "预收账款", "其他应付款", "应付票据",
+    "固定资产", "累计折旧", "在建工程", "无形资产", "长期待摊费用",
+    "原材料", "库存商品", "周转材料",
+    "短期借款", "长期借款",
+    "实收资本", "资本公积", "盈余公积", "未分配利润", "本年利润", "利润分配",
+    "生产成本", "制造费用",
+    "主营业务收入", "其他业务收入", "营业外收入",
+    "主营业务成本", "其他业务成本",
+    "销售费用", "管理费用", "财务费用", "营业外支出",
+    "所得税费用",
+    "研发费用", "开发支出",
+)
+
+
+# 沿树 walk 时的特殊标记
+class _NoParent:
+    """sentinel：根行首调用的 parent_target_id。"""
+    pass
+
+
+class _InheritedFlag:
+    """sentinel：父级是锚点但还没有具体 target id（仅语义识别）。"""
+    pass
+
+
+_NO_PARENT = _NoParent()
+_INHERITED_FLAG = _InheritedFlag()
 
 
 # 不应触发继承中断的中性名称片段（普通客户名称）
@@ -144,6 +174,8 @@ class AccountTreeNode:
     participates_in_entry: bool = True
     children: list[int] = field(default_factory=list)
     is_ignored: bool = False
+    # TASK-092：轻量语义分类（structural_summary / account_anchor_candidate / ordinary_detail）
+    semantic_role: str = "ordinary_detail"
 
     # ── 解析后状态（由 build_mapping_plan 填充）──
     mapping_role: str = "unresolved"
@@ -155,6 +187,11 @@ class AccountTreeNode:
     resolved_standard_account_id: str | None = None
     resolved_standard_account_code: str | None = None
     resolved_standard_account_name: str | None = None
+    # TASK-092：suggested / resolved 拆分 — 只有唯一安全候选或用户确认才能 resolved；
+    # 未确认的最高分候选只能作为 suggested，不得算 resolved。
+    suggested_standard_account_id: str | None = None
+    suggested_standard_account_code: str | None = None
+    suggested_standard_account_name: str | None = None
     resolution_source: str | None = None
     resolution_reason: str | None = None
     inheritance_break_reason: str | None = None
@@ -184,7 +221,13 @@ class InheritanceDecision:
 
 @dataclass
 class AnchorResolution:
-    """锚点的标准科目解析结果。"""
+    """锚点的标准科目解析结果。
+
+    TASK-092 拆分 suggested 与 resolved：
+    - suggested_*：最高分候选（哪怕未唯一安全）；可作为前端的默认建议展示。
+    - resolved_*：仅当唯一安全候选（unique_safe）或用户确认时才填。
+    - is_resolved：仅当 resolved_* 真实填入时为 True。
+    """
     standard_account_id: str | None
     standard_account_code: str | None
     standard_account_name: str | None
@@ -193,6 +236,12 @@ class AnchorResolution:
     is_resolved: bool = False
     auto_confirm_status: str | None = None
     auto_confirm_reason: str | None = None
+    # 新增：未确认建议（即使 resolved 为 None 也可填）
+    suggested_standard_account_id: str | None = None
+    suggested_standard_account_code: str | None = None
+    suggested_standard_account_name: str | None = None
+    suggested_source: str | None = None
+    suggested_reason: str | None = None
 
 
 @dataclass
@@ -208,6 +257,10 @@ class MappingPlanSummary:
     confirmation_required_count: int = 0
     participating_leaf_count: int = 0
     resolved_participating_leaf_count: int = 0
+    # TASK-092 性能指标：完整推荐 vs 轻量分析
+    full_recommendation_node_count: int = 0
+    light_signal_node_count: int = 0
+    inherited_without_recommendation_count: int = 0
 
 
 # ── 工具函数 ─────────────────────────────────────────────
@@ -381,19 +434,95 @@ def build_account_tree(
 # ── 2. 结构汇总节点识别 ────────────────────────────────────
 
 
+def classify_node_semantic_role(
+    node: AccountTreeNode,
+    children: list[AccountTreeNode] | None = None,
+    strong_signals: dict | None = None,
+) -> str:
+    """轻量语义分类（不调用 recommend_mappings）。
+
+    返回：
+    - structural_summary：分类标题/大类标签，不参与入库
+    - account_anchor_candidate：明确会计科目（即使非末级也可作为锚点）
+    - ordinary_detail：普通客户明细，等待继承或显式确认
+    """
+    name = _normalize_name(node.client_account_name)
+    if not name:
+        return "structural_summary"
+
+    # 1) 通用结构词（资产类 / 损益类 / 流动资产 / 期间费用 / 研发支出 等）
+    if name in STRUCTURAL_SUMMARY_NAMES:
+        return "structural_summary"
+
+    # 2) 强信号命中（精确代码 / 名称）→ 锚点候选
+    sigs = (strong_signals or {}).get(node.row_index)
+    if sigs:
+        if sigs.get("history") or sigs.get("exact_code_standard") or sigs.get("exact_name_match"):
+            return "account_anchor_candidate"
+
+    # 3) 名称本身就是明确会计科目（即使非末级也要做锚点）
+    for token in ACCOUNT_ANCHOR_TOKENS:
+        if name == token or token in name:
+            return "account_anchor_candidate"
+
+    # 4) 父级但其下子节点明显属于多个会计大类 → 结构汇总
+    if children and node.is_summary:
+        categories: set[str] = set()
+        for ch in children:
+            ch_name = _normalize_name(ch.client_account_name)
+            if ch_name:
+                ch_token = _infer_account_category_token(ch_name)
+                if ch_token:
+                    categories.add(ch_token)
+        if len(categories) >= 2:
+            return "structural_summary"
+
+    # 5) 父级且不参与入库，且没有任何具体语义 → 仍是结构汇总
+    if node.is_summary and not node.participates_in_entry and name not in ACCOUNT_ANCHOR_TOKENS:
+        return "structural_summary"
+
+    return "ordinary_detail"
+
+
+def _infer_account_category_token(name: str) -> str | None:
+    """从客户名称粗略推断会计大类标签（用于识别「流动资产」下的多个子类）。"""
+    asset_kw = ("现金", "存款", "应收", "预付", "存货", "固定", "无形", "投资", "货币")
+    liability_kw = ("应付", "预收", "借款", "应交", "应付职工")
+    equity_kw = ("实收", "资本", "盈余", "本年利润", "利润分配")
+    revenue_kw = ("收入", "收益")
+    expense_kw = ("费用", "成本", "支出")
+    if any(k in name for k in asset_kw):
+        return "asset"
+    if any(k in name for k in liability_kw):
+        return "liability"
+    if any(k in name for k in equity_kw):
+        return "equity"
+    if any(k in name for k in revenue_kw):
+        return "revenue"
+    if any(k in name for k in expense_kw):
+        return "expense"
+    return None
+
+
 def is_structural_summary(node: AccountTreeNode) -> bool:
-    """判断节点是否是结构汇总节点。"""
-    # 已是父级但其下子节点映射到不同会计大类的也视为结构汇总
+    """判断节点是否是结构汇总节点。
+
+    TASK-092 修正：
+    - 不得仅凭 `is_summary=True and not participates_in_entry` 认定结构汇总。
+    - 银行存款、管理费用、应收账款等明确会计科目应能成为锚点候选。
+    - 仅以下情形视为结构汇总：
+      1. 名称属于 STRUCTURAL_SUMMARY_NAMES（资产类 / 流动资产 / 期间费用等）
+      2. 没有代码 + 名称明显是分类标题
+      3. 节点 semantic_role == "structural_summary"（在 build_mapping_plan 之前已标注）
+    """
     name = _normalize_name(node.client_account_name)
     if not name:
         return True
     if name in STRUCTURAL_SUMMARY_NAMES:
         return True
-    # 没有任何客户科目代码 + 名称属于结构词
     if not node.client_account_code and name in STRUCTURAL_SUMMARY_NAMES:
         return True
-    # 父级且不参与入库
-    if node.is_summary and not node.participates_in_entry:
+    if node.semantic_role == "structural_summary":
         return True
     return False
 
@@ -717,7 +846,175 @@ def evaluate_inheritance_boundary(
     )
 
 
-# ── 5. 映射计划构建 ───────────────────────────────────────
+# ── 5. 锚点发现阶段（轻量，不调用 recommend_mappings） ────────
+
+
+@dataclass
+class AnchorDiscoveryResult:
+    """轻量锚点发现结果。
+
+    anchor_rows：需要完整推荐 recommend_mappings 的节点；
+    structural_rows：识别为结构汇总（不下传、不参与）；
+    breakpoint_candidate_rows：检测到继承中断但还未确认；
+    inherited_candidate_rows：仅作继承候选（无需完整推荐）；
+    """
+    anchor_rows: set[int] = field(default_factory=set)
+    structural_rows: set[int] = field(default_factory=set)
+    breakpoint_candidate_rows: set[int] = field(default_factory=set)
+    inherited_candidate_rows: set[int] = field(default_factory=set)
+    strong_signals: dict[int, dict] = field(default_factory=dict)
+
+
+async def discover_anchor_candidates(
+    tree: AccountTree,
+    db: AsyncSession,
+    customer_label: str | None = None,
+) -> AnchorDiscoveryResult:
+    """轻量级识别锚点 / 中断点 / 结构汇总。
+
+    不得调用 recommend_mappings 的全局模糊兜底。只做：
+    - 层级识别（已在 build_account_tree 完成）
+    - 强信号收集（公司历史、精确代码、精确名称、语义组）
+    - 语义分类（classify_node_semantic_role）
+    - 沿树判断中断点（evaluate_inheritance_boundary）
+
+    返回的 anchor_rows + breakpoint_candidate_rows 是后续必须调用
+    recommend_mappings 的行；其余行（inherited / structural / ignored）
+    不会触发完整推荐。
+    """
+    result = AnchorDiscoveryResult()
+    nodes = tree.nodes_by_row
+
+    # 1) 收集强信号
+    result.strong_signals = await find_strong_direct_signals(
+        db, list(nodes.values()), customer_label=customer_label
+    )
+
+    # 2) 对每个节点做轻量分类
+    for ri, node in nodes.items():
+        if node.is_ignored:
+            continue
+        children = [nodes[ch] for ch in tree.children_by_row.get(ri, []) if ch in nodes]
+        node.semantic_role = classify_node_semantic_role(
+            node,
+            children=children,
+            strong_signals=result.strong_signals,
+        )
+        if node.semantic_role == "structural_summary":
+            result.structural_rows.add(ri)
+        elif node.semantic_role == "account_anchor_candidate":
+            # 强信号命中或名称本身就是明确会计科目 → 直接作为锚点
+            result.anchor_rows.add(ri)
+        else:
+            result.inherited_candidate_rows.add(ri)
+
+    # 3) 沿树做继承中断检测（轻量版，不依赖 StandardAccount 实例）：
+    #    - 根行默认作为首批锚点
+    #    - 子节点若在强信号中命中与父级不同的目标 → 中断点
+    # 注：此处只做信号层判断（基于 code/name 命中），不真正调用 evaluate_inheritance_boundary
+    #     （那需要 SA 实例）。真正的 boundary evaluation 由 build_mapping_plan 在拿到
+    #     recommend_mappings 结果后完成。
+    sig_by_row: dict[int, dict] = result.strong_signals
+
+    def _sig_target_id(sig: dict | None) -> str | None:
+        if not sig:
+            return None
+        # 精确代码 > 精确名称 > 历史
+        sa = sig.get("exact_code_standard")
+        if sa is not None:
+            return str(getattr(sa, "id", ""))
+        ems = sig.get("exact_name_match") or []
+        if ems:
+            return str(getattr(ems[0], "id", ""))
+        hist = sig.get("history") or []
+        if hist:
+            return str(getattr(hist[0], "standard_account_id", ""))
+        return None
+
+    async def _walk_for_breakpoints(
+        ri: int,
+        parent_target_id: Any,
+    ) -> None:
+        """沿树走一遍：
+
+        - parent_target_id：父级已解析到的目标 SA id（字符串），
+          特殊值 _NO_PARENT 表示「无上级锚点」（仅根行首调用），
+          字符串（即使是空串 ""）表示「父级是锚点，需要继承判断」。
+        - 节点根据自身信号 vs parent_target_id 决定：
+          * 不同 → breakpoint
+          * 相同或自身无信号 → 沿继承
+        - 根行（_NO_PARENT）→ 自身成为首批锚点，children 沿 _ANCESTOR_ANCHOR 走。
+        """
+        node = nodes[ri]
+        if node.is_ignored:
+            return
+        if ri in result.structural_rows:
+            # 结构汇总不下传
+            for ch in tree.children_by_row.get(ri, []):
+                await _walk_for_breakpoints(ch, _NO_PARENT)
+            return
+
+        self_target_id = _sig_target_id(sig_by_row.get(ri))
+
+        # 根行（首次调用 _NO_PARENT）：成为首批锚点
+        if parent_target_id is _NO_PARENT:
+            if ri not in result.anchor_rows:
+                result.anchor_rows.add(ri)
+            # 把「锚点存在」标志传给 children（用 self_target_id 或空串标记）
+            for ch in tree.children_by_row.get(ri, []):
+                # 父级锚点存在 → 用 self_target_id（或 _INHERITED_FLAG）传给 children
+                await _walk_for_breakpoints(ch, self_target_id if self_target_id else _INHERITED_FLAG)
+            return
+
+        # 子节点：检查是否需要中断继承
+        # 1) 自身强信号命中与父级不同的目标 → 中断点
+        if self_target_id and self_target_id != parent_target_id and parent_target_id != _INHERITED_FLAG:
+            result.breakpoint_candidate_rows.add(ri)
+            if ri not in result.anchor_rows:
+                result.anchor_rows.add(ri)
+            for ch in tree.children_by_row.get(ri, []):
+                await _walk_for_breakpoints(ch, self_target_id if self_target_id else _INHERITED_FLAG)
+            return
+
+        # 2) 名称与父级明显方向相反（应收/应付）→ 中断点
+        if self_target_id is None and isinstance(parent_target_id, str) and parent_target_id != _INHERITED_FLAG:
+            parent_name = ""
+            for p_ri, p_node in nodes.items():
+                if _sig_target_id(sig_by_row.get(p_ri)) == parent_target_id:
+                    parent_name = p_node.client_account_name or ""
+                    break
+            if node.client_account_name and parent_name and _direction_pair(
+                node.client_account_name, parent_name
+            ):
+                result.breakpoint_candidate_rows.add(ri)
+                if ri not in result.anchor_rows:
+                    result.anchor_rows.add(ri)
+                for ch in tree.children_by_row.get(ri, []):
+                    await _walk_for_breakpoints(ch, _NO_PARENT)
+                return
+
+        # 3) 其它情况：沿父级继承
+        for ch in tree.children_by_row.get(ri, []):
+            await _walk_for_breakpoints(ch, parent_target_id)
+
+    for root_ri in tree.root_rows:
+        root_node = nodes[root_ri]
+        if root_node.is_ignored:
+            continue
+        await _walk_for_breakpoints(root_ri, _NO_PARENT)
+
+    # 4) 整理 inherited_without_recommendation 计数
+    inherited_only = (
+        result.inherited_candidate_rows
+        - result.anchor_rows
+        - result.breakpoint_candidate_rows
+    )
+    result.inherited_candidate_rows = inherited_only
+
+    return result
+
+
+# ── 6. 映射计划构建 ───────────────────────────────────────
 
 
 async def build_mapping_plan(
@@ -727,6 +1024,7 @@ async def build_mapping_plan(
     source_label: str | None = None,
     recommend_anchor_fn=None,
     explicit_overrides: dict[int, str] | None = None,
+    discovery: AnchorDiscoveryResult | None = None,
 ) -> tuple[AccountTree, MappingPlanSummary]:
     """遍历客户科目树，生成完整映射计划。
 
@@ -740,6 +1038,7 @@ async def build_mapping_plan(
             调用方负责传入具体的 recommend_mappings 实现。
         explicit_overrides: row_index -> standard_account_id，用户在 UI 上
             显式对继承行指定的目标。
+        discovery: 可选外部传入的轻量发现结果（避免重复执行）。
 
     Returns:
         (更新后的 tree, summary)
@@ -747,10 +1046,18 @@ async def build_mapping_plan(
     explicit_overrides = explicit_overrides or {}
     nodes = tree.nodes_by_row
 
-    # 1) 预加载所有节点的强信号
-    strong_signals = await find_strong_direct_signals(
-        db, list(nodes.values()), customer_label=customer_label
-    )
+    # 1) 轻量锚点发现（如果没有外部传入）
+    if discovery is None:
+        discovery = await discover_anchor_candidates(
+            tree=tree, db=db, customer_label=customer_label,
+        )
+
+    # 把 discovery 的分类写回每个节点的 semantic_role（已在 discovery 内完成，
+    # 但显式 overrides 可能改变结构）
+    strong_signals = discovery.strong_signals
+    anchor_rows = set(discovery.anchor_rows)
+    breakpoint_rows = set(discovery.breakpoint_candidate_rows)
+    structural_rows = set(discovery.structural_rows)
 
     # 2) 深度优先遍历
     async def _visit(ri: int, inherited_anchor: AnchorResolution | None) -> None:
@@ -761,7 +1068,7 @@ async def build_mapping_plan(
             return
 
         # 1) 结构汇总：不下传锚点
-        if is_structural_summary(node):
+        if ri in structural_rows or is_structural_summary(node):
             node.mapping_role = "structural_summary"
             node.mapping_mode = "none"
             # 递归子节点（不传 inherited_anchor，让子节点重新发现）
@@ -810,6 +1117,11 @@ async def build_mapping_plan(
                     resolution.auto_confirm_reason if resolution
                     else "无锚点推荐结果，需用户手动选择"
                 )
+                # 记录 suggested（即使未确认）
+                if resolution is not None:
+                    node.suggested_standard_account_id = resolution.suggested_standard_account_id or resolution.standard_account_id
+                    node.suggested_standard_account_code = resolution.suggested_standard_account_code or resolution.standard_account_code
+                    node.suggested_standard_account_name = resolution.suggested_standard_account_name or resolution.standard_account_name
                 # 子节点也无法继承，仍各自尝试建立锚点
                 for ch in tree.children_by_row.get(ri, []):
                     await _visit(ch, None)
@@ -824,6 +1136,9 @@ async def build_mapping_plan(
             node.resolved_standard_account_id = resolution.standard_account_id
             node.resolved_standard_account_code = resolution.standard_account_code
             node.resolved_standard_account_name = resolution.standard_account_name
+            node.suggested_standard_account_id = resolution.standard_account_id
+            node.suggested_standard_account_code = resolution.standard_account_code
+            node.suggested_standard_account_name = resolution.standard_account_name
             node.resolution_source = resolution.source
             node.resolution_reason = resolution.reason
             node.auto_confirm_status = resolution.auto_confirm_status
@@ -880,6 +1195,11 @@ async def build_mapping_plan(
             node.requires_confirmation = True
             node.inheritance_break_reason = decision.reason_code
             node.inheritance_evidence = list(decision.evidence)
+            # 记录 suggested（即使未确认）
+            if resolution is not None:
+                node.suggested_standard_account_id = resolution.suggested_standard_account_id or resolution.standard_account_id
+                node.suggested_standard_account_code = resolution.suggested_standard_account_code or resolution.standard_account_code
+                node.suggested_standard_account_name = resolution.suggested_standard_account_name or resolution.standard_account_name
             # 子节点无法继承
             for ch in tree.children_by_row.get(ri, []):
                 await _visit(ch, None)
@@ -894,6 +1214,9 @@ async def build_mapping_plan(
         node.resolved_standard_account_id = resolution.standard_account_id
         node.resolved_standard_account_code = resolution.standard_account_code
         node.resolved_standard_account_name = resolution.standard_account_name
+        node.suggested_standard_account_id = resolution.standard_account_id
+        node.suggested_standard_account_code = resolution.standard_account_code
+        node.suggested_standard_account_name = resolution.standard_account_name
         node.resolution_source = resolution.source
         node.resolution_reason = decision.reason + " → " + (resolution.reason or "")
         node.inheritance_break_reason = decision.reason_code
@@ -910,7 +1233,17 @@ async def build_mapping_plan(
     for root_ri in tree.root_rows:
         await _visit(root_ri, None)
 
-    summary = _build_summary(tree)
+    summary = _build_summary(
+        tree,
+        full_recommendation_node_count=len(anchor_rows) + len(breakpoint_rows),
+        light_signal_node_count=len(nodes) - len(structural_rows),
+        inherited_without_recommendation_count=len(
+            [
+                n for n in nodes.values()
+                if n.mapping_role == "inherited"
+            ]
+        ),
+    )
     return tree, summary
 
 
@@ -1039,7 +1372,12 @@ def _find_anchor_node_by_id(
     return None
 
 
-def _build_summary(tree: AccountTree) -> MappingPlanSummary:
+def _build_summary(
+    tree: AccountTree,
+    full_recommendation_node_count: int | None = None,
+    light_signal_node_count: int | None = None,
+    inherited_without_recommendation_count: int | None = None,
+) -> MappingPlanSummary:
     s = MappingPlanSummary(total_nodes=len(tree.nodes_by_row))
     for n in tree.nodes_by_row.values():
         role = n.mapping_role
@@ -1069,6 +1407,26 @@ def _build_summary(tree: AccountTree) -> MappingPlanSummary:
             s.unresolved_count += 1
         if n.requires_confirmation:
             s.confirmation_required_count += 1
+
+    # TASK-092 性能统计（调用方传入更精确的数字）
+    if full_recommendation_node_count is not None:
+        s.full_recommendation_node_count = full_recommendation_node_count
+    else:
+        # fallback：以 anchor + breakpoint + explicit_override 作为完整推荐节点
+        s.full_recommendation_node_count = (
+            s.anchor_count + s.breakpoint_count + s.explicit_override_count
+        )
+    if light_signal_node_count is not None:
+        s.light_signal_node_count = light_signal_node_count
+    else:
+        s.light_signal_node_count = max(
+            s.total_nodes - s.structural_summary_count, 0
+        )
+    if inherited_without_recommendation_count is not None:
+        s.inherited_without_recommendation_count = inherited_without_recommendation_count
+    else:
+        s.inherited_without_recommendation_count = s.inherited_count
+
     return s
 
 

@@ -334,6 +334,10 @@ class MappingRecommendEntry(BaseModel):
     resolved_standard_account_id: str | None = None
     resolved_standard_account_code: str | None = None
     resolved_standard_account_name: str | None = None
+    # TASK-092：suggested 是未确认的最高分候选，resolved 才是真正确认的
+    suggested_standard_account_id: str | None = None
+    suggested_standard_account_code: str | None = None
+    suggested_standard_account_name: str | None = None
     resolution_source: str | None = None
     resolution_reason: str | None = None
     inheritance_break_reason: str | None = None
@@ -598,6 +602,10 @@ class MappingPlanSummary(BaseModel):
     confirmation_required_count: int = 0
     participating_leaf_count: int = 0
     resolved_participating_leaf_count: int = 0
+    # TASK-092 性能指标
+    full_recommendation_node_count: int = 0
+    light_signal_node_count: int = 0
+    inherited_without_recommendation_count: int = 0
 
 
 class AnalyzeResponse(BaseModel):
@@ -610,7 +618,7 @@ class AnalyzeResponse(BaseModel):
     errors: list[BlockingError]
     warnings: list[WarningItem]
     mapping_summary: MappingPlanSummary | None = None
-    mapping_strategy: str = "anchor_inheritance_v1"
+    mapping_strategy: str = "anchor_inheritance_v2"
 
 
 class ConfirmedMapping(BaseModel):
@@ -645,7 +653,7 @@ class ExecuteRequest(BaseModel):
     warnings_confirmed: bool = Field(False, description="是否确认所有警告，确认后继续")
     save_mapping_experience: bool = Field(True, description="是否保存映射经验")
     mapping_strategy_version: int = Field(
-        1, description="映射策略版本号；与 analyze 不一致则拒绝"
+        2, description="映射策略版本号；与 analyze 不一致则拒绝"
     )
 
     @field_validator("ignored_rows")
@@ -681,4 +689,4 @@ class ExecuteResponse(BaseModel):
     inherited_count: int = 0
     explicit_override_count: int = 0
     unresolved_leaf_count: int = 0
-    mapping_strategy_version: int = 1
+    mapping_strategy_version: int = 2

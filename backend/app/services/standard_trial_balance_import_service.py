@@ -54,9 +54,11 @@ from app.services.account_mapping_inheritance_service import (
     AccountTree,
     AccountTreeNode,
     AnchorResolution,
+    AnchorDiscoveryResult,
     MappingPlanSummary,
     build_account_tree,
     build_mapping_plan as build_anchor_mapping_plan,
+    discover_anchor_candidates,
     validate_mapping_plan,
     resolve_leaf_standard_accounts,
     is_structural_summary,
@@ -419,7 +421,7 @@ async def preview_standard_import(
 
 async def analyze_standard_import(
     db: AsyncSession,
-    batch_id: uuid.UUID,
+    batch_id: uuid.UUID | str,
     file_path: str,
     *,
     field_mappings: list[dict],
@@ -435,6 +437,13 @@ async def analyze_standard_import(
     Returns:
         dict with hierarchy, mapping_recommendations, amounts, errors, warnings
     """
+    # TASK-091：防御性转换 batch_id 为 UUID 对象（ORM id 字段是 uuid.UUID）
+    if isinstance(batch_id, str):
+        try:
+            batch_id = uuid.UUID(batch_id)
+        except (ValueError, TypeError):
+            raise ValueError(f"批次 {batch_id} 不是合法 UUID")
+
     # 1. 查批次
     result = await db.execute(
         select(StandardTrialBalanceImportBatch).where(
@@ -685,262 +694,10 @@ async def analyze_standard_import(
         if ri is not None and ri in row_mapping_meta:
             entry.update(row_mapping_meta[ri])
 
-    # 9. 运行科目映射推荐（TASK-081：大文件先去重）
-    # 对 client_accounts_for_mapping 按 (code, name, ancestors) 去重，
-    # 只对唯一 key 调用 recommend_mappings，然后回填到所有相同 key 的行。
-    _dedup_key_to_first_idx: dict[tuple, int] = {}
-    for idx, ca in enumerate(client_accounts_for_mapping):
-        key = (
-            (ca.get("client_account_code") or "").strip(),
-            (ca.get("client_account_name") or "").strip(),
-            tuple(ca.get("ancestor_codes") or []),
-            tuple(ca.get("ancestor_names") or []),
-        )
-        if key not in _dedup_key_to_first_idx:
-            _dedup_key_to_first_idx[key] = idx
-
-    unique_accounts = [client_accounts_for_mapping[i] for i in _dedup_key_to_first_idx.values()]
-    unique_recommendations = await recommend_mappings(
-        db=db,
-        data_type="trial_balance",
-        client_accounts=unique_accounts,
-        customer_label=customer_label,
-        source_label=source_label,
-    )
-
-    # 回填：把去重结果映射回原始列表
-    _dedup_result_map: dict[tuple, dict] = {}
-    for idx, rec in enumerate(unique_recommendations):
-        ca = unique_accounts[idx]
-        key = (
-            (ca.get("client_account_code") or "").strip(),
-            (ca.get("client_account_name") or "").strip(),
-            tuple(ca.get("ancestor_codes") or []),
-            tuple(ca.get("ancestor_names") or []),
-        )
-        _dedup_result_map[key] = rec
-
-    mapping_recommendations = []
-    for ca in client_accounts_for_mapping:
-        key = (
-            (ca.get("client_account_code") or "").strip(),
-            (ca.get("client_account_name") or "").strip(),
-            tuple(ca.get("ancestor_codes") or []),
-            tuple(ca.get("ancestor_names") or []),
-        )
-        rec = _dedup_result_map.get(key, {"candidates": []})
-        # 复制一份，不共享 candidates 引用（避免后续修改互相影响）
-        mapping_recommendations.append({
-            "client_account_code": ca.get("client_account_code"),
-            "client_account_name": ca.get("client_account_name"),
-            "candidates": list(rec.get("candidates", [])),
-        })
-
-    for idx, rec in enumerate(mapping_recommendations):
-        source_row = client_accounts_for_mapping[idx] if idx < len(client_accounts_for_mapping) else {}
-        row_index = source_row.get("row_index")
-        meta = row_mapping_meta.get(row_index, {}) if row_index is not None else {}
-        rec["row_index"] = row_index
-        rec["is_leaf"] = meta.get("is_leaf")
-        rec["is_summary"] = meta.get("is_summary")
-        rec["participates_in_entry"] = meta.get("participates_in_entry")
-
-    # TASK-078：辅助核算明细行继承父科目候选注入。
-    # 在补充层级 / 方向等元信息之后、统一方向查找之前补充继承候选，
-    # 让辅助行也有安全候选可被自动确认，不再产生 unmapped_account。
-    inherited_auxiliary_rows = _inject_auxiliary_inherited_candidates(
-        mapping_recommendations=mapping_recommendations,
-        rows=rows,
-        code_col_id=code_col_id,
-        name_col_id=name_col_id,
-        col_id_to_index=col_id_to_index,
-    )
-
-    # 9. 建立 (code,name) → top direction 的快速查找
-    # 先补充方向信息到候选人（查询标准科目）
-    sa_ids: set[uuid.UUID] = set()
-    for rec in mapping_recommendations:
-        for c in rec.get("candidates", []):
-            sid = c.get("standard_account_id")
-            if sid:
-                try:
-                    sa_ids.add(uuid.UUID(sid))
-                except (ValueError, TypeError):
-                    pass
-
-    sa_map: dict[uuid.UUID, StandardAccount] = {}
-    if sa_ids:
-        sa_result = await db.execute(
-            select(StandardAccount).where(StandardAccount.id.in_(list(sa_ids)))
-        )
-        for sa in sa_result.scalars().all():
-            sa_map[sa.id] = sa
-
-    # 补充方向信息到候选人
-    for rec in mapping_recommendations:
-        for c in rec.get("candidates", []):
-            sid = c.get("standard_account_id")
-            if sid:
-                try:
-                    sa = sa_map.get(uuid.UUID(sid))
-                    c["standard_balance_direction"] = sa.balance_direction if sa else None
-                except (ValueError, TypeError):
-                    c["standard_balance_direction"] = None
-            else:
-                c["standard_balance_direction"] = None
-
-    # 现在构建方向查找映射
-    rec_direction_map: dict[tuple, str | None] = {}
-    rec_direction_by_row: dict[int, str | None] = {}
-    for rec in mapping_recommendations:
-        key = (rec.get("client_account_code"), rec.get("client_account_name"))
-        candidates = rec.get("candidates", [])
-        if candidates:
-            # TASK-087：使用后端 auto_confirm_candidate，只有唯一安全候选时才取方向
-            top = rec.get("auto_confirm_candidate") or pick_unique_auto_confirm_candidate(candidates)
-            rec_direction_map[key] = top.get("standard_balance_direction") if top else None
-        else:
-            rec_direction_map[key] = None
-        row_index = rec.get("row_index")
-        if row_index is not None:
-            rec_direction_by_row[row_index] = rec_direction_map[key]
-
-    # 10. 重新构建带方向和金额配置的 row_inputs 并运行金额拆分
-    row_inputs: list[RowInput] = []
-    for ri in row_inputs_no_dir:
-        amt_configs = []
-        for pc in period_configs:
-            mode = pc["mode"]
-            if mode == "two_column":
-                amt_configs.append(AmountConfig(
-                    period_type=pc["period_type"],
-                    mode=mode,
-                    debit_field=pc.get("debit_field"),
-                    credit_field=pc.get("credit_field"),
-                ))
-            else:
-                af = pc.get("amount_field")
-                if af:
-                    amt_configs.append(AmountConfig(
-                        period_type=pc["period_type"],
-                        mode=mode,
-                        amount_field=af,
-                        direction_column_id=pc.get("direction_column_id"),
-                    ))
-
-        # 从推荐中获取最佳方向
-        key = (ri.client_account_code, ri.client_account_name)
-        best_direction = rec_direction_by_row.get(ri.row_index)
-        if best_direction is None:
-            best_direction = rec_direction_map.get(key)
-        if best_direction is None and ri.client_account_code:
-            # fallback: 用代码查找
-            for k, v in rec_direction_map.items():
-                if k[0] == ri.client_account_code:
-                    best_direction = v
-                    break
-
-        row_inputs.append(RowInput(
-            row_index=ri.row_index,
-            client_account_code=ri.client_account_code,
-            client_account_name=ri.client_account_name,
-            indent_level=ri.indent_level,
-            values=ri.values,
-            amount_configs=amt_configs,
-            standard_direction=best_direction,
-        ))
-
-    transform_result = transform_rows(row_inputs, hierarchy_mode=hierarchy_mode)
-    amounts = []
-    for r in transform_result.rows:
-        amounts.append({
-            "row_index": r.row_index,
-            "opening_debit": r.opening_debit,
-            "opening_credit": r.opening_credit,
-            "current_debit": r.current_debit,
-            "current_credit": r.current_credit,
-            "ending_debit": r.ending_debit,
-            "ending_credit": r.ending_credit,
-            "warnings": list(r.warnings),
-            "errors": list(r.errors),
-        })
-
-    # 11. 收集 errors 和 warnings
-    errors: list[dict] = []
-    warnings: list[dict] = []
-
-    # 来自转换引擎的错误
-    for e in transform_result.global_errors:
-        errors.append({
-            "row_index": None,
-            "code": "",
-            "message": e,
-            "category": "no_direction" if "方向缺失" in e or "无法按标准方向" in e else "missing_amount",
-        })
-
-    # 来自转换引擎的警告（过滤掉 auto_skip_rows 中的行的警告）
-    for w in transform_result.global_warnings:
-        # 提取警告中的行号（格式："行 N: ..."）
-        m = re.match(r"行 (\d+):", w)
-        if m:
-            row_idx = int(m.group(1))
-            if row_idx in auto_skip_rows:
-                continue  # 跳过的行不产生警告
-        cat = "parent_amount_mismatch" if "不一致" in w else "negative_amount" if "负数" in w else "indent_suggested" if "缩进" in w else "other"
-        warnings.append({
-            "row_index": None,
-            "code": "",
-            "message": w,
-            "category": cat,
-        })
-
-    # 层级建议警告
-    for h in hierarchy:
-        if h["level_source"] == "indent_suggested":
-            warnings.append({
-                "row_index": h["row_index"],
-                "code": h.get("client_account_code") or "",
-                "message": f"行 {h['row_index']} 的层级由缩进推断，level_source=indent_suggested，建议用户确认",
-                "category": "indent_suggested",
-            })
-
-    # 检查未映射客户科目（没有任何候选人的）
-    for rec in mapping_recommendations:
-        if not rec.get("participates_in_entry", True):
-            continue
-        if not rec.get("candidates"):
-            errors.append({
-                "row_index": rec.get("row_index"),
-                "code": rec.get("client_account_code") or "",
-                "message": f"客户科目「{rec.get('client_account_code') or '?'} {rec.get('client_account_name') or '?'}」未能匹配任何标准科目，请手动映射",
-                "category": "unmapped_account",
-            })
-
-    # 检查有候选人但全是 warning 的
-    for rec in mapping_recommendations:
-        if not rec.get("participates_in_entry", True):
-            continue
-        candidates = rec.get("candidates", [])
-        all_warned = candidates and all(c.get("warning") for c in candidates)
-        if all_warned:
-            warnings.append({
-                "row_index": rec.get("row_index"),
-                "code": rec.get("client_account_code") or "",
-                "message": f"客户科目「{rec.get('client_account_code') or '?'} {rec.get('client_account_name') or '?'}」所有候选均警告（可能指向已停用标准科目），建议用户手动选择",
-                "category": "disabled_standard_account",
-            })
-
-    # 检查金额列不足
-    if not period_configs:
-        errors.append({
-            "row_index": None,
-            "code": "",
-            "message": "至少需要映射一个期间金额列（期初/本期/期末），并指定拆分方式",
-            "category": "missing_amount",
-        })
-
-    # ANCHOR-INHERITANCE-MAPPING：构建客户科目树并运行继承映射计划
-    # 1) 准备 rows_meta + row_mapping_meta
+    # 9. ANCHOR-INHERITANCE-MAPPING v2：
+    #    先构建客户科目树，做轻量级结构汇总 + 锚点发现；
+    #    再仅对 anchor / breakpoint 调用 recommend_mappings；
+    #    普通 inherited / structural_summary / ignored 节点不进入完整推荐。
     ca_by_row: dict[int, dict] = {
         ca.get("row_index"): ca for ca in client_accounts_for_mapping
         if ca.get("row_index") is not None
@@ -975,7 +732,277 @@ async def analyze_standard_import(
         },
     )
 
-    # 2) 准备 per-row recommendation lookup（用 recommend_mappings 已有结果作为锚点推荐源）
+    # 10. 轻量锚点发现（不做 recommend_mappings，仅分类 + 强信号 + 中断检测）
+    discovery = await discover_anchor_candidates(
+        tree=tree,
+        db=db,
+        customer_label=customer_label,
+    )
+
+    # 11. 决定哪些 client_accounts 必须送进 recommend_mappings：
+    #     anchor_rows + breakpoint_candidate_rows
+    #     普通 inherited / structural / ignored 一律跳过
+    full_rec_row_indexes: set[int] = (
+        discovery.anchor_rows | discovery.breakpoint_candidate_rows
+    )
+
+    # 12. 把 client_accounts_for_mapping 拆成「需完整推荐」+「轻量处理」
+    full_rec_accounts: list[dict] = []
+    full_rec_index_map: dict[tuple, int] = {}  # dedup_key → index in full_rec_accounts
+    for ca in client_accounts_for_mapping:
+        ri = ca.get("row_index")
+        if ri is None:
+            continue
+        if ri not in full_rec_row_indexes:
+            continue
+        full_rec_accounts.append(ca)
+
+    # TASK-081：大文件先去重（按 code/name/ancestors）
+    _dedup_key_to_first_idx: dict[tuple, int] = {}
+    for idx, ca in enumerate(full_rec_accounts):
+        key = (
+            (ca.get("client_account_code") or "").strip(),
+            (ca.get("client_account_name") or "").strip(),
+            tuple(ca.get("ancestor_codes") or []),
+            tuple(ca.get("ancestor_names") or []),
+        )
+        if key not in _dedup_key_to_first_idx:
+            _dedup_key_to_first_idx[key] = idx
+
+    unique_full_rec = [
+        full_rec_accounts[i] for i in _dedup_key_to_first_idx.values()
+    ]
+    if unique_full_rec:
+        unique_recommendations = await recommend_mappings(
+            db=db,
+            data_type="trial_balance",
+            client_accounts=unique_full_rec,
+            customer_label=customer_label,
+            source_label=source_label,
+        )
+    else:
+        unique_recommendations = []
+
+    # 回填去重结果
+    _dedup_result_map: dict[tuple, dict] = {}
+    for idx, rec in enumerate(unique_recommendations):
+        ca = unique_full_rec[idx]
+        key = (
+            (ca.get("client_account_code") or "").strip(),
+            (ca.get("client_account_name") or "").strip(),
+            tuple(ca.get("ancestor_codes") or []),
+            tuple(ca.get("ancestor_names") or []),
+        )
+        _dedup_result_map[key] = rec
+
+    # 13. 为所有 client_accounts_for_mapping 构造 mapping_recommendations
+    #     anchor/breakpoint 行：填充完整推荐结果
+    #     inherited 行：candidates=[]，等 build_mapping_plan 阶段填 inherited 信息
+    #     structural/ignored 行：candidates=[]
+    mapping_recommendations: list[dict] = []
+    for ca in client_accounts_for_mapping:
+        ri = ca.get("row_index")
+        key = (
+            (ca.get("client_account_code") or "").strip(),
+            (ca.get("client_account_name") or "").strip(),
+            tuple(ca.get("ancestor_codes") or []),
+            tuple(ca.get("ancestor_names") or []),
+        )
+        rec: dict
+        if ri in full_rec_row_indexes and key in _dedup_result_map:
+            src = _dedup_result_map[key]
+            rec = {
+                "client_account_code": ca.get("client_account_code"),
+                "client_account_name": ca.get("client_account_name"),
+                "candidates": list(src.get("candidates", [])),
+                "auto_confirm_candidate": src.get("auto_confirm_candidate"),
+                "auto_confirm_status": src.get("auto_confirm_status"),
+                "auto_confirm_reason": src.get("auto_confirm_reason"),
+            }
+        else:
+            # 普通 inherited / structural / ignored → 不进入完整推荐
+            rec = {
+                "client_account_code": ca.get("client_account_code"),
+                "client_account_name": ca.get("client_account_name"),
+                "candidates": [],
+                "auto_confirm_candidate": None,
+                "auto_confirm_status": None,
+                "auto_confirm_reason": None,
+            }
+        rec["row_index"] = ri
+        meta = row_mapping_meta.get(ri, {}) if ri is not None else {}
+        rec["is_leaf"] = meta.get("is_leaf")
+        rec["is_summary"] = meta.get("is_summary")
+        rec["participates_in_entry"] = meta.get("participates_in_entry")
+        rec["parent_row_index"] = (
+            tree.nodes_by_row[ri].parent_row_index if ri in tree.nodes_by_row else None
+        )
+        rec["parent_client_account_code"] = (
+            tree.nodes_by_row[ri].parent_key if ri in tree.nodes_by_row else None
+        )
+        mapping_recommendations.append(rec)
+
+    # TASK-078：辅助核算明细行继承父科目候选注入。
+    # 仅对有完整推荐结果的 anchor/breakpoint 行注入；
+    # 普通 inherited 行不需注入（由 build_mapping_plan 自动继承）。
+    inherited_auxiliary_rows = _inject_auxiliary_inherited_candidates(
+        mapping_recommendations=mapping_recommendations,
+        rows=rows,
+        code_col_id=code_col_id,
+        name_col_id=name_col_id,
+        col_id_to_index=col_id_to_index,
+    )
+
+    # 14. 建立 (code,name) → top direction 的快速查找（只对有完整推荐的行）
+    sa_ids: set[uuid.UUID] = set()
+    for rec in mapping_recommendations:
+        for c in rec.get("candidates", []):
+            sid = c.get("standard_account_id")
+            if sid:
+                try:
+                    sa_ids.add(uuid.UUID(sid))
+                except (ValueError, TypeError):
+                    pass
+
+    sa_map: dict[uuid.UUID, StandardAccount] = {}
+    if sa_ids:
+        sa_result = await db.execute(
+            select(StandardAccount).where(StandardAccount.id.in_(list(sa_ids)))
+        )
+        for sa in sa_result.scalars().all():
+            sa_map[sa.id] = sa
+
+    # 补充方向信息到候选人
+    for rec in mapping_recommendations:
+        for c in rec.get("candidates", []):
+            sid = c.get("standard_account_id")
+            if sid:
+                try:
+                    sa = sa_map.get(uuid.UUID(sid))
+                    c["standard_balance_direction"] = sa.balance_direction if sa else None
+                except (ValueError, TypeError):
+                    c["standard_balance_direction"] = None
+            else:
+                c["standard_balance_direction"] = None
+
+    # 方向查找：先 auto_confirm_candidate，再 pick_unique_auto_confirm_candidate
+    rec_direction_map: dict[tuple, str | None] = {}
+    rec_direction_by_row: dict[int, str | None] = {}
+    for rec in mapping_recommendations:
+        key = (rec.get("client_account_code"), rec.get("client_account_name"))
+        candidates = rec.get("candidates", [])
+        if candidates:
+            top = rec.get("auto_confirm_candidate") or pick_unique_auto_confirm_candidate(candidates)
+            rec_direction_map[key] = top.get("standard_balance_direction") if top else None
+        else:
+            rec_direction_map[key] = None
+        row_index = rec.get("row_index")
+        if row_index is not None:
+            rec_direction_by_row[row_index] = rec_direction_map[key]
+
+    # 15. 重新构建带方向和金额配置的 row_inputs 并运行金额拆分
+    row_inputs: list[RowInput] = []
+    for ri in row_inputs_no_dir:
+        amt_configs = []
+        for pc in period_configs:
+            mode = pc["mode"]
+            if mode == "two_column":
+                amt_configs.append(AmountConfig(
+                    period_type=pc["period_type"],
+                    mode=mode,
+                    debit_field=pc.get("debit_field"),
+                    credit_field=pc.get("credit_field"),
+                ))
+            else:
+                af = pc.get("amount_field")
+                if af:
+                    amt_configs.append(AmountConfig(
+                        period_type=pc["period_type"],
+                        mode=mode,
+                        amount_field=af,
+                        direction_column_id=pc.get("direction_column_id"),
+                    ))
+
+        key = (ri.client_account_code, ri.client_account_name)
+        best_direction = rec_direction_by_row.get(ri.row_index)
+        if best_direction is None:
+            best_direction = rec_direction_map.get(key)
+        if best_direction is None and ri.client_account_code:
+            for k, v in rec_direction_map.items():
+                if k[0] == ri.client_account_code:
+                    best_direction = v
+                    break
+
+        row_inputs.append(RowInput(
+            row_index=ri.row_index,
+            client_account_code=ri.client_account_code,
+            client_account_name=ri.client_account_name,
+            indent_level=ri.indent_level,
+            values=ri.values,
+            amount_configs=amt_configs,
+            standard_direction=best_direction,
+        ))
+
+    transform_result = transform_rows(row_inputs, hierarchy_mode=hierarchy_mode)
+    amounts = []
+    for r in transform_result.rows:
+        amounts.append({
+            "row_index": r.row_index,
+            "opening_debit": r.opening_debit,
+            "opening_credit": r.opening_credit,
+            "current_debit": r.current_debit,
+            "current_credit": r.current_credit,
+            "ending_debit": r.ending_debit,
+            "ending_credit": r.ending_credit,
+            "warnings": list(r.warnings),
+            "errors": list(r.errors),
+        })
+
+    # 16. 收集 errors 和 warnings
+    errors: list[dict] = []
+    warnings: list[dict] = []
+
+    for e in transform_result.global_errors:
+        errors.append({
+            "row_index": None,
+            "code": "",
+            "message": e,
+            "category": "no_direction" if "方向缺失" in e or "无法按标准方向" in e else "missing_amount",
+        })
+
+    for w in transform_result.global_warnings:
+        m = re.match(r"行 (\d+):", w)
+        if m:
+            row_idx = int(m.group(1))
+            if row_idx in auto_skip_rows:
+                continue
+        cat = "parent_amount_mismatch" if "不一致" in w else "negative_amount" if "负数" in w else "indent_suggested" if "缩进" in w else "other"
+        warnings.append({
+            "row_index": None,
+            "code": "",
+            "message": w,
+            "category": cat,
+        })
+
+    for h in hierarchy:
+        if h["level_source"] == "indent_suggested":
+            warnings.append({
+                "row_index": h["row_index"],
+                "code": h.get("client_account_code") or "",
+                "message": f"行 {h['row_index']} 的层级由缩进推断，level_source=indent_suggested，建议用户确认",
+                "category": "indent_suggested",
+            })
+
+    if not period_configs:
+        errors.append({
+            "row_index": None,
+            "code": "",
+            "message": "至少需要映射一个期间金额列（期初/本期/期末），并指定拆分方式",
+            "category": "missing_amount",
+        })
+
+    # 17. ANCHOR-INHERITANCE-MAPPING v2：
+    #     构建轻量映射计划，仅对 anchor/breakpoint 调用完整推荐。
     rec_by_row: dict[int, dict] = {}
     for rec in mapping_recommendations:
         ri = rec.get("row_index")
@@ -983,7 +1010,7 @@ async def analyze_standard_import(
             rec_by_row[ri] = rec
 
     async def _recommend_anchor(node: AccountTreeNode) -> AnchorResolution | None:
-        """对 anchor / breakpoint 节点执行完整推荐（已用 recommend_mappings 跑过）。"""
+        """对 anchor / breakpoint 节点执行完整推荐（已有 recommend_mappings 结果）。"""
         rec = rec_by_row.get(node.row_index)
         if rec is None:
             return AnchorResolution(
@@ -994,36 +1021,65 @@ async def analyze_standard_import(
                 reason="无推荐结果",
                 is_resolved=False,
             )
-        # 优先使用后端 auto_confirm_candidate，否则尝试 pick unique safe
-        cand = rec.get("auto_confirm_candidate") or pick_unique_auto_confirm_candidate(
-            rec.get("candidates", [])
-        )
-        if cand:
-            sa_id = cand.get("standard_account_id")
+        # TASK-090/092：先尝试后端 auto_confirm_candidate（仅当它是安全候选时）
+        auto = rec.get("auto_confirm_candidate")
+        candidates = rec.get("candidates", [])
+        # 安全候选：score >= 0.9 + warning is None + auto_confirmable=True
+        safe = [
+            c for c in candidates
+            if c.get("warning") is None
+            and c.get("auto_confirmable") is True
+            and float(c.get("score", 0) or 0) >= 0.9
+            and c.get("standard_account_id")
+        ]
+        # 唯一安全候选 → resolved
+        unique_safe_ids = {c.get("standard_account_id") for c in safe}
+        if len(unique_safe_ids) == 1 and auto:
+            sa_id = auto.get("standard_account_id")
             return AnchorResolution(
                 standard_account_id=sa_id,
-                standard_account_code=cand.get("standard_account_code"),
-                standard_account_name=cand.get("standard_account_name"),
-                source=cand.get("source") or "auto",
-                reason=cand.get("reason") or "唯一安全候选",
+                standard_account_code=auto.get("standard_account_code"),
+                standard_account_name=auto.get("standard_account_name"),
+                source=auto.get("source") or "auto",
+                reason=auto.get("reason") or "唯一安全候选",
                 is_resolved=True,
-                auto_confirm_status=rec.get("auto_confirm_status") or "unique_safe",
-                auto_confirm_reason=rec.get("auto_confirm_reason"),
+                auto_confirm_status="unique_safe",
+                auto_confirm_reason=rec.get("auto_confirm_reason") or "唯一安全候选",
+                suggested_standard_account_id=auto.get("standard_account_id"),
+                suggested_standard_account_code=auto.get("standard_account_code"),
+                suggested_standard_account_name=auto.get("standard_account_name"),
+                suggested_source=auto.get("source"),
+                suggested_reason=auto.get("reason"),
             )
-        # 没有自动确认候选：从已有候选中挑选 score 最高的（不自动确认）
-        cands = rec.get("candidates", [])
-        if cands:
-            best = max(cands, key=lambda c: float(c.get("score", 0) or 0))
-            return AnchorResolution(
-                standard_account_id=best.get("standard_account_id"),
-                standard_account_code=best.get("standard_account_code"),
-                standard_account_name=best.get("standard_account_name"),
-                source=best.get("source"),
-                reason=best.get("reason"),
-                is_resolved=bool(best.get("standard_account_id")),
-                auto_confirm_status=rec.get("auto_confirm_status") or "none",
-                auto_confirm_reason=rec.get("auto_confirm_reason") or "需用户手动选择",
+        # 多候选 / 不安全：仅 suggested，不得 resolved
+        if candidates:
+            # 找分数最高且非空 ID 的候选
+            sorted_cands = sorted(
+                [c for c in candidates if c.get("standard_account_id")],
+                key=lambda c: float(c.get("score", 0) or 0),
+                reverse=True,
             )
+            if sorted_cands:
+                best = sorted_cands[0]
+                return AnchorResolution(
+                    standard_account_id=None,
+                    standard_account_code=None,
+                    standard_account_name=None,
+                    source=None,
+                    reason="未确认最高分候选，仅作为 suggested",
+                    is_resolved=False,
+                    auto_confirm_status="ambiguous",
+                    auto_confirm_reason=(
+                        f"存在 {len(sorted_cands)} 个候选，无唯一安全自动确认"
+                        if len(sorted_cands) > 1
+                        else "候选不安全"
+                    ),
+                    suggested_standard_account_id=best.get("standard_account_id"),
+                    suggested_standard_account_code=best.get("standard_account_code"),
+                    suggested_standard_account_name=best.get("standard_account_name"),
+                    suggested_source=best.get("source"),
+                    suggested_reason=best.get("reason"),
+                )
         return AnchorResolution(
             standard_account_id=None,
             standard_account_code=None,
@@ -1031,20 +1087,21 @@ async def analyze_standard_import(
             source=None,
             reason="无候选",
             is_resolved=False,
-            auto_confirm_status=rec.get("auto_confirm_status") or "none",
-            auto_confirm_reason=rec.get("auto_confirm_reason") or "无候选，需用户手动选择",
+            auto_confirm_status="none",
+            auto_confirm_reason="无候选，需用户手动选择",
         )
 
-    # 3) 运行继承映射计划
+    # 18. 运行继承映射计划（传入已 discovery 复用）
     tree, mapping_summary = await build_anchor_mapping_plan(
         tree=tree,
         db=db,
         customer_label=customer_label,
         source_label=source_label,
         recommend_anchor_fn=_recommend_anchor,
+        discovery=discovery,
     )
 
-    # 4) 把映射角色 / 模式合并进 mapping_recommendations
+    # 19. 把映射角色 / 模式合并进 mapping_recommendations
     for rec in mapping_recommendations:
         ri = rec.get("row_index")
         if ri is None:
@@ -1061,6 +1118,9 @@ async def analyze_standard_import(
         rec["resolved_standard_account_id"] = node.resolved_standard_account_id
         rec["resolved_standard_account_code"] = node.resolved_standard_account_code
         rec["resolved_standard_account_name"] = node.resolved_standard_account_name
+        rec["suggested_standard_account_id"] = node.suggested_standard_account_id
+        rec["suggested_standard_account_code"] = node.suggested_standard_account_code
+        rec["suggested_standard_account_name"] = node.suggested_standard_account_name
         rec["resolution_source"] = node.resolution_source
         rec["resolution_reason"] = node.resolution_reason
         rec["inheritance_break_reason"] = node.inheritance_break_reason
@@ -1090,7 +1150,7 @@ async def analyze_standard_import(
             rec["candidates"] = []
             rec["auto_confirm_candidate"] = None
 
-    # 5) 未解析叶子行单独检查（基于新映射角色）
+    # 20. 未解析叶子行单独检查（基于新映射角色 + 修正 inheritance_break）
     for rec in mapping_recommendations:
         if not rec.get("participates_in_entry", True):
             continue
@@ -1098,22 +1158,35 @@ async def analyze_standard_import(
             if rec.get("resolved_standard_account_id"):
                 continue
         if rec.get("mapping_role") == "unresolved":
+            role = rec.get("mapping_role")
+            inheritance_break = rec.get("inheritance_break_reason")
+            if inheritance_break:
+                cat = "inheritance_break_unconfirmed"
+                msg = (
+                    f"客户科目「{rec.get('client_account_code') or '?'} "
+                    f"{rec.get('client_account_name') or '?'}」"
+                    f"继承中断（{inheritance_break}）但未确认目标，请手动选择"
+                )
+            elif rec.get("is_summary"):
+                continue  # 父级不入库行不产生 unmapped
+            else:
+                cat = "mapping_anchor_unconfirmed"
+                msg = (
+                    f"客户科目「{rec.get('client_account_code') or '?'} "
+                    f"{rec.get('client_account_name') or '?'}」"
+                    f"作为映射锚点未确认标准科目，请手动选择"
+                )
             errors.append({
                 "row_index": rec.get("row_index"),
                 "code": rec.get("client_account_code") or "",
-                "message": (
-                    f"客户科目「{rec.get('client_account_code') or '?'} "
-                    f"{rec.get('client_account_name') or '?'}」"
-                    f"未能通过锚点/继承解析唯一标准科目，请手动选择"
-                ),
-                "category": "unmapped_account",
+                "message": msg,
+                "category": cat,
             })
 
     # 更新批次状态和配置
     batch.status = "analyzed"
     batch.field_mapping = {"mappings": field_mappings}
     batch.amount_mapping_config = {"period_configs": period_configs}
-    # 保留预览阶段写入的 parse_config（含 data_start_row / header_rows / merged_headers）
     existing_hierarchy_config = batch.hierarchy_config or {}
     existing_parse_config = existing_hierarchy_config.get("parse_config") or {}
     if not existing_parse_config:
@@ -1126,8 +1199,10 @@ async def analyze_standard_import(
         "mode": hierarchy_mode,
         "parse_config": existing_parse_config,
         "inherited_auxiliary_rows": inherited_auxiliary_rows,
-        "mapping_strategy": "anchor_inheritance_v1",
-        "mapping_strategy_version": 1,
+        "mapping_strategy": "anchor_inheritance_v2",
+        "mapping_strategy_version": 2,
+        "full_recommendation_node_count": mapping_summary.full_recommendation_node_count,
+        "inherited_without_recommendation_count": mapping_summary.inherited_without_recommendation_count,
     }
     batch.fiscal_year = fiscal_year
     batch.period = period
@@ -1146,7 +1221,7 @@ async def analyze_standard_import(
         "errors": errors,
         "warnings": warnings,
         "mapping_summary": mapping_summary_to_dict(mapping_summary),
-        "mapping_strategy": "anchor_inheritance_v1",
+        "mapping_strategy": "anchor_inheritance_v2",
     }
 
 
@@ -1163,6 +1238,9 @@ def mapping_summary_to_dict(s: MappingPlanSummary) -> dict:
         "confirmation_required_count": s.confirmation_required_count,
         "participating_leaf_count": s.participating_leaf_count,
         "resolved_participating_leaf_count": s.resolved_participating_leaf_count,
+        "full_recommendation_node_count": s.full_recommendation_node_count,
+        "light_signal_node_count": s.light_signal_node_count,
+        "inherited_without_recommendation_count": s.inherited_without_recommendation_count,
     }
 
 
@@ -1170,14 +1248,14 @@ def mapping_summary_to_dict(s: MappingPlanSummary) -> dict:
 
 async def execute_standard_import(
     db: AsyncSession,
-    batch_id: uuid.UUID,
+    batch_id: uuid.UUID | str,
     file_path: str,
     *,
     confirmed_mappings: list[dict],
     ignored_rows: list[int] | None = None,
     warnings_confirmed: bool = False,
     save_mapping_experience: bool = True,
-    mapping_strategy_version: int = 1,
+    mapping_strategy_version: int = 2,
 ) -> dict:
     """
     执行导入：校验 → 保存原始行 → 生成标准余额表 → 保存映射经验。
@@ -1192,6 +1270,13 @@ async def execute_standard_import(
     """
     import time as _time
     _timings: dict[str, float] = {}
+
+    # TASK-091：防御性转换 batch_id 为 UUID 对象（ORM id 字段是 uuid.UUID）
+    if isinstance(batch_id, str):
+        try:
+            batch_id = uuid.UUID(batch_id)
+        except (ValueError, TypeError):
+            raise ValueError(f"批次 {batch_id} 不是合法 UUID")
 
     # 1. 查批次
     result = await db.execute(

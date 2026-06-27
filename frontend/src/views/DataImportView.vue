@@ -411,7 +411,7 @@
                           </div>
                         </el-popover>
                       </template>
-                      <template v-else-if="stdRowParticipates(row)">
+                      <template v-else-if="stdRowCanSelect(row)">
                         <el-popover placement="left-start" trigger="click" width="360">
                           <template #reference>
                             <el-button size="small" type="primary" plain>
@@ -479,7 +479,7 @@
                       <template v-if="stdIsIgnored(row.row_index)">
                         <el-button size="small" @click="stdCancelIgnoreRow(row.row_index)">取消忽略</el-button>
                       </template>
-                      <template v-else-if="stdRowParticipates(row)">
+                      <template v-else-if="stdRowCanSelect(row)">
                         <el-button size="small" type="warning" plain @click="stdIgnoreRow(row.row_index)">忽略</el-button>
                       </template>
                       <span v-else class="std-action-muted">—</span>
@@ -1078,6 +1078,20 @@ import type { UploadFile, UploadInstance } from 'element-plus'
 import api from '@/api'
 import { normalizeError } from '@/utils/error'
 import { isSafeCandidate, pickUniqueAutoConfirmCandidate, getAutoConfirmCandidate } from '@/utils/mappingCandidate'
+import {
+  rowMappingRole,
+  rowRequiresMapping as utilRowRequiresMapping,
+  rowCanSelectStandardAccount,
+  rowShouldSubmitMapping,
+  rowCanOverride as utilRowCanOverride,
+  rowParticipatesInEntry as utilRowParticipates,
+  rowDisplayStatus,
+  buildAnchorOnlyConfirmedMappings as utilBuildAnchorOnlyConfirmed,
+  applyExplicitOverride as utilApplyExplicitOverride,
+  restoreInheritance as utilRestoreInheritance,
+  computeStats,
+  normalizeMappingRecommend,
+} from '@/utils/anchorInheritanceMapping'
 import type {
   Company,
   ImportPreviewResponse,
@@ -1924,16 +1938,63 @@ function stdRowHasIdentity(row: StdReviewRow): boolean {
   return !!(row.client_account_code || row.client_account_name)
 }
 
+/**
+ * TASK-092：该行是否需要显示标准科目选择器。
+ * 非末级 anchor（如 银行存款）也需要显示选择器，所以不能仅看 participates_in_entry。
+ */
+function stdRowCanSelect(row: StdReviewRow): boolean {
+  if (stdIsIgnored(row.row_index)) return false
+  return rowCanSelectStandardAccount({
+    row_index: row.row_index,
+    client_account_code: row.client_account_code,
+    client_account_name: row.client_account_name,
+    is_leaf: row.is_leaf,
+    is_summary: row.is_summary,
+    participates_in_entry: row.participates_in_entry,
+    rec: row.rec,
+    is_ignored: !!stdIgnoredRows.value[row.row_index],
+  })
+}
+
+/**
+ * TASK-092：该行是否参与金额入库。
+ * 委托给 util.rowParticipatesInEntry — 该函数基于 mapping_role 判定，
+ * 不会把非末级 anchor 错误地排除。
+ */
 function stdRowParticipates(row: StdReviewRow): boolean {
-  return row.participates_in_entry && row.is_leaf && !row.is_summary
+  return utilRowParticipates({
+    row_index: row.row_index,
+    client_account_code: row.client_account_code,
+    client_account_name: row.client_account_name,
+    is_leaf: row.is_leaf,
+    is_summary: row.is_summary,
+    participates_in_entry: row.participates_in_entry,
+    rec: row.rec,
+    is_ignored: !!stdIgnoredRows.value[row.row_index],
+  })
 }
 
 function stdIsIgnored(rowIndex: number): boolean {
   return !!stdIgnoredRows.value[rowIndex]
 }
 
+/**
+ * TASK-092：该行是否需要用户在前端做映射选择。
+ * 委托给 util.rowRequiresMapping — 基于 mapping_role + requires_confirmation 判定，
+ * inherited / structural_summary / ignored 都不计入未映射。
+ */
 function stdRowRequiresMapping(row: StdReviewRow): boolean {
-  return stdRowParticipates(row) && stdRowHasIdentity(row) && !stdIsIgnored(row.row_index)
+  if (!stdRowHasIdentity(row)) return false
+  return utilRowRequiresMapping({
+    row_index: row.row_index,
+    client_account_code: row.client_account_code,
+    client_account_name: row.client_account_name,
+    is_leaf: row.is_leaf,
+    is_summary: row.is_summary,
+    participates_in_entry: row.participates_in_entry,
+    rec: row.rec,
+    is_ignored: !!stdIgnoredRows.value[row.row_index],
+  })
 }
 
 function stdRowWarningMessages(row: StdReviewRow): string[] {
@@ -2242,54 +2303,15 @@ const stdMappingSummary = computed(() => {
   return (stdAnalyzeResult.value as any)?.mapping_summary
 })
 
-// ANCHOR-INHERITANCE-MAPPING：仅提交锚点 / 显式覆盖
+// ANCHOR-INHERITANCE-MAPPING v2：仅提交锚点 / 显式覆盖
 // 普通 inherited 行不进入提交，让后端通过继承映射计划自动解析
 function stdBuildAnchorOnlyConfirmedMappings(): import('@/types').ConfirmedMapping[] {
-  const out: import('@/types').ConfirmedMapping[] = []
-  for (const row of stdReviewRows.value) {
-    if (stdIsIgnored(row.row_index)) continue
-    if (!stdRowParticipates(row)) continue
-    const role = stdMappingRole(row)
-    // 普通继承行不提交（execute 自动沿树继承）
-    if (role === 'inherited') continue
-    if (role === 'structural_summary') continue
-    if (role === 'ignored') continue
-    // 锚点 / 显式覆盖 / 中断点：必须提交
-    const cm = stdSelectedMapping(row.row_index)
-    if (!cm) {
-      // 自动确认的锚点（mapping_mode=direct_auto）也可能没有 selectedMapping
-      // 从 rec.candidates / auto_confirm_candidate 提取
-      if (row.rec?.resolved_standard_account_id) {
-        out.push({
-          row_index: row.row_index,
-          client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
-          client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
-          standard_account_id: row.rec.resolved_standard_account_id,
-          standard_account_code: row.rec.resolved_standard_account_code || '',
-          standard_account_name: row.rec.resolved_standard_account_name || '',
-          mapping_action: role === 'explicit_override' ? 'override' : 'anchor',
-          apply_to_descendants: true,
-          selection_source: 'auto_confirmed',
-        })
-      } else if (role === 'anchor' || role === 'breakpoint' || role === 'explicit_override') {
-        // 未解析的锚点 = unresolved
-        // 这种行 execute 会阻断
-      }
-      continue
-    }
-    out.push({
-      row_index: row.row_index,
-      client_account_code: row.rec?.client_account_code ?? row.client_account_code ?? null,
-      client_account_name: row.rec?.client_account_name ?? row.client_account_name ?? null,
-      standard_account_id: cm.standard_account_id,
-      standard_account_code: cm.standard_account_code,
-      standard_account_name: cm.standard_account_name,
-      mapping_action: role === 'explicit_override' ? 'override' : 'anchor',
-      apply_to_descendants: true,
-      selection_source: 'user_confirmed',
-    })
+  const rows = stdReviewRows.value
+  const selectedByRow: Record<number, import('@/types').MappingCandidate | null | undefined> = {}
+  for (const row of rows) {
+    selectedByRow[row.row_index] = stdSelectedMapping(row.row_index)
   }
-  return out
+  return utilBuildAnchorOnlyConfirmed(rows, selectedByRow)
 }
 
 // ANCHOR-INHERITANCE-MAPPING：未解决末级数量
@@ -2423,7 +2445,7 @@ async function stdGoExecute() {
       ignored_rows: stdIgnoredRowIndexes.value,
       warnings_confirmed: stdWarningsConfirmed.value,
       save_mapping_experience: true,
-      mapping_strategy_version: 1,
+      mapping_strategy_version: 2,
     }
 
     const { data } = await api.post<import('@/types').StdExecuteResponse>(

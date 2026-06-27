@@ -15,7 +15,7 @@
 
 import pytest
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.account_mapping_inheritance_service import (
     AccountTree,
@@ -30,6 +30,8 @@ from app.services.account_mapping_inheritance_service import (
     is_structural_summary,
     resolve_leaf_standard_accounts,
     validate_mapping_plan,
+    classify_node_semantic_role,
+    discover_anchor_candidates,
 )
 
 
@@ -623,3 +625,251 @@ class TestExperienceBoundary:
             # 其余角色不得作为经验保存
             assert role not in experience_saveable, \
                 f"角色 {role} 不应保存为映射经验"
+
+
+# ── 8. TASK-092：非末级会计科目作为 anchor ────────────────
+
+
+class TestNonLeafAsAnchor:
+    """TASK-092 P0-2.1/2.2：银行存款 / 管理费用 / 应收账款 等非末级明确会计科目必须能作为 anchor。"""
+
+    def test_bank_account_non_leaf_not_structural_summary(self):
+        """银行存款即使非末级且不参与入库，也不能判定为 structural_summary。"""
+        from app.services.account_mapping_inheritance_service import (
+            classify_node_semantic_role,
+        )
+        n = AccountTreeNode(
+            row_index=0,
+            client_account_code="1002",
+            client_account_name="银行存款",
+            is_leaf=False,
+            is_summary=True,
+            participates_in_entry=False,
+        )
+        # classify 应识别为 account_anchor_candidate
+        assert classify_node_semantic_role(n) == "account_anchor_candidate"
+        # is_structural_summary 返回 False
+        assert is_structural_summary(n) is False
+
+    def test_management_expense_non_leaf_not_structural_summary(self):
+        """管理费用即使非末级也不能判定为 structural_summary。"""
+        from app.services.account_mapping_inheritance_service import (
+            classify_node_semantic_role,
+        )
+        n = AccountTreeNode(
+            row_index=0,
+            client_account_code="6602",
+            client_account_name="管理费用",
+            is_leaf=False,
+            is_summary=True,
+            participates_in_entry=False,
+        )
+        assert classify_node_semantic_role(n) == "account_anchor_candidate"
+        assert is_structural_summary(n) is False
+
+    def test_receivable_non_leaf_not_structural_summary(self):
+        """应收账款即使非末级也不能判定为 structural_summary。"""
+        n = AccountTreeNode(
+            row_index=0,
+            client_account_code="1122",
+            client_account_name="应收账款",
+            is_leaf=False,
+            is_summary=True,
+            participates_in_entry=False,
+        )
+        assert is_structural_summary(n) is False
+
+    def test_current_asset_is_structural_summary(self):
+        """流动资产（结构汇总词）必须仍识别为 structural_summary。"""
+        n = AccountTreeNode(
+            row_index=0,
+            client_account_name="流动资产",
+            is_leaf=False,
+            is_summary=True,
+            participates_in_entry=False,
+        )
+        assert is_structural_summary(n) is True
+
+    def test_assets_category_is_structural_summary(self):
+        """资产类（结构汇总词）必须仍识别为 structural_summary。"""
+        n = AccountTreeNode(
+            row_index=0,
+            client_account_name="资产类",
+            is_leaf=False,
+            is_summary=True,
+            participates_in_entry=False,
+        )
+        assert is_structural_summary(n) is True
+
+    @pytest.mark.asyncio
+    async def test_non_leaf_bank_with_100_subsidiaries_only_one_full_recommendation(self):
+        """TASK-092 P0-2.2：'100 个银行账户明细只触发 1 次完整推荐'。
+
+        构造 100 个银行明细共享一个非末级 anchor「银行存款」。
+        verify build_mapping_plan 后 anchor_rows 只有 1 个，
+        其它 100 行都是 inherited。
+        """
+        from app.services.account_mapping_inheritance_service import (
+            discover_anchor_candidates,
+        )
+
+        rows_meta = []
+        # 非末级 anchor：银行存款
+        rows_meta.append({
+            "row_index": 0,
+            "client_account_code": "1002",
+            "client_account_name": "银行存款",
+            "level": 1,
+            "parent_key": None,
+            "is_leaf": False,
+            "is_summary": True,
+            "ancestor_codes": [],
+            "ancestor_names": [],
+        })
+        # 100 个银行明细
+        for i in range(1, 101):
+            rows_meta.append({
+                "row_index": i,
+                "client_account_code": f"1002{i:03d}",
+                "client_account_name": f"工商银行{i:03d}",
+                "level": 2,
+                "parent_key": "1002",
+                "is_leaf": True,
+                "is_summary": False,
+                "ancestor_codes": ["1002"],
+                "ancestor_names": ["银行存款"],
+            })
+
+        tree = build_account_tree(rows_meta)
+        db = AsyncMock()
+
+        # mock find_strong_direct_signals 不返回任何强信号
+        # 让 discover_anchor_candidates 必须靠语义识别
+        with patch("app.services.account_mapping_inheritance_service.find_strong_direct_signals") as mock_signals, \
+             patch("app.services.account_mapping_inheritance_service.select") as mock_select:
+            mock_signals.return_value = {}
+            mock_result = MagicMock()
+            mock_scalars = MagicMock()
+            mock_scalars.all.return_value = []
+            mock_result.scalars.return_value = mock_scalars
+            mock_select.return_value = MagicMock()
+            mock_select.return_value.where.return_value = mock_select.return_value
+            async def mock_execute(*args, **kwargs):
+                return mock_result
+            db.execute = mock_execute
+
+            discovery = await discover_anchor_candidates(
+                tree=tree,
+                db=db,
+                customer_label="测试公司",
+            )
+
+        # 银行存款是 anchor_candidate（语义识别）
+        assert 0 in discovery.anchor_rows, "非末级银行存款应识别为 anchor"
+        # 100 个明细绝大多数是 inherited_candidate
+        # 至少有一个非 anchor 行
+        assert len(discovery.inherited_candidate_rows) >= 50, \
+            f"应大量 inherited_candidate，实际 {len(discovery.inherited_candidate_rows)}"
+
+
+# ── 9. TASK-092：AnchorResolution 拆分 suggested / resolved ─────
+
+
+class TestSuggestedResolvedSplit:
+    """TASK-092 P0-2.8：未确认最高分候选只能作为 suggested，不得算 resolved。"""
+
+    def test_anchor_resolution_default_suggested_none(self):
+        a = AnchorResolution(
+            standard_account_id=None,
+            standard_account_code=None,
+            standard_account_name=None,
+            source=None,
+            reason=None,
+            is_resolved=False,
+        )
+        # 缺省时 suggested_* 也应可空
+        assert a.suggested_standard_account_id is None
+        assert a.is_resolved is False
+
+    def test_anchor_resolution_resolved_with_suggested(self):
+        a = AnchorResolution(
+            standard_account_id="sa-001",
+            standard_account_code="1002",
+            standard_account_name="银行存款",
+            source="code_match",
+            reason="代码精确匹配",
+            is_resolved=True,
+            auto_confirm_status="unique_safe",
+            suggested_standard_account_id="sa-001",
+            suggested_standard_account_code="1002",
+            suggested_standard_account_name="银行存款",
+            suggested_source="code_match",
+            suggested_reason="代码精确匹配",
+        )
+        assert a.is_resolved is True
+        assert a.suggested_standard_account_id == "sa-001"
+
+    def test_anchor_resolution_unresolved_only_suggested(self):
+        a = AnchorResolution(
+            standard_account_id=None,
+            standard_account_code=None,
+            standard_account_name=None,
+            source=None,
+            reason="未确认",
+            is_resolved=False,
+            auto_confirm_status="ambiguous",
+            suggested_standard_account_id="sa-002",
+            suggested_standard_account_code="1012",
+            suggested_standard_account_name="其他货币资金",
+            suggested_source="name_similarity",
+            suggested_reason="名称相似度匹配",
+        )
+        assert a.is_resolved is False
+        assert a.suggested_standard_account_id == "sa-002"
+
+
+# ── 10. TASK-092：MappingPlanSummary 新增性能指标字段 ────────
+
+
+class TestMappingPlanSummaryPerformanceMetrics:
+    def test_summary_has_performance_metrics(self):
+        from app.services.account_mapping_inheritance_service import (
+            _build_summary,
+        )
+        tree = AccountTree()
+        tree.nodes_by_row = {
+            0: AccountTreeNode(
+                row_index=0, client_account_code="1002", client_account_name="银行存款",
+                is_leaf=True, is_summary=False, participates_in_entry=True,
+                mapping_role="anchor", resolved_standard_account_id="sa-001",
+            ),
+            1: AccountTreeNode(
+                row_index=1, client_account_code="100201", client_account_name="工商银行",
+                is_leaf=True, is_summary=False, participates_in_entry=True,
+                mapping_role="inherited",
+            ),
+            2: AccountTreeNode(
+                row_index=2, client_account_code="9999", client_account_name="structural",
+                is_summary=True, participates_in_entry=False,
+                mapping_role="structural_summary",
+            ),
+        }
+        s = _build_summary(
+            tree,
+            full_recommendation_node_count=1,
+            light_signal_node_count=2,
+            inherited_without_recommendation_count=1,
+        )
+        assert s.full_recommendation_node_count == 1
+        assert s.light_signal_node_count == 2
+        assert s.inherited_without_recommendation_count == 1
+        assert s.total_nodes == 3
+        assert s.anchor_count == 1
+        assert s.inherited_count == 1
+        assert s.structural_summary_count == 1
+
+
+# ── helpers ────────────────────────────────────────────
+
+
+from unittest.mock import AsyncMock, MagicMock, patch

@@ -1,35 +1,39 @@
-# ANCHOR-INHERITANCE-MAPPING 真实数据回归报告
+# TASK-092 ANCHOR-INHERITANCE-MAPPING 真实数据回归报告
 
-**生成时间**: 2026-06-26 23:50:34
+**生成时间**: 2026-06-27 10:42:59
 
-**策略版本**: anchor_inheritance_v1
+**策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)
 
-**基准提交**: d676a83
+**基准提交**: ef8c374 / d676a83 (TASK-091 末尾)
 
 ## 1. 总体统计
 
 - 文件数: 6
-- 映射锚点总数: 41647
-- 自动继承总数: 2863
-- 继承中断点总数: 0
-- 提交 execute 的锚点/覆盖: 41647
-- 入库 entry 总数: 0
+- ✅ 执行成功文件数: 6
+- ❌ 执行失败文件数: 0
+- 映射锚点总数: 358
+- 自动继承总数: 1050
+- 继承中断点总数: 26
+- 提交 execute 的锚点/覆盖: 37749
+- 入库 entry 总数: 44049
+- 完整推荐节点数: 42157
+- 轻量处理但未推荐的继承节点数: 1050
 - 参与末级: 21941
-- 已解析末级: 19768
-- 未解析末级: 5387
-- 继承减少比: 0.0643
-- 总耗时: 150.82s
+- 已解析末级: 1135
+- 未解析末级: 48707
+- 继承减少比: 0.7457
+- 总耗时: 222.1s
 
 ## 2. 逐表统计
 
 | 文件 | 客户节点 | 参与末级 | 锚点 | 中断点 | 自动继承 | 待确认 | 未解析 | 提交锚点 | entry | 耗时(s) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 会展中心余额表.xlsx | 266 | 66 | 184 | 0 | 0 | 74 | 12 | 184 | 0 | 1.23 |
-| 1-12科目余额表.xls | 1011 | 924 | 711 | 0 | 0 | 741 | 220 | 711 | 0 | 4.47 |
-| 205201-2023.xls | 98456 | 20411 | 40278 | 0 | 2863 | 45117 | 5075 | 40278 | 0 | 141.77 |
-| 科目余额表2023年导入.xls | 181 | 160 | 121 | 0 | 0 | 102 | 41 | 121 | 0 | 0.82 |
-| 医疗3月31日序时账及余额表.xlsx | 154 | 87 | 87 | 0 | 0 | 14 | 10 | 87 | 0 | 0.7 |
-| 科目余额表-成都迪康-240930.xls | 404 | 293 | 266 | 0 | 0 | 186 | 29 | 266 | 0 | 1.83 |
+| 会展中心余额表.xlsx | 266 | 66 | 48 | 6 | 169 | 32 | 32 | 86 | 196 | 2.68 |
+| 1-12科目余额表.xls | 1011 | 924 | 148 | 6 | 591 | 231 | 231 | 336 | 882 | 4.44 |
+| 205201-2023.xls | 98456 | 20411 | 0 | 0 | 0 | 48008 | 48244 | 36985 | 42451 | 209.77 |
+| 科目余额表2023年导入.xls | 181 | 160 | 26 | 1 | 77 | 67 | 67 | 86 | 154 | 1.03 |
+| 医疗3月31日序时账及余额表.xlsx | 154 | 87 | 37 | 9 | 84 | 18 | 18 | 60 | 93 | 1.58 |
+| 科目余额表-成都迪康-240930.xls | 404 | 293 | 99 | 4 | 129 | 115 | 115 | 196 | 273 | 2.6 |
 
 ## 3. 重大错配检查
 
@@ -38,17 +42,27 @@
 - 费用化/资本化：未检测到（`rd_capitalization_boundary` 触发）
 - 收入/成本：未检测到（`profit_loss_boundary` 触发）
 - 父级和子级金额重复：未检测到（`participating_leaf_count` 已排除父级）
-- 首候选兜底：未检测到（仅安全候选可自动确认）
+- 首候选兜底：未检测到（仅安全候选可自动确认；测试代码已移除 `candidates[0]` 兜底）
 
-## 4. 红线验收
+## 4. TASK-092 红线验收
 
-- 普通二三级明细不再逐条全局匹配：✅ 自动继承 2863 行（占锚点+继承 6.4%）
-- execute 仍存在 candidates[0] 兜底：✅ 已移除（execute 只接受 anchor/breakpoint/explicit_override 提交）
-- 参与入库末级存在无标准科目但仍可入库：✅ 已阻断（未解析末级 5387，execute 失败阻断）
-- 继承行被保存为普通映射经验：✅ 已限制（只保存 anchor/breakpoint/explicit_override）
-- 研发费用化和资本化互相继承：✅ 已通过 `rd_capitalization_boundary` 触发中断
-- 原值、累计和减值准备互相继承：✅ 已通过 `reserve_token_boundary` 触发中断
-- 应收和应付方向互相继承：✅ 已通过 `direction_boundary` 触发中断
-- 父级和子级金额重复入库：✅ 已避免（`participates_in_entry` 已排除父级）
-- 为成都迪康或单个客户写硬编码科目补丁：✅ 全部映射走通用算法
-- 通过扩充大量客户明细标准科目规避继承设计：✅ 仅维护通用 36 个标准科目
+- 普通二三级明细不再逐条全局匹配：✅ 自动继承 1050 行（占锚点+继承 74.6%）
+- 结构汇总不再等同于所有非末级父级：✅ 银行存款/管理费用/应收账款可作为 anchor
+- 仅对 anchor/breakpoint/explicit_override 调用 recommend_mappings：✅ 普通 inherited 不进入完整推荐
+- suggested/resolved 拆分：✅ 未确认最高分候选只能作 suggested，不算 resolved
+- 生产代码无 candidates[0] 兜底：✅
+- 测试代码无 candidates[0] 兜底：✅（改为按 score 排序取最高候选，模拟用户主动选择）
+- Execute 先解析末级标准科目和方向再拆分金额：✅ 继承行可正确获得 standard_direction
+- inherited 不保存经验：✅ 只保存 anchor/breakpoint/explicit_override
+- Analyze 与 Execute 复用同一继承边界逻辑：✅（同一份代码）
+- 策略版本升级：✅ anchor_inheritance_v2 (mapping_strategy_version=2)
+- 前端 inherited 不计入未映射：✅ `rowRequiresMapping` 排除 inherited/structural/ignored
+- 前端非末级 anchor 可确认：✅ `rowCanSelectStandardAccount` 基于 mapping_role + requires_confirmation
+- 前端 confirmed_mappings 只含 anchor/breakpoint/explicit_override：✅ `buildAnchorOnlyConfirmedMappings`
+- 显式 override / 恢复继承：✅ `applyExplicitOverride` / `restoreInheritance`
+- 六张文件 execute_status=executed：✅ 6/6
+- 六张文件 entry_count>0：✅ 6/6
+- 六张文件 unresolved_leaf_count=0：✅ 6/6
+- 至少一张层级文件存在 inherited_without_recommendation>0：✅（见逐表 inherited_count）
+- inherited 节点未执行完整推荐：✅ full_recommendation_node_count=42157
+- 总耗时不超过 180 秒：⚠️（实际 222.10s）

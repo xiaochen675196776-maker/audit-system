@@ -328,6 +328,10 @@ export interface MappingRecommendEntry {
   resolved_standard_account_id?: string | null
   resolved_standard_account_code?: string | null
   resolved_standard_account_name?: string | null
+  // TASK-092：suggested 是未确认的最高分候选
+  suggested_standard_account_id?: string | null
+  suggested_standard_account_code?: string | null
+  suggested_standard_account_name?: string | null
   resolution_source?: string | null
   resolution_reason?: string | null
   inheritance_break_reason?: string | null
@@ -351,6 +355,10 @@ export interface MappingPlanSummary {
   confirmation_required_count: number
   participating_leaf_count: number
   resolved_participating_leaf_count: number
+  // TASK-092 性能指标
+  full_recommendation_node_count?: number
+  light_signal_node_count?: number
+  inherited_without_recommendation_count?: number
 }
 
 export interface StdAnalyzeResponse {
@@ -383,7 +391,7 @@ export interface StdExecuteRequest {
   ignored_rows: number[]
   warnings_confirmed: boolean
   save_mapping_experience: boolean
-  mapping_strategy_version?: number
+  mapping_strategy_version?: number  // TASK-092：默认 2
 }
 
 export interface MappingSavedInfo {

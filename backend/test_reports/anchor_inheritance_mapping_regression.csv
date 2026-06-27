@@ -1,7 +1,7 @@
-file_key,file_name,customer_label,total_rows,total_nodes,structural_summary_count,anchor_count,inherited_count,breakpoint_count,explicit_override_count,unresolved_count,confirmation_required_count,participating_leaf_count,resolved_participating_leaf_count,submit_anchor_count,execute_status,entry_count,raw_row_count,mapping_saved_count,t_preview,t_analyze,t_execute,t_total
-huizhan,会展中心余额表.xlsx,会展中心,266,266,70,184,0,0,0,12,74,66,62,184,failed,0,266,0,0.09,1.1,0.04,1.23
-112,1-12科目余额表.xls,测试112,1011,1011,80,711,0,0,0,220,741,924,705,711,failed,0,1011,0,0.07,4.27,0.13,4.47
-205201,205201-2023.xls,205201,98456,98456,50240,40278,2863,0,0,5075,45117,20411,18535,40278,failed,0,98456,0,2.0,56.6,83.17,141.77
-tb_2023,科目余额表2023年导入.xls,TB2023,181,181,19,121,0,0,0,41,102,160,120,121,failed,0,181,0,0.02,0.77,0.03,0.82
-yiliao,医疗3月31日序时账及余额表.xlsx,医疗3月,154,154,57,87,0,0,0,10,14,87,81,87,failed,0,154,0,0.02,0.64,0.03,0.7
-chengdu_dikang,科目余额表-成都迪康-240930.xls,成都迪康,404,404,109,266,0,0,0,29,186,293,265,266,failed,0,404,0,0.04,1.72,0.07,1.83
+file_key,file_name,customer_label,total_rows,total_nodes,structural_summary_count,anchor_count,inherited_count,breakpoint_count,explicit_override_count,unresolved_count,confirmation_required_count,participating_leaf_count,resolved_participating_leaf_count,full_recommendation_node_count,inherited_without_recommendation_count,submit_anchor_count,execute_status,entry_count,raw_row_count,mapping_saved_count,unresolved_leaf_count,execute_error,t_preview,t_analyze,t_execute,t_total
+huizhan,会展中心余额表.xlsx,会展中心,266,266,11,48,169,6,0,32,32,66,57,242,169,86,executed,196,266,86,0,,0.1,2.25,0.33,2.68
+112,1-12科目余额表.xls,测试112,1011,1011,35,148,591,6,0,231,231,924,714,366,591,336,executed,882,1011,336,0,,0.07,3.05,1.32,4.44
+205201,205201-2023.xls,205201,98456,98456,50212,0,0,0,0,48244,48008,20411,0,41093,0,36985,executed,42451,98456,3133,0,,2.07,90.36,117.34,209.77
+tb_2023,科目余额表2023年导入.xls,TB2023,181,181,10,26,77,1,0,67,67,160,97,89,77,86,executed,154,181,86,0,,0.02,0.7,0.31,1.03
+yiliao,医疗3月31日序时账及余额表.xlsx,医疗3月,154,154,6,37,84,9,0,18,18,87,79,146,84,60,executed,93,154,60,0,,0.02,1.32,0.24,1.58
+chengdu_dikang,科目余额表-成都迪康-240930.xls,成都迪康,404,404,57,99,129,4,0,115,115,293,188,221,129,196,executed,273,404,196,0,,0.04,1.83,0.73,2.6
