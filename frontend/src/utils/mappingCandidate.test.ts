@@ -15,6 +15,7 @@ import {
   pickUniqueAutoConfirmCandidate,
   getAutoConfirmCandidate,
 } from './mappingCandidate'
+import { test } from 'vitest'
 
 import type { MappingCandidate } from '../types'
 
@@ -295,3 +296,9 @@ console.log(`\n--- 结果: ${pass} 通过, ${fail} 失败 ---`)
 if (fail > 0) {
   throw new Error(`前端安全候选测试有 ${fail} 项失败`)
 }
+
+test('mapping candidate self-checks pass', () => {
+  if (fail > 0) {
+    throw new Error(`前端安全候选测试有 ${fail} 项失败`)
+  }
+})

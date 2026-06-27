@@ -1,5 +1,5 @@
 /**
- * TASK-092 前端锚点继承式映射工具函数测试
+ * TASK-093 前端锚点继承式映射工具函数测试
  *
  * 直接从生产模块导入函数，禁止复制实现。
  * 运行方式：npx tsx src/utils/anchorInheritanceMapping.test.ts
@@ -22,6 +22,7 @@ import {
   SUBMITTABLE_ROLES,
   INHERITED_LIKE_ROLES,
 } from './anchorInheritanceMapping'
+import { test } from 'vitest'
 
 import type {
   ConfirmedMapping,
@@ -49,7 +50,7 @@ function assert(condition: boolean, label: string): void {
   }
 }
 
-console.log('\n=== TASK-092 前端锚点继承式映射工具验证 ===\n')
+console.log('\n=== TASK-093 前端锚点继承式映射工具验证 ===\n')
 
 const baseRec: MappingRecommendEntry = {
   row_index: 0,
@@ -266,7 +267,7 @@ console.log('\n--- §2 行级展示状态 ---')
 
 console.log('\n--- §3 构造 confirmed_mappings ---')
 
-// 1. 只提交 anchor/breakpoint/explicit_override
+// 1. 提交 anchor/breakpoint/explicit_override，以及已选择的 unresolved
 {
   const rows = [
     { row_index: 0, rec: { ...baseRec, row_index: 0, mapping_role: 'anchor' } },
@@ -284,11 +285,13 @@ console.log('\n--- §3 构造 confirmed_mappings ---')
     5: baseCandidate,
   }
   const confirmed = buildAnchorOnlyConfirmedMappings(rows, selected)
-  assert(confirmed.length === 3, '只提交 anchor/breakpoint/explicit_override')
+  assert(confirmed.length === 4, '提交 anchor/breakpoint/explicit_override/已选择 unresolved')
   assert(confirmed[0].row_index === 0, '提交 anchor')
   assert(confirmed[1].row_index === 3, '提交 breakpoint')
   assert(confirmed[2].row_index === 4, '提交 explicit_override')
+  assert(confirmed[3].row_index === 5, '已选择 unresolved 提交为 anchor')
   assert(confirmed[2].mapping_action === 'override', 'explicit_override 标记为 override')
+  assert(confirmed[3].mapping_action === 'anchor', 'unresolved 选择后标记为 anchor')
   assert(confirmed[0].selection_source === 'user_confirmed', '有选中 → user_confirmed')
 }
 
@@ -488,3 +491,9 @@ console.log(`\n--- 结果: ${pass} 通过, ${fail} 失败 ---`)
 if (fail > 0) {
   throw new Error(`前端锚点继承式映射测试有 ${fail} 项失败`)
 }
+
+test('anchor inheritance mapping self-checks pass', () => {
+  if (fail > 0) {
+    throw new Error(`前端锚点继承式映射测试有 ${fail} 项失败`)
+  }
+})
