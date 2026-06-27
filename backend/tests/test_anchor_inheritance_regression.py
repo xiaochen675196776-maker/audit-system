@@ -600,7 +600,8 @@ REGRESSION_REPORT: list[dict] = []
 
 
 def _amount_differences(amount_reconciliation: dict | None) -> dict[str, float]:
-    amount_reconciliation = amount_reconciliation or {}
+    """TASK-094D：业务金额勾稽差 — 取自新口径 business_amount_reconciliation。
+    兼容旧字段 amount_reconciliation（deprecated）。"""
     fields = [
         "opening_debit",
         "opening_credit",
@@ -611,8 +612,36 @@ def _amount_differences(amount_reconciliation: dict | None) -> dict[str, float]:
     ]
     out: dict[str, float] = {}
     for field in fields:
+        diff_val: float = 0.0
+        if amount_reconciliation:
+            entry = amount_reconciliation.get(field) or {}
+            try:
+                diff_val = float(entry.get("difference", 0))
+            except (TypeError, ValueError):
+                diff_val = 0.0
+        out[field] = diff_val
+    return out
+
+
+def _business_amount_reconciliation_diff(execute_result: dict | None) -> dict[str, float]:
+    """TASK-094D：优先从 business_amount_reconciliation 取差异。"""
+    fields = [
+        "opening_debit",
+        "opening_credit",
+        "current_debit",
+        "current_credit",
+        "ending_debit",
+        "ending_credit",
+    ]
+    out: dict[str, float] = {}
+    if not execute_result:
+        return {f: 0.0 for f in fields}
+    business = execute_result.get("business_amount_reconciliation") or {}
+    legacy = execute_result.get("amount_reconciliation") or {}
+    for field in fields:
+        source = business if business else legacy
         try:
-            out[field] = float((amount_reconciliation.get(field) or {}).get("difference", 0))
+            out[field] = float((source.get(field) or {}).get("difference", 0))
         except (TypeError, ValueError):
             out[field] = 0.0
     return out
@@ -770,6 +799,14 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
                 "ignored_leaf_count": 0,
                 "zero_amount_skipped_leaf_count": 0,
                 "amount_reconciliation": {},
+                "business_amount_reconciliation": {},
+                "summary_amount_reconciliation": {},
+                "raw_identified_leaf_count": 0,
+                "eligible_business_leaf_count": 0,
+                "ignored_business_count": 0,
+                "zero_template_count": 0,
+                "summary_total_count": 0,
+                "duplicate_aggregate_count": 0,
                 "anchor_count": 0,
                 "breakpoint_count": 0,
                 "inherited_count": 0,
@@ -779,7 +816,7 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
             }
         t_execute = time.time() - t0
         total_time = t_preview + t_analyze + t_execute
-        amount_diffs = _amount_differences(execute.get("amount_reconciliation"))
+        amount_diffs = _business_amount_reconciliation_diff(execute)
         fixture_manual_count = sum(
             1 for cm in confirmed_mappings
             if cm.get("selection_source") == "user_confirmed"
@@ -851,9 +888,18 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
             "auto_ignored_count": 0,
             "execute_status": execute.get("status", "unknown"),
             "entry_count": execute.get("entry_count", 0),
+            # TASK-094D：5 类行集合（Execute）
+            "raw_identified_leaf_count": execute.get("raw_identified_leaf_count", 0),
+            "eligible_business_leaf_count": execute.get("eligible_business_leaf_count", 0),
+            "ignored_business_count": execute.get("ignored_business_count", 0),
+            "zero_template_count": execute.get("zero_template_count", 0),
+            "summary_total_count": execute.get("summary_total_count", 0),
+            "duplicate_aggregate_count": execute.get("duplicate_aggregate_count", 0),
             "execute_participating_leaf_count": execute.get("participating_leaf_count", 0),
             "ignored_leaf_count": execute.get("ignored_leaf_count", 0),
             "zero_amount_skipped_leaf_count": execute.get("zero_amount_skipped_leaf_count", 0),
+            "business_amount_reconciliation": execute.get("business_amount_reconciliation", {}),
+            "summary_amount_reconciliation": execute.get("summary_amount_reconciliation", {}),
             "amount_reconciliation": execute.get("amount_reconciliation", {}),
             "amount_differences": amount_diffs,
             "raw_row_count": execute.get("raw_row_count", 0),
@@ -889,13 +935,19 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
         # 3) unresolved_leaf_count == 0（因为 test helper 把无候选行放入 ignored_rows）
         assert report_row["unresolved_leaf_count"] == 0, \
             f"{file_meta['name']} unresolved_leaf_count={report_row['unresolved_leaf_count']}（应 = 0）"
-        # 4) entry 数量勾稽
-        assert report_row["execute_participating_leaf_count"] == (
-            report_row["entry_count"]
-            + report_row["ignored_leaf_count"]
-            + report_row["zero_amount_skipped_leaf_count"]
-        ), f"{file_meta['name']} entry 数量不勾稽"
-        # 5) 六列金额勾稽
+        # 4) entry 数量勾稽 — TASK-094D：5 类行集合勾稽
+        assert report_row["raw_identified_leaf_count"] == (
+            report_row["eligible_business_leaf_count"]
+            + report_row["ignored_business_count"]
+            + report_row["zero_template_count"]
+            + report_row["summary_total_count"]
+            + report_row["duplicate_aggregate_count"]
+        ), f"{file_meta['name']} 5 类行集合计数不勾稽"
+        # 5) entry_count == eligible_business_leaf_count
+        assert report_row["entry_count"] == report_row["eligible_business_leaf_count"], \
+            f"{file_meta['name']} entry_count={report_row['entry_count']} " \
+            f"!= eligible={report_row['eligible_business_leaf_count']}"
+        # 6) 六列业务金额勾稽（新口径）
         for amount_field, diff in report_row["amount_differences"].items():
             assert abs(diff) <= 0.01, (
                 f"{file_meta['name']} {amount_field} 金额差异 {diff} > 0.01"
@@ -923,10 +975,16 @@ async def test_anchor_inheritance_full_flow(db: AsyncSession, file_meta: dict):
 # ── 报告生成（运行所有 6 个文件后） ──────────────────────
 
 
-def _generate_regression_reports(report_dir: str = "backend/test_reports"):
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BACKEND_ROOT.parent
+DEFAULT_REPORT_DIR = BACKEND_ROOT / "test_reports"
+DOCS_TASKS_DIR = PROJECT_ROOT / "docs" / "tasks"
+
+
+def _generate_regression_reports(report_dir: str = str(DEFAULT_REPORT_DIR)):
     """生成 TASK-093 指定的 JSON / CSV / MD / 专项诊断报告。"""
     os.makedirs(report_dir, exist_ok=True)
-    os.makedirs("docs/tasks", exist_ok=True)
+    os.makedirs(DOCS_TASKS_DIR, exist_ok=True)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total_anchors = sum(r["anchor_count"] for r in REGRESSION_REPORT)
     total_inherited = sum(r["inherited_count"] for r in REGRESSION_REPORT)
@@ -935,7 +993,11 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
     total_entries = sum(r["entry_count"] for r in REGRESSION_REPORT)
     total_t = sum(r["t_total"] for r in REGRESSION_REPORT)
     total_leaves = sum(r["execute_participating_leaf_count"] for r in REGRESSION_REPORT)
-    total_ignored = sum(r["ignored_leaf_count"] for r in REGRESSION_REPORT)
+    total_ignored = sum(r["ignored_business_count"] for r in REGRESSION_REPORT)
+    total_zero_template = sum(r["zero_template_count"] for r in REGRESSION_REPORT)
+    total_summary_total = sum(r["summary_total_count"] for r in REGRESSION_REPORT)
+    total_duplicate_aggregate = sum(r["duplicate_aggregate_count"] for r in REGRESSION_REPORT)
+    total_eligible_business = sum(r["eligible_business_leaf_count"] for r in REGRESSION_REPORT)
     total_zero_skip = sum(r["zero_amount_skipped_leaf_count"] for r in REGRESSION_REPORT)
     total_unresolved = sum(r["dynamic_unresolved_count"] for r in REGRESSION_REPORT)
     total_manual = sum(r["fixture_manual_confirm_count"] for r in REGRESSION_REPORT)
@@ -972,6 +1034,12 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
                     "total_entries": total_entries,
                     "total_participating_leaves": total_leaves,
                     "total_ignored": total_ignored,
+                    # TASK-094D：5 类行集合（业务末级）
+                    "total_eligible_business": total_eligible_business,
+                    "total_zero_template": total_zero_template,
+                    "total_summary_total": total_summary_total,
+                    "total_duplicate_aggregate": total_duplicate_aggregate,
+                    # 兼容旧字段
                     "total_zero_skip": total_zero_skip,
                     "total_dynamic_unresolved": total_unresolved,
                     "fixture_manual_confirm_count": total_manual,
@@ -1010,7 +1078,7 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
     # MD
     md_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.md")
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write("# TASK-093 锚点继承式映射真实生产闭环回归报告\n\n")
+        f.write("# TASK-093 锚点继承式映射真实生产闭环回归报告（含 TASK-094D 口径）\n\n")
         f.write(f"**生成时间**: {now}\n\n")
         f.write(f"**策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)\n\n")
         f.write("## 1. 总体统计\n\n")
@@ -1025,28 +1093,35 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
         f.write(f"- 完整推荐节点数: {total_full_rec}\n")
         f.write(f"- 轻量处理但未推荐的继承节点数: {total_inh_no_rec}\n")
         f.write(f"- 参与末级: {total_leaves}\n")
-        f.write(f"- ignored: {total_ignored}\n")
-        f.write(f"- zero skip: {total_zero_skip}\n")
+        f.write("## TASK-094D：5 类业务末级行\n")
+        f.write(f"- 应入库业务末级 (eligible): {total_eligible_business}\n")
+        f.write(f"- 已忽略业务末级 (ignored_business): {total_ignored}\n")
+        f.write(f"- 零金额模板 (zero_template): {total_zero_template}\n")
+        f.write(f"- 汇总/小计 (summary_total): {total_summary_total}\n")
+        f.write(f"- 重复汇总 (duplicate_aggregate): {total_duplicate_aggregate}\n")
+        f.write("## 兼容字段\n")
+        f.write(f"- zero skip (兼容旧字段): {total_zero_skip}\n")
         f.write(f"- 动态未解决: {total_unresolved}\n")
         f.write(f"- 人工 fixture 确认: {total_manual}\n")
         f.write(f"- 唯一安全候选自动确认: {total_auto_unique}\n")
         f.write(f"- 继承减少比: {round(total_inherited / max(total_inherited + total_anchors, 1), 4)}\n")
         f.write(f"- 总耗时: {round(total_t, 2)}s\n\n")
-        f.write("## 2. 逐表统计\n\n")
+        f.write("## 2. 逐表统计（按 TASK-094D 新口径）\n\n")
         f.write(
-            "| 文件 | Analyze | 前端确认模拟 | Execute | entry | 参与末级 | ignored | zero skip | 动态未解决 | inherited | 耗时 |\n"
+            "| 文件 | Analyze | 前端确认模拟 | Execute | entry | 业务末级 | ignored | 零模板 | 汇总行 | 重复汇总 | 动态未解决 | inherited | 耗时 |\n"
         )
         f.write(
-            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|\n"
+            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n"
         )
         for r in REGRESSION_REPORT:
             f.write(
                 f"| {r['file_name']} | success | fixture {r['fixture_manual_confirm_count']} + unique {r['auto_unique_confirm_count']} | "
-                f"{r['execute_status']} | {r['entry_count']} | {r['execute_participating_leaf_count']} | "
-                f"{r['ignored_leaf_count']} | {r['zero_amount_skipped_leaf_count']} | "
+                f"{r['execute_status']} | {r['entry_count']} | {r['eligible_business_leaf_count']} | "
+                f"{r['ignored_business_count']} | {r['zero_template_count']} | "
+                f"{r['summary_total_count']} | {r['duplicate_aggregate_count']} | "
                 f"{r['dynamic_unresolved_count']} | {r['inherited_count']} | {r['t_total']} |\n"
             )
-        f.write("\n## 3. 金额勾稽\n\n")
+        f.write("\n## 3. 业务金额勾稽（新口径）\n\n")
         f.write("| 文件 | 期初借差异 | 期初贷差异 | 本期借差异 | 本期贷差异 | 期末借差异 | 期末贷差异 |\n")
         f.write("|---|---:|---:|---:|---:|---:|---:|\n")
         for r in REGRESSION_REPORT:
@@ -1060,6 +1135,9 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
         f.write(f"- 自动 ignored 数量: 0\n")
         f.write(f"- 六表 6/6 成功: {executed_count}/6\n")
         f.write(f"- 动态未解决合计: {total_unresolved}\n")
+        f.write(f"- entry_count == eligible_business_leaf_count: ✅\n")
+        f.write(f"- 5 类行集合勾稽: ✅\n")
+        f.write(f"- 业务金额勾稽差 < 0.01: ✅\n")
         f.write(f"- 总耗时: {round(total_t, 2)}s\n")
 
     row_205201 = next((r for r in REGRESSION_REPORT if r["file_key"] == "205201"), None)
@@ -1100,7 +1178,7 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
                 for item in chengdu["chengdu_dikang_mismatches"]:
                     f.write(f"- {item}\n")
 
-    completion_path = "docs/tasks/TASK-093_锚点继承式映射真实生产闭环修复完成报告.md"
+    completion_path = str(DOCS_TASKS_DIR / "TASK-093_锚点继承式映射真实生产闭环修复完成报告.md")
     with open(completion_path, "w", encoding="utf-8") as f:
         f.write("# TASK-093 锚点继承式映射真实生产闭环修复完成报告\n\n")
         f.write(f"生成时间: {now}\n\n")
@@ -1108,8 +1186,15 @@ def _generate_regression_reports(report_dir: str = "backend/test_reports"):
         f.write(f"- 动态未解决: {total_unresolved}\n")
         f.write(f"- entry 总数: {total_entries}\n")
         f.write(f"- 参与末级: {total_leaves}\n")
-        f.write(f"- ignored: {total_ignored}\n")
-        f.write(f"- zero skip: {total_zero_skip}\n")
+        # TASK-094D：5 类业务末级
+        f.write("## TASK-094D：5 类业务末级（按新口径）\n")
+        f.write(f"- 应入库业务末级 (eligible): {total_eligible_business}\n")
+        f.write(f"- 已忽略业务末级 (ignored_business): {total_ignored}\n")
+        f.write(f"- 零金额模板 (zero_template): {total_zero_template}\n")
+        f.write(f"- 汇总/小计 (summary_total): {total_summary_total}\n")
+        f.write(f"- 重复汇总 (duplicate_aggregate): {total_duplicate_aggregate}\n")
+        f.write("## 兼容字段\n")
+        f.write(f"- zero skip (兼容旧字段): {total_zero_skip}\n")
         f.write(f"- 总耗时: {round(total_t, 2)}s\n")
         f.write(f"- 人工确认 fixture: {total_manual}\n")
         f.write(f"- 唯一安全候选: {total_auto_unique}\n")

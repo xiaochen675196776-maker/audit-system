@@ -1,6 +1,6 @@
 {
   "task": "TASK-093",
-  "generated_at": "2026-06-27 16:35:10",
+  "generated_at": "2026-06-27 23:59:47",
   "strategy": "anchor_inheritance_v2",
   "strategy_version": 2,
   "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
@@ -8,24 +8,28 @@
     "files": 6,
     "executed_files": 6,
     "failed_files": 0,
-    "total_entries": 20514,
+    "total_entries": 20447,
     "total_participating_leaves": 49880,
     "total_ignored": 0,
-    "total_zero_skip": 29366,
+    "total_eligible_business": 20447,
+    "total_zero_template": 25530,
+    "total_summary_total": 3903,
+    "total_duplicate_aggregate": 0,
+    "total_zero_skip": 29433,
     "total_dynamic_unresolved": 0,
-    "fixture_manual_confirm_count": 2008,
-    "auto_unique_confirm_count": 17774,
+    "fixture_manual_confirm_count": 1906,
+    "auto_unique_confirm_count": 17494,
     "auto_highest_confirm_count": 0,
     "auto_ignored_count": 0,
     "total_nodes": 100472,
     "full_recommendation_nodes": 1747,
-    "inherited_without_recommendation": 915,
-    "total_anchors": 18579,
-    "total_inherited": 915,
-    "total_breakpoints": 22,
-    "total_submit_anchors": 19782,
-    "total_t_seconds": 152.54,
-    "inheritance_reduction_ratio": 0.0469
+    "inherited_without_recommendation": 1562,
+    "total_anchors": 18824,
+    "total_inherited": 1562,
+    "total_breakpoints": 24,
+    "total_submit_anchors": 19400,
+    "total_t_seconds": 230.86,
+    "inheritance_reduction_ratio": 0.0766
   },
   "rows": [
     {
@@ -44,69 +48,138 @@
       },
       "duplicate_code_count": 0,
       "duplicate_path_count": 0,
-      "structural_summary_count": 2,
-      "anchor_count": 25,
-      "inherited_count": 39,
-      "breakpoint_count": 3,
+      "structural_summary_count": 11,
+      "anchor_count": 46,
+      "inherited_count": 62,
+      "breakpoint_count": 5,
       "explicit_override_count": 0,
-      "unresolved_count": 23,
-      "confirmation_required_count": 11,
+      "unresolved_count": 12,
+      "confirmation_required_count": 12,
       "participating_leaf_count": 66,
-      "resolved_participating_leaf_count": 47,
+      "resolved_participating_leaf_count": 57,
       "full_recommendation_node_count": 240,
-      "inherited_without_recommendation_count": 39,
-      "submit_anchor_count": 51,
-      "fixture_manual_confirm_count": 13,
-      "auto_unique_confirm_count": 38,
+      "inherited_without_recommendation_count": 62,
+      "submit_anchor_count": 62,
+      "fixture_manual_confirm_count": 11,
+      "auto_unique_confirm_count": 51,
       "auto_highest_confirm_count": 0,
       "auto_ignored_count": 0,
       "execute_status": "executed",
       "entry_count": 66,
+      "raw_identified_leaf_count": 196,
+      "eligible_business_leaf_count": 66,
+      "ignored_business_count": 0,
+      "zero_template_count": 123,
+      "summary_total_count": 7,
+      "duplicate_aggregate_count": 0,
       "execute_participating_leaf_count": 196,
       "ignored_leaf_count": 0,
       "zero_amount_skipped_leaf_count": 130,
+      "business_amount_reconciliation": {
+        "opening_debit": {
+          "source": "1227995439.06",
+          "entry": "1227995439.06",
+          "eligible": "1227995439.06",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "opening_credit": {
+          "source": "1038818366.47",
+          "entry": "1038818366.47",
+          "eligible": "1038818366.47",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_debit": {
+          "source": "0",
+          "entry": "0",
+          "eligible": "0",
+          "ignored": "0",
+          "difference": "0",
+          "ok": "true"
+        },
+        "current_credit": {
+          "source": "0",
+          "entry": "0",
+          "eligible": "0",
+          "ignored": "0",
+          "difference": "0",
+          "ok": "true"
+        },
+        "ending_debit": {
+          "source": "1233416773.24",
+          "entry": "1233416773.24",
+          "eligible": "1233416773.24",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_credit": {
+          "source": "1043476314.80",
+          "entry": "1043476314.80",
+          "eligible": "1043476314.80",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        }
+      },
+      "summary_amount_reconciliation": {},
       "amount_reconciliation": {
         "opening_debit": {
           "source": "1227995439.06",
           "entry": "1227995439.06",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "opening_credit": {
           "source": "1038818366.47",
           "entry": "1038818366.47",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_debit": {
           "source": "0",
           "entry": "0",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0"
+          "difference": "0",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_credit": {
           "source": "0",
           "entry": "0",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0"
+          "difference": "0",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_debit": {
           "source": "1233416773.24",
           "entry": "1233416773.24",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_credit": {
           "source": "1043476314.80",
           "entry": "1043476314.80",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         }
       },
       "amount_differences": {
@@ -118,15 +191,15 @@
         "ending_credit": 0.0
       },
       "raw_row_count": 266,
-      "mapping_saved_count": 43,
+      "mapping_saved_count": 56,
       "unresolved_leaf_count": 0,
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
-      "t_preview": 0.02,
-      "t_analyze": 1.83,
-      "t_execute": 0.15,
-      "t_total": 2.0
+      "t_preview": 0.08,
+      "t_analyze": 1.9,
+      "t_execute": 0.21,
+      "t_total": 2.19
     },
     {
       "file_key": "112",
@@ -150,8 +223,8 @@
       "inherited_count": 591,
       "breakpoint_count": 6,
       "explicit_override_count": 0,
-      "unresolved_count": 222,
-      "confirmation_required_count": 219,
+      "unresolved_count": 224,
+      "confirmation_required_count": 224,
       "participating_leaf_count": 924,
       "resolved_participating_leaf_count": 714,
       "full_recommendation_node_count": 364,
@@ -163,51 +236,1507 @@
       "auto_ignored_count": 0,
       "execute_status": "executed",
       "entry_count": 924,
+      "raw_identified_leaf_count": 931,
+      "eligible_business_leaf_count": 924,
+      "ignored_business_count": 0,
+      "zero_template_count": 0,
+      "summary_total_count": 7,
+      "duplicate_aggregate_count": 0,
       "execute_participating_leaf_count": 931,
       "ignored_leaf_count": 0,
       "zero_amount_skipped_leaf_count": 7,
+      "business_amount_reconciliation": {
+        "opening_debit": {
+          "source": "593128747.77",
+          "entry": "593128747.77",
+          "eligible": "593128747.77",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "opening_credit": {
+          "source": "593128747.77",
+          "entry": "593128747.77",
+          "eligible": "593128747.77",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_debit": {
+          "source": "4378282468.69",
+          "entry": "4378282468.69",
+          "eligible": "4378282468.69",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_credit": {
+          "source": "4378282468.69",
+          "entry": "4378282468.69",
+          "eligible": "4378282468.69",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_debit": {
+          "source": "632260499.63",
+          "entry": "632260499.63",
+          "eligible": "632260499.63",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_credit": {
+          "source": "632260499.63",
+          "entry": "632260499.63",
+          "eligible": "632260499.63",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        }
+      },
+      "summary_amount_reconciliation": {
+        "768": {
+          "fields": {
+            "opening_debit": {
+              "self": "1500",
+              "children_sum": "1500",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "1500",
+              "children_sum": "1500",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "1500",
+              "children_sum": "1500",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "1500",
+              "children_sum": "1500",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "11": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "2514557.54",
+              "children_sum": "2514557.54",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "2514557.54",
+              "children_sum": "2514557.54",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "788": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "111738721.29",
+              "children_sum": "111738721.29",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "111738721.29",
+              "children_sum": "111738721.29",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "25": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "793": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "4685880.24",
+              "children_sum": "4685880.24",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "4685880.24",
+              "children_sum": "4685880.24",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "798": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "1432930.17",
+              "children_sum": "1432930.17",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "1432930.17",
+              "children_sum": "1432930.17",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "32": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "812": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "4420814.36",
+              "children_sum": "4420814.36",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "4420814.36",
+              "children_sum": "4420814.36",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "824": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "323032.35",
+              "children_sum": "323032.35",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "323032.35",
+              "children_sum": "323032.35",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "833": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "33664.07",
+              "children_sum": "33664.07",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "33664.07",
+              "children_sum": "33664.07",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "839": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "9878287.88",
+              "children_sum": "9878287.88",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "9878287.88",
+              "children_sum": "9878287.88",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "840": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "2886765.48",
+              "children_sum": "2886765.48",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "2886765.48",
+              "children_sum": "2886765.48",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "850": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "2361102.64",
+              "children_sum": "2361102.64",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "2361102.64",
+              "children_sum": "2361102.64",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "862": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "2583172.9",
+              "children_sum": "2583172.90",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "2583172.9",
+              "children_sum": "2583172.90",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "871": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "2047246.86",
+              "children_sum": "2047246.86",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "2047246.86",
+              "children_sum": "2047246.86",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "651": {
+          "fields": {
+            "opening_debit": {
+              "self": "2983937.48",
+              "children_sum": "2983937.48",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "2983937.48",
+              "children_sum": "2983937.48",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "13606106.23",
+              "children_sum": "13606106.23",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "13606106.23",
+              "children_sum": "13606106.23",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "2711545.34",
+              "children_sum": "2711545.34",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "2711545.34",
+              "children_sum": "2711545.34",
+              "difference": "0.00",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "654": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "621790.81",
+              "children_sum": "621790.81",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "621790.81",
+              "children_sum": "621790.81",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "659": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "1087928.66",
+              "children_sum": "1087928.66",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "1087928.66",
+              "children_sum": "1087928.66",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "660": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "1087928.66",
+              "children_sum": "1087928.66",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "1087928.66",
+              "children_sum": "1087928.66",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "664": {
+          "fields": {
+            "opening_debit": {
+              "self": "3095305.07",
+              "children_sum": "39732748.05",
+              "difference": "-36637442.98",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "3095305.07",
+              "children_sum": "39732748.05",
+              "difference": "-36637442.98",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "118817717.1",
+              "children_sum": "118817717.10",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "118817717.1",
+              "children_sum": "118817717.10",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "1602274.4",
+              "children_sum": "1602274.4",
+              "difference": "0.0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "1602274.4",
+              "children_sum": "1602274.4",
+              "difference": "0.0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 2,
+          "warning": "summary_amount_mismatch"
+        },
+        "665": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "56943769.87",
+              "children_sum": "56943769.87",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "56943769.87",
+              "children_sum": "56943769.87",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "676": {
+          "fields": {
+            "opening_debit": {
+              "self": "36881529.02",
+              "children_sum": "36881529.02",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "36881529.02",
+              "children_sum": "36881529.02",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "40937337.68",
+              "children_sum": "40937337.68",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "40937337.68",
+              "children_sum": "40937337.68",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "685": {
+          "fields": {
+            "opening_debit": {
+              "self": "5344536.19",
+              "children_sum": "9496511.94",
+              "difference": "-4151975.75",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "5344536.19",
+              "children_sum": "9496511.94",
+              "difference": "-4151975.75",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "4060722.47",
+              "children_sum": "4060722.47",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "4060722.47",
+              "children_sum": "4060722.47",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "13557234.41",
+              "difference": "-13557234.41",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "13557234.41",
+              "difference": "-13557234.41",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "689": {
+          "fields": {
+            "opening_debit": {
+              "self": "17092.97",
+              "children_sum": "360247.96",
+              "difference": "-343154.99",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "17092.97",
+              "children_sum": "360247.96",
+              "difference": "-343154.99",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "417006.06",
+              "children_sum": "417006.06",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "417006.06",
+              "children_sum": "417006.06",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "16276.61",
+              "children_sum": "777254.02",
+              "difference": "-760977.41",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "16276.61",
+              "children_sum": "777254.02",
+              "difference": "-760977.41",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "693": {
+          "fields": {
+            "opening_debit": {
+              "self": "217052.03",
+              "children_sum": "855255.48",
+              "difference": "-638203.45",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "217052.03",
+              "children_sum": "855255.48",
+              "difference": "-638203.45",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "810933.99",
+              "children_sum": "810933.99",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "810933.99",
+              "children_sum": "810933.99",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "112539.38",
+              "children_sum": "1666189.47",
+              "difference": "-1553650.09",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "112539.38",
+              "children_sum": "1666189.47",
+              "difference": "-1553650.09",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "697": {
+          "fields": {
+            "opening_debit": {
+              "self": "93022.3",
+              "children_sum": "366538.06",
+              "difference": "-273515.76",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "93022.3",
+              "children_sum": "366538.06",
+              "difference": "-273515.76",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "347542.35",
+              "children_sum": "347542.35",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "347542.35",
+              "children_sum": "347542.35",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "48230.36",
+              "children_sum": "714080.41",
+              "difference": "-665850.05",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "48230.36",
+              "children_sum": "714080.41",
+              "difference": "-665850.05",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "701": {
+          "fields": {
+            "opening_debit": {
+              "self": "62014.89",
+              "children_sum": "244358.74",
+              "difference": "-182343.85",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "62014.89",
+              "children_sum": "244358.74",
+              "difference": "-182343.85",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "231695.58",
+              "children_sum": "231695.58",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "231695.58",
+              "children_sum": "231695.58",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "32154.26",
+              "children_sum": "476054.32",
+              "difference": "-443900.06",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "32154.26",
+              "children_sum": "476054.32",
+              "difference": "-443900.06",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "705": {
+          "fields": {
+            "opening_debit": {
+              "self": "19650.23",
+              "children_sum": "113245.32",
+              "difference": "-93595.09",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "19650.23",
+              "children_sum": "113245.32",
+              "difference": "-93595.09",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "153600.8",
+              "children_sum": "153600.8",
+              "difference": "0.0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "153600.8",
+              "children_sum": "153600.8",
+              "difference": "0.0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "15489.93",
+              "children_sum": "266846.12",
+              "difference": "-251356.19",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "15489.93",
+              "children_sum": "266846.12",
+              "difference": "-251356.19",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "709": {
+          "fields": {
+            "opening_debit": {
+              "self": "119140.68",
+              "children_sum": "584228.02",
+              "difference": "-465087.34",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "119140.68",
+              "children_sum": "584228.02",
+              "difference": "-465087.34",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "450683.07",
+              "children_sum": "450683.07",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "450683.07",
+              "children_sum": "450683.07",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "110324.31",
+              "children_sum": "1034911.09",
+              "difference": "-924586.78",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "110324.31",
+              "children_sum": "1034911.09",
+              "difference": "-924586.78",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "713": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "1731.16",
+              "difference": "-1731.16",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "1731.16",
+              "difference": "-1731.16",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "1140",
+              "children_sum": "1140",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "1140",
+              "children_sum": "1140",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "2871.16",
+              "difference": "-2871.16",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "2871.16",
+              "difference": "-2871.16",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "716": {
+          "fields": {
+            "opening_debit": {
+              "self": "48480.1",
+              "children_sum": "141137.25",
+              "difference": "-92657.15",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "48480.1",
+              "children_sum": "141137.25",
+              "difference": "-92657.15",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "169302.9",
+              "children_sum": "169302.9",
+              "difference": "0.0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "169302.9",
+              "children_sum": "169302.9",
+              "difference": "0.0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "56651.3",
+              "children_sum": "310440.15",
+              "difference": "-253788.85",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "56651.3",
+              "children_sum": "310440.15",
+              "difference": "-253788.85",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "721": {
+          "fields": {
+            "opening_debit": {
+              "self": "69375.01",
+              "children_sum": "69375.01",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "69375.01",
+              "children_sum": "69375.01",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "3755536.78",
+              "children_sum": "3755536.78",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "3755536.78",
+              "children_sum": "3755536.78",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "108916.67",
+              "children_sum": "108916.67",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "108916.67",
+              "children_sum": "108916.67",
+              "difference": "0.00",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "725": {
+          "fields": {
+            "opening_debit": {
+              "self": "78618",
+              "children_sum": "78618",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "78618",
+              "children_sum": "78618",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "40976",
+              "children_sum": "40976",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "40976",
+              "children_sum": "40976",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "79377",
+              "children_sum": "79377",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "79377",
+              "children_sum": "79377",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        }
+      },
       "amount_reconciliation": {
         "opening_debit": {
           "source": "1181031979.93",
           "entry": "593128747.77",
           "ignored": "0",
-          "zero_skip": "587903232.16",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "587903232.16",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "opening_credit": {
           "source": "1181031979.93",
           "entry": "593128747.77",
           "ignored": "0",
-          "zero_skip": "587903232.16",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "587903232.16",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_debit": {
           "source": "8031429538.52",
           "entry": "4378282468.69",
           "ignored": "0",
-          "zero_skip": "3653147069.83",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "3653147069.83",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_credit": {
           "source": "8031429538.52",
           "entry": "4378282468.69",
           "ignored": "0",
-          "zero_skip": "3653147069.83",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "3653147069.83",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_debit": {
           "source": "1259085962.96",
           "entry": "632260499.63",
           "ignored": "0",
-          "zero_skip": "626825463.33",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "626825463.33",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_credit": {
           "source": "1259085962.96",
           "entry": "632260499.63",
           "ignored": "0",
-          "zero_skip": "626825463.33",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "626825463.33",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         }
       },
       "amount_differences": {
@@ -225,9 +1754,9 @@
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
       "t_preview": 0.06,
-      "t_analyze": 2.46,
-      "t_execute": 0.8,
-      "t_total": 3.33
+      "t_analyze": 2.65,
+      "t_execute": 0.89,
+      "t_total": 3.6
     },
     {
       "file_key": "205201",
@@ -246,69 +1775,138 @@
       },
       "duplicate_code_count": 491,
       "duplicate_path_count": 491,
-      "structural_summary_count": 21415,
-      "anchor_count": 18248,
-      "inherited_count": 4,
+      "structural_summary_count": 49947,
+      "anchor_count": 18469,
+      "inherited_count": 621,
       "breakpoint_count": 0,
       "explicit_override_count": 0,
-      "unresolved_count": 743,
-      "confirmation_required_count": 130,
-      "participating_leaf_count": 18984,
-      "resolved_participating_leaf_count": 18248,
+      "unresolved_count": 136,
+      "confirmation_required_count": 136,
+      "participating_leaf_count": 18917,
+      "resolved_participating_leaf_count": 18787,
       "full_recommendation_node_count": 703,
-      "inherited_without_recommendation_count": 4,
-      "submit_anchor_count": 18991,
-      "fixture_manual_confirm_count": 1543,
-      "auto_unique_confirm_count": 17448,
+      "inherited_without_recommendation_count": 621,
+      "submit_anchor_count": 18601,
+      "fixture_manual_confirm_count": 1447,
+      "auto_unique_confirm_count": 17154,
       "auto_highest_confirm_count": 0,
       "auto_ignored_count": 0,
       "execute_status": "executed",
-      "entry_count": 18984,
+      "entry_count": 18917,
+      "raw_identified_leaf_count": 48199,
+      "eligible_business_leaf_count": 18917,
+      "ignored_business_count": 0,
+      "zero_template_count": 25405,
+      "summary_total_count": 3877,
+      "duplicate_aggregate_count": 0,
       "execute_participating_leaf_count": 48199,
       "ignored_leaf_count": 0,
-      "zero_amount_skipped_leaf_count": 29215,
-      "amount_reconciliation": {
+      "zero_amount_skipped_leaf_count": 29282,
+      "business_amount_reconciliation": {
         "opening_debit": {
-          "source": "16176908331.3502",
-          "entry": "16176908331.3502",
+          "source": "16176908331.0902",
+          "entry": "16176908331.0902",
+          "eligible": "16176908331.0902",
           "ignored": "0",
-          "zero_skip": "0",
-          "difference": "0.0000"
+          "difference": "0.0000",
+          "ok": "true"
         },
         "opening_credit": {
-          "source": "5794258509.3262",
-          "entry": "5794258509.3262",
+          "source": "5794258509.0362",
+          "entry": "5794258509.0362",
+          "eligible": "5794258509.0362",
           "ignored": "0",
-          "zero_skip": "0",
-          "difference": "0.0000"
+          "difference": "0.0000",
+          "ok": "true"
         },
         "current_debit": {
-          "source": "16279577821.7248",
-          "entry": "16279577821.7248",
+          "source": "16279577821.6848",
+          "entry": "16279577821.6848",
+          "eligible": "16279577821.6848",
           "ignored": "0",
-          "zero_skip": "0",
-          "difference": "0.0000"
+          "difference": "0.0000",
+          "ok": "true"
         },
         "current_credit": {
-          "source": "6376586413.9808",
-          "entry": "6376586413.9808",
+          "source": "6376586413.9008",
+          "entry": "6376586413.9008",
+          "eligible": "6376586413.9008",
+          "ignored": "0",
+          "difference": "0.0000",
+          "ok": "true"
+        },
+        "ending_debit": {
+          "source": "0",
+          "entry": "0",
+          "eligible": "0",
+          "ignored": "0",
+          "difference": "0",
+          "ok": "true"
+        },
+        "ending_credit": {
+          "source": "0",
+          "entry": "0",
+          "eligible": "0",
+          "ignored": "0",
+          "difference": "0",
+          "ok": "true"
+        }
+      },
+      "summary_amount_reconciliation": {},
+      "amount_reconciliation": {
+        "opening_debit": {
+          "source": "16176908331.0902",
+          "entry": "16176908331.0902",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.0000"
+          "difference": "0.0000",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
+        },
+        "opening_credit": {
+          "source": "5794258509.0362",
+          "entry": "5794258509.0362",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
+        },
+        "current_debit": {
+          "source": "16279577821.6848",
+          "entry": "16279577821.6848",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
+        },
+        "current_credit": {
+          "source": "6376586413.9008",
+          "entry": "6376586413.9008",
+          "ignored": "0",
+          "zero_skip": "0",
+          "difference": "0.0000",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_debit": {
           "source": "0",
           "entry": "0",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0"
+          "difference": "0",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_credit": {
           "source": "0",
           "entry": "0",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0"
+          "difference": "0",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         }
       },
       "amount_differences": {
@@ -320,15 +1918,15 @@
         "ending_credit": 0.0
       },
       "raw_row_count": 98456,
-      "mapping_saved_count": 330,
+      "mapping_saved_count": 277,
       "unresolved_leaf_count": 0,
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
-      "t_preview": 1.74,
-      "t_analyze": 66.9,
-      "t_execute": 74.68,
-      "t_total": 143.32
+      "t_preview": 1.83,
+      "t_analyze": 87.22,
+      "t_execute": 131.63,
+      "t_total": 220.68
     },
     {
       "file_key": "tb_2023",
@@ -365,51 +1963,457 @@
       "auto_ignored_count": 0,
       "execute_status": "executed",
       "entry_count": 160,
+      "raw_identified_leaf_count": 162,
+      "eligible_business_leaf_count": 160,
+      "ignored_business_count": 0,
+      "zero_template_count": 0,
+      "summary_total_count": 2,
+      "duplicate_aggregate_count": 0,
       "execute_participating_leaf_count": 162,
       "ignored_leaf_count": 0,
       "zero_amount_skipped_leaf_count": 2,
+      "business_amount_reconciliation": {
+        "opening_debit": {
+          "source": "1476750876.11",
+          "entry": "1476750876.11",
+          "eligible": "1476750876.11",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "opening_credit": {
+          "source": "1476750876.11",
+          "entry": "1476750876.11",
+          "eligible": "1476750876.11",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_debit": {
+          "source": "8115291540.49",
+          "entry": "8115291540.49",
+          "eligible": "8115291540.49",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_credit": {
+          "source": "8115291540.49",
+          "entry": "8115291540.49",
+          "eligible": "8115291540.49",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_debit": {
+          "source": "1617597239.91",
+          "entry": "1617597239.91",
+          "eligible": "1617597239.91",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_credit": {
+          "source": "1617597239.91",
+          "entry": "1617597239.91",
+          "eligible": "1617597239.91",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        }
+      },
+      "summary_amount_reconciliation": {
+        "134": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "28528284.84",
+              "children_sum": "28528284.84",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "28528284.84",
+              "children_sum": "28528284.84",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "135": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "5574896.62",
+              "children_sum": "5574896.62",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "5574896.62",
+              "children_sum": "5574896.62",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "75": {
+          "fields": {
+            "opening_debit": {
+              "self": "1031509.89",
+              "children_sum": "921007330.89",
+              "difference": "-919975821.00",
+              "ok": "false"
+            },
+            "opening_credit": {
+              "self": "1031509.89",
+              "children_sum": "921007330.89",
+              "difference": "-919975821.00",
+              "ok": "false"
+            },
+            "current_debit": {
+              "self": "94201441.14",
+              "children_sum": "94201441.14",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "94201441.14",
+              "children_sum": "94201441.14",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "1015208772.03",
+              "difference": "-1015208772.03",
+              "ok": "false"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "1015208772.03",
+              "difference": "-1015208772.03",
+              "ok": "false"
+            }
+          },
+          "mismatch_count": 4,
+          "warning": "summary_amount_mismatch"
+        },
+        "141": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "5866585.84",
+              "children_sum": "5866585.84",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "5866585.84",
+              "children_sum": "5866585.84",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "148": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "5561263.54",
+              "children_sum": "5561263.54",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "5561263.54",
+              "children_sum": "5561263.54",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "154": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "6292104.77",
+              "children_sum": "6292104.77",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "6292104.77",
+              "children_sum": "6292104.77",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "160": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "5233434.07",
+              "children_sum": "5233434.07",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "current_credit": {
+              "self": "5233434.07",
+              "children_sum": "5233434.07",
+              "difference": "0.00",
+              "ok": "true"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 0,
+          "warning": null
+        },
+        "102": {
+          "fields": {
+            "opening_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "opening_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "current_debit": {
+              "self": "717319187.92",
+              "children_sum": "1398686560.43",
+              "difference": "-681367372.51",
+              "ok": "false"
+            },
+            "current_credit": {
+              "self": "717319187.92",
+              "children_sum": "1398686560.43",
+              "difference": "-681367372.51",
+              "ok": "false"
+            },
+            "ending_debit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            },
+            "ending_credit": {
+              "self": "0",
+              "children_sum": "0",
+              "difference": "0",
+              "ok": "true"
+            }
+          },
+          "mismatch_count": 2,
+          "warning": "summary_amount_mismatch"
+        }
+      },
       "amount_reconciliation": {
         "opening_debit": {
           "source": "3074258361.96",
           "entry": "1476750876.11",
           "ignored": "0",
-          "zero_skip": "1597507485.85",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "1597507485.85",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "opening_credit": {
           "source": "3074258361.96",
           "entry": "1476750876.11",
           "ignored": "0",
-          "zero_skip": "1597507485.85",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "1597507485.85",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_debit": {
           "source": "16239988909.96",
           "entry": "8115291540.49",
           "ignored": "0",
-          "zero_skip": "8124697369.47",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "8124697369.47",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_credit": {
           "source": "16239988909.96",
           "entry": "8115291540.49",
           "ignored": "0",
-          "zero_skip": "8124697369.47",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "8124697369.47",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_debit": {
           "source": "3365356918.54",
           "entry": "1617597239.91",
           "ignored": "0",
-          "zero_skip": "1747759678.63",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "1747759678.63",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_credit": {
           "source": "3365356918.54",
           "entry": "1617597239.91",
           "ignored": "0",
-          "zero_skip": "1747759678.63",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "1747759678.63",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         }
       },
       "amount_differences": {
@@ -427,9 +2431,9 @@
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
       "t_preview": 0.02,
-      "t_analyze": 0.55,
-      "t_execute": 0.2,
-      "t_total": 0.77
+      "t_analyze": 0.6,
+      "t_execute": 0.26,
+      "t_total": 0.88
     },
     {
       "file_key": "yiliao",
@@ -448,16 +2452,16 @@
       "duplicate_code_count": 0,
       "duplicate_path_count": 0,
       "structural_summary_count": 5,
-      "anchor_count": 34,
-      "inherited_count": 79,
+      "anchor_count": 36,
+      "inherited_count": 82,
       "breakpoint_count": 8,
       "explicit_override_count": 0,
       "unresolved_count": 12,
-      "confirmation_required_count": 10,
+      "confirmation_required_count": 12,
       "participating_leaf_count": 87,
-      "resolved_participating_leaf_count": 77,
+      "resolved_participating_leaf_count": 79,
       "full_recommendation_node_count": 139,
-      "inherited_without_recommendation_count": 79,
+      "inherited_without_recommendation_count": 82,
       "submit_anchor_count": 54,
       "fixture_manual_confirm_count": 11,
       "auto_unique_confirm_count": 43,
@@ -465,51 +2469,120 @@
       "auto_ignored_count": 0,
       "execute_status": "executed",
       "entry_count": 87,
+      "raw_identified_leaf_count": 97,
+      "eligible_business_leaf_count": 87,
+      "ignored_business_count": 0,
+      "zero_template_count": 2,
+      "summary_total_count": 8,
+      "duplicate_aggregate_count": 0,
       "execute_participating_leaf_count": 97,
       "ignored_leaf_count": 0,
       "zero_amount_skipped_leaf_count": 10,
+      "business_amount_reconciliation": {
+        "opening_debit": {
+          "source": "17531847.39",
+          "entry": "17531847.39",
+          "eligible": "17531847.39",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "opening_credit": {
+          "source": "12797418.94",
+          "entry": "12797418.94",
+          "eligible": "12797418.94",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_debit": {
+          "source": "24669133.11",
+          "entry": "24669133.11",
+          "eligible": "24669133.11",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_credit": {
+          "source": "24669133.11",
+          "entry": "24669133.11",
+          "eligible": "24669133.11",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_debit": {
+          "source": "19299529.05",
+          "entry": "19299529.05",
+          "eligible": "19299529.05",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_credit": {
+          "source": "14161324.57",
+          "entry": "14161324.57",
+          "eligible": "14161324.57",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        }
+      },
+      "summary_amount_reconciliation": {},
       "amount_reconciliation": {
         "opening_debit": {
           "source": "17531847.39",
           "entry": "17531847.39",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "opening_credit": {
           "source": "12797418.94",
           "entry": "12797418.94",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_debit": {
           "source": "25115349.42",
           "entry": "24669133.11",
           "ignored": "0",
-          "zero_skip": "446216.31",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "446216.31",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_credit": {
           "source": "25115349.42",
           "entry": "24669133.11",
           "ignored": "0",
-          "zero_skip": "446216.31",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "446216.31",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_debit": {
           "source": "19299529.05",
           "entry": "19299529.05",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_credit": {
           "source": "14161324.57",
           "entry": "14161324.57",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         }
       },
       "amount_differences": {
@@ -521,15 +2594,15 @@
         "ending_credit": 0.0
       },
       "raw_row_count": 154,
-      "mapping_saved_count": 49,
+      "mapping_saved_count": 51,
       "unresolved_leaf_count": 0,
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
       "t_preview": 0.02,
-      "t_analyze": 1.05,
-      "t_execute": 0.14,
-      "t_total": 1.21
+      "t_analyze": 1.13,
+      "t_execute": 0.19,
+      "t_total": 1.34
     },
     {
       "file_key": "chengdu_dikang",
@@ -548,68 +2621,137 @@
       "duplicate_code_count": 0,
       "duplicate_path_count": 0,
       "structural_summary_count": 57,
-      "anchor_count": 98,
-      "inherited_count": 125,
+      "anchor_count": 99,
+      "inherited_count": 129,
       "breakpoint_count": 4,
       "explicit_override_count": 0,
-      "unresolved_count": 116,
-      "confirmation_required_count": 107,
+      "unresolved_count": 113,
+      "confirmation_required_count": 113,
       "participating_leaf_count": 293,
-      "resolved_participating_leaf_count": 184,
+      "resolved_participating_leaf_count": 188,
       "full_recommendation_node_count": 213,
-      "inherited_without_recommendation_count": 125,
-      "submit_anchor_count": 218,
-      "fixture_manual_confirm_count": 153,
-      "auto_unique_confirm_count": 65,
+      "inherited_without_recommendation_count": 129,
+      "submit_anchor_count": 215,
+      "fixture_manual_confirm_count": 149,
+      "auto_unique_confirm_count": 66,
       "auto_highest_confirm_count": 0,
       "auto_ignored_count": 0,
       "execute_status": "executed",
       "entry_count": 293,
+      "raw_identified_leaf_count": 295,
+      "eligible_business_leaf_count": 293,
+      "ignored_business_count": 0,
+      "zero_template_count": 0,
+      "summary_total_count": 2,
+      "duplicate_aggregate_count": 0,
       "execute_participating_leaf_count": 295,
       "ignored_leaf_count": 0,
       "zero_amount_skipped_leaf_count": 2,
+      "business_amount_reconciliation": {
+        "opening_debit": {
+          "source": "874607328.71",
+          "entry": "874607328.71",
+          "eligible": "874607328.71",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "opening_credit": {
+          "source": "868337773.49",
+          "entry": "868337773.49",
+          "eligible": "868337773.49",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_debit": {
+          "source": "2632266301.21",
+          "entry": "2632266301.21",
+          "eligible": "2632266301.21",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "current_credit": {
+          "source": "2632266301.21",
+          "entry": "2632266301.21",
+          "eligible": "2632266301.21",
+          "ignored": "0",
+          "difference": "0.00",
+          "ok": "true"
+        },
+        "ending_debit": {
+          "source": "0",
+          "entry": "0",
+          "eligible": "0",
+          "ignored": "0",
+          "difference": "0",
+          "ok": "true"
+        },
+        "ending_credit": {
+          "source": "0",
+          "entry": "0",
+          "eligible": "0",
+          "ignored": "0",
+          "difference": "0",
+          "ok": "true"
+        }
+      },
+      "summary_amount_reconciliation": {},
       "amount_reconciliation": {
         "opening_debit": {
           "source": "874607328.71",
           "entry": "874607328.71",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "opening_credit": {
           "source": "868337773.49",
           "entry": "868337773.49",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0.00"
+          "difference": "0.00",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_debit": {
           "source": "5266253495.60",
           "entry": "2632266301.21",
           "ignored": "0",
-          "zero_skip": "2633987194.39",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "2633987194.39",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "current_credit": {
           "source": "5266253495.60",
           "entry": "2632266301.21",
           "ignored": "0",
-          "zero_skip": "2633987194.39",
-          "difference": "0.00"
+          "zero_skip": "0",
+          "difference": "2633987194.39",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_debit": {
           "source": "0",
           "entry": "0",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0"
+          "difference": "0",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         },
         "ending_credit": {
           "source": "0",
           "entry": "0",
           "ignored": "0",
           "zero_skip": "0",
-          "difference": "0"
+          "difference": "0",
+          "deprecated": "true",
+          "use_business_amount_reconciliation": "true"
         }
       },
       "amount_differences": {
@@ -621,15 +2763,15 @@
         "ending_credit": 0.0
       },
       "raw_row_count": 404,
-      "mapping_saved_count": 202,
+      "mapping_saved_count": 199,
       "unresolved_leaf_count": 0,
       "dynamic_unresolved_count": 0,
       "chengdu_dikang_mismatches": [],
       "execute_error": "",
       "t_preview": 0.03,
-      "t_analyze": 1.42,
-      "t_execute": 0.46,
-      "t_total": 1.91
+      "t_analyze": 1.53,
+      "t_execute": 0.6,
+      "t_total": 2.17
     }
   ]
 }

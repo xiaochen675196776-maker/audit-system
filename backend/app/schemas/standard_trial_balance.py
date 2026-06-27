@@ -619,6 +619,21 @@ class AnalyzeResponse(BaseModel):
     warnings: list[WarningItem]
     mapping_summary: MappingPlanSummary | None = None
     mapping_strategy: str = "anchor_inheritance_v2"
+    # TASK-094D：5 类行集合计数（与 Execute 同口径）
+    raw_identified_leaf_count: int = 0
+    eligible_business_leaf_count: int = 0
+    ignored_business_count: int = 0
+    zero_template_count: int = 0
+    summary_total_count: int = 0
+    duplicate_aggregate_count: int = 0
+    classification: dict = Field(default_factory=dict)
+    # 兼容旧字段
+    unique_node_count: int = 0
+    account_node_count: int = 0
+    auxiliary_node_count: int = 0
+    summary_node_count: int = 0
+    duplicate_binding_count: int = 0
+    raw_row_compression_ratio: float = 0.0
 
 
 class ConfirmedMapping(BaseModel):
@@ -681,10 +696,22 @@ class ExecuteResponse(BaseModel):
     batch_id: uuid.UUID
     status: str
     entry_count: int
+    # TASK-094D：5 类行集合计数（与 Analyze 同口径）
+    raw_identified_leaf_count: int = 0
+    eligible_business_leaf_count: int = 0
+    ignored_business_count: int = 0
+    zero_template_count: int = 0
+    summary_total_count: int = 0
+    duplicate_aggregate_count: int = 0
+    business_amount_reconciliation: dict = Field(default_factory=dict)
+    summary_amount_reconciliation: dict = Field(default_factory=dict)
+    # 兼容旧字段（标记 deprecated；前端的报告脚本仍可读，但新逻辑请用新字段）
     participating_leaf_count: int = 0
     ignored_leaf_count: int = 0
     zero_amount_skipped_leaf_count: int = 0
     amount_reconciliation: dict = Field(default_factory=dict)
+    amount_reconciliation_deprecated: bool = True
+    classification: dict = Field(default_factory=dict)
     raw_row_count: int
     mapping_saved_count: int
     mapping_saved: list[MappingSavedInfo] = []

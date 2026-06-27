@@ -30,6 +30,7 @@ TASK-092：本版本将生产闭环拆成两阶段推荐：
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -39,6 +40,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client_account_mapping import ClientAccountMapping
 from app.models.standard_account import StandardAccount
+
+
+# ── TASK-094C：唯一节点类型常量 ────────────────────────────
+
+# 节点类型：account = 会计科目节点（形成锚点/候选）；
+#          auxiliary = 辅助核算明细（继承上级会计科目，不形成独立推荐）；
+#          summary = 结构汇总（不参与入库）。
+UNIQUE_NODE_TYPES = ("account", "auxiliary", "summary")
 
 
 # ── 角色与模式常量 ────────────────────────────────────────
@@ -271,6 +280,160 @@ class MappingPlanResult:
     validation_errors: list[str] = field(default_factory=list)
 
 
+# ── TASK-094C：唯一科目节点图 ─────────────────────────────
+
+
+def _normalize_for_node_key(value: str | None) -> str:
+    """用于 node_key 的标准化：
+    - 去首尾空白；
+    - 折叠内部连续空白；
+    - 大写；
+    - 全角括号 / 冒号统一替换。
+    """
+    if not value:
+        return ""
+    s = str(value).strip()
+    if not s:
+        return ""
+    s = " ".join(s.split())
+    # 全角空格 → 半角空格
+    s = s.replace("\u3000", " ")
+    # 全角冒号、破折号、半角括号保留原样（中文括号常出现在名称中）
+    return s.upper()
+
+
+def _normalize_parent_path(value: str | None) -> str:
+    """用于 node_key 的父路径标准化（与名称同样的处理）。"""
+    return _normalize_for_node_key(value)
+
+
+def compute_unique_node_key(
+    client_account_code: str | None,
+    client_account_name: str | None,
+    parent_full_path: str | None,
+) -> str:
+    """生成唯一节点 key。
+
+    构成：sha256(normalized_code | normalized_name | normalized_parent_path)
+
+    - 同代码 / 同名称 / 同父路径 → 同 node_key（去重原始行重复展开）
+    - 同代码不同父路径 → 不同 node_key（避免误合并）
+    - 同代码同父路径但不同名称 → 不同 node_key（区分同名不同码）
+    - 空代码与空名称保留（不当作 None 跳过）
+    """
+    code = _normalize_for_node_key(client_account_code)
+    name = _normalize_for_node_key(client_account_name)
+    parent = _normalize_parent_path(parent_full_path)
+    payload = f"{code}|{name}|{parent}".encode("utf-8")
+    return "uak:" + hashlib.sha256(payload).hexdigest()
+
+
+def classify_node_type(
+    client_account_code: str | None,
+    client_account_name: str | None,
+    is_summary: bool,
+) -> str:
+    """节点类型分类（基于客户科目代码与名称特征）。
+
+    - summary：结构汇总（如「资产类」「流动资产」「合计」等空代码纯分类标题）
+    - auxiliary：辅助核算明细（无代码 + 名称含客户/供应商/部门/项目/银行账户等）
+    - account：会计科目节点
+    """
+    code = (client_account_code or "").strip()
+    name = (client_account_name or "").strip()
+    if not code and not name:
+        return "summary"
+    if is_summary and not code:
+        # 空代码且是父级：结构汇总
+        return "summary"
+    if not code:
+        # 无代码 + 名称为辅助核算对象
+        if _is_auxiliary_detail_name_strict(name):
+            return "auxiliary"
+        # 即使不带辅助关键词，只要没代码且不是明显会计科目（如「[0010004] 茂名市润源丰化工」）
+        return "auxiliary"
+    return "account"
+
+
+# 严格版辅助核算识别：含方括号或客户/供应商/部门/项目/银行账户等前缀
+_AUXILIARY_DETAIL_PREFIXES: tuple[str, ...] = (
+    "客户:", "客户：",
+    "供应商:", "供应商：",
+    "部门:", "部门：",
+    "项目:", "项目：",
+    "银行账户:", "银行账户：",
+    "员工:", "员工：",
+)
+
+
+def _is_auxiliary_detail_name_strict(name: str | None) -> bool:
+    if not name:
+        return False
+    s = str(name).strip()
+    if not s:
+        return False
+    # 全/半角方括号包裹的对象
+    if "[" in s or "【" in s or "]" in s or "】" in s:
+        return True
+    stripped = s.replace("\u3000", "").lstrip()
+    for p in _AUXILIARY_DETAIL_PREFIXES:
+        if stripped.startswith(p):
+            return True
+    return False
+
+
+@dataclass
+class UniqueAccountNode:
+    """唯一科目节点 — TASK-094C
+
+    代表「同一客户科目路径」的去重节点。
+    一条原始行通过 row_to_node_key 绑定到唯一节点。
+    """
+    node_key: str
+    account_code: str | None
+    account_name: str | None
+    full_path: str
+    parent_node_key: str | None
+    level: int | None
+    source_row_indexes: list[int] = field(default_factory=list)
+    representative_row_index: int | None = None
+    node_type: str = "account"  # account / auxiliary / summary
+    # 解析后字段（与 AccountTreeNode 对齐）
+    mapping_role: str = "unresolved"
+    mapping_mode: str = "none"
+    requires_confirmation: bool = False
+    resolved_standard_account_id: str | None = None
+    resolved_standard_account_code: str | None = None
+    resolved_standard_account_name: str | None = None
+    suggested_standard_account_id: str | None = None
+    suggested_standard_account_code: str | None = None
+    suggested_standard_account_name: str | None = None
+    resolution_source: str | None = None
+    resolution_reason: str | None = None
+    inheritance_break_reason: str | None = None
+    auto_confirm_status: str | None = None
+    auto_confirm_reason: str | None = None
+    anchor_node_key: str | None = None
+    candidate_count: int = 0
+    candidates: list[dict] = field(default_factory=list)
+    auto_confirm_candidate: dict | None = None
+
+
+@dataclass
+class UniqueAccountGraph:
+    """唯一科目节点图 — TASK-094C
+
+    - nodes_by_key：按 node_key 索引的节点表
+    - row_to_node_key：原始行 → 唯一节点的绑定关系
+    - children_by_key：父 → 子节点 key 列表（树状）
+    - root_keys：根节点 key 列表
+    """
+    nodes_by_key: dict[str, UniqueAccountNode] = field(default_factory=dict)
+    row_to_node_key: dict[int, str] = field(default_factory=dict)
+    children_by_key: dict[str, list[str]] = field(default_factory=dict)
+    root_keys: list[str] = field(default_factory=list)
+
+
 # ── 工具函数 ─────────────────────────────────────────────
 
 
@@ -438,6 +601,155 @@ def build_account_tree(
         children_by_row=children_by_row,
         root_rows=root_rows,
     )
+
+
+# ── 1b. TASK-094C：唯一科目节点图 ──────────────────────────
+
+
+def build_unique_account_graph(
+    tree: "AccountTree",
+    rows_meta: list[dict] | None = None,
+) -> UniqueAccountGraph:
+    """从已构建的客户科目树派生唯一节点图。
+
+    关键步骤：
+    1. 沿树 walk 计算每个节点的 full_path（用于 node_key 的 parent 维度）；
+    2. 计算每个节点自身的 node_key（基于 code + name + parent_path）；
+    3. 聚合 source_row_indexes（同 node_key 多行合并到 representative_row_index 第一条）；
+    4. 构造 children_by_key + root_keys。
+
+    rows_meta 为 None 时，按 tree 现有数据重建 full_path；
+    rows_meta 给出时优先用 rows_meta 中 ancestor_names 重建 full_path。
+
+    不会修改原 tree 结构。
+    """
+    graph = UniqueAccountGraph()
+
+    if not tree.nodes_by_row:
+        return graph
+
+    # 1) 准备 ancestor / full_path 缓存
+    rows_meta_by_row: dict[int, dict] = {}
+    if rows_meta:
+        for meta in rows_meta:
+            ri = meta.get("row_index")
+            if ri is not None:
+                rows_meta_by_row[ri] = meta
+
+    # 2) 按 row_index 排序遍历，先建立 path → key 映射
+    #    先 root，再子层；按 level 升序更稳定
+    sorted_rows = sorted(
+        tree.nodes_by_row.values(),
+        key=lambda n: (n.level or 0, n.row_index),
+    )
+
+    # row_index → full_path
+    full_path_by_row: dict[int, str] = {}
+    # row_index → node_key
+    key_by_row: dict[int, str] = {}
+    # row_index → parent_node_key
+    parent_key_by_row: dict[int, str | None] = {}
+
+    # 先尝试用 rows_meta 中的 ancestor_names 重建 full_path；
+    # 否则根据 tree 关系重建。
+    def _build_path_for_node(node: AccountTreeNode) -> str:
+        meta = rows_meta_by_row.get(node.row_index)
+        if meta:
+            ancestor_names = list(meta.get("ancestor_names") or [])
+            names_for_path = list(reversed(ancestor_names)) + (
+                [node.client_account_name] if node.client_account_name else []
+            )
+            return "\\".join(p for p in names_for_path if p)
+        return node.full_path or ""
+
+    for node in sorted_rows:
+        path = _build_path_for_node(node)
+        full_path_by_row[node.row_index] = path
+
+        # parent_node_key：找 parent_row_index 对应的 node_key
+        parent_key: str | None = None
+        if node.parent_row_index is not None:
+            parent_key = key_by_row.get(node.parent_row_index)
+        parent_key_by_row[node.row_index] = parent_key
+
+        node_key = compute_unique_node_key(
+            client_account_code=node.client_account_code,
+            client_account_name=node.client_account_name,
+            parent_full_path=path,
+        )
+        key_by_row[node.row_index] = node_key
+
+    # 3) 构造 / 合并 UniqueAccountNode
+    for node in sorted_rows:
+        node_key = key_by_row[node.row_index]
+        path = full_path_by_row[node.row_index]
+        parent_key = parent_key_by_row[node.row_index]
+
+        if node_key in graph.nodes_by_key:
+            un = graph.nodes_by_key[node_key]
+        else:
+            un = UniqueAccountNode(
+                node_key=node_key,
+                account_code=node.client_account_code,
+                account_name=node.client_account_name,
+                full_path=path,
+                parent_node_key=parent_key,
+                level=node.level,
+                node_type=classify_node_type(
+                    client_account_code=node.client_account_code,
+                    client_account_name=node.client_account_name,
+                    is_summary=node.is_summary,
+                ),
+            )
+            graph.nodes_by_key[node_key] = un
+
+        un.source_row_indexes.append(node.row_index)
+        if un.representative_row_index is None or node.row_index < un.representative_row_index:
+            un.representative_row_index = node.row_index
+
+        # 把 mapping_role/mode 等继承给节点（保留已解析的更具体状态）
+        # 注意：节点级信息优先保留「已 resolved」的，避免后续被未解析的覆盖
+        if (
+            not un.resolved_standard_account_id
+            and node.resolved_standard_account_id
+        ):
+            un.resolved_standard_account_id = node.resolved_standard_account_id
+            un.resolved_standard_account_code = node.resolved_standard_account_code
+            un.resolved_standard_account_name = node.resolved_standard_account_name
+            un.mapping_role = node.mapping_role or un.mapping_role
+            un.mapping_mode = node.mapping_mode or un.mapping_mode
+            un.resolution_source = node.resolution_source or un.resolution_source
+            un.resolution_reason = node.resolution_reason or un.resolution_reason
+            un.auto_confirm_status = node.auto_confirm_status or un.auto_confirm_status
+            un.auto_confirm_reason = node.auto_confirm_reason or un.auto_confirm_reason
+        elif (
+            node.mapping_role in {"anchor", "breakpoint", "explicit_override"}
+            and un.mapping_role not in {"anchor", "breakpoint", "explicit_override"}
+        ):
+            un.mapping_role = node.mapping_role
+            un.mapping_mode = node.mapping_mode
+            un.requires_confirmation = node.requires_confirmation
+
+        # row → node 绑定（重复原始行覆盖同一个 key）
+        graph.row_to_node_key[node.row_index] = node_key
+
+    # 4) 构造 children_by_key + root_keys
+    for key, un in graph.nodes_by_key.items():
+        if un.parent_node_key and un.parent_node_key in graph.nodes_by_key:
+            graph.children_by_key.setdefault(un.parent_node_key, []).append(key)
+        else:
+            graph.root_keys.append(key)
+
+    # 子节点排序：按 row_index 升序
+    for k in graph.children_by_key:
+        graph.children_by_key[k].sort(
+            key=lambda ck: graph.nodes_by_key[ck].representative_row_index or 0
+        )
+    graph.root_keys.sort(
+        key=lambda k: graph.nodes_by_key[k].representative_row_index or 0
+    )
+
+    return graph
 
 
 # ── 2. 结构汇总节点识别 ────────────────────────────────────

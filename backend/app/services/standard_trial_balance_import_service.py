@@ -13,6 +13,14 @@ ANCHOR-INHERITANCE-MAPPING：
   重新解析映射计划，然后只对 anchor / breakpoint / explicit_override 节点应用
   用户提交的目标，对 inherited 节点自动沿树传播。
 - 任一参与入库的末级未解析唯一标准科目 → 阻止 execute。
+
+TASK-094D：跳过行分类统一 — Analyze 与 Execute 调用同一个
+``classify_import_rows``，得到五类行：
+  - eligible_business_leaf_rows：应入库的业务末级（生成 entry）
+  - zero_amount_template_rows：所有金额字段均为 0/空 的模板占位行
+  - summary_total_rows：名称或结构含「合计/小计/总计/累计」的行
+  - duplicate_aggregate_rows：金额约等于子级汇总、但未带合计关键词的行
+  - ignored_business_rows：用户主动忽略的真实业务末级
 """
 
 import uuid
@@ -20,6 +28,7 @@ import os
 import re
 import shutil
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -56,7 +65,10 @@ from app.services.account_mapping_inheritance_service import (
     AnchorResolution,
     AnchorDiscoveryResult,
     MappingPlanSummary,
+    UniqueAccountGraph,
+    UniqueAccountNode,
     build_account_tree,
+    build_unique_account_graph,
     discover_anchor_candidates,
     resolve_mapping_plan,
     validate_mapping_plan,
@@ -232,6 +244,429 @@ def _collect_summary_total_skip_rows(
             skip.add(ri)
             continue
     return skip
+
+
+# ── TASK-094D：跳过行分类与勾稽口径统一 ─────────────
+
+
+# TASK-094D：合计/小计/总计 关键词集合（与 _collect_summary_total_skip_rows 一致）
+_SUMMARY_TOTAL_KEYWORDS = (
+    "合计", "总计", "小计", "本页合计", "本月合计", "累计",
+    "（资产）小计", "(资产)小计", "（负债）小计", "(负债)小计",
+    "（权益）小计", "(权益)小计", "（损益）小计", "(损益)小计",
+    "资产）小计", "资产)小计", "负债）小计", "负债)小计",
+    "权益）小计", "权益)小计", "损益）小计", "损益)小计",
+)
+
+# TASK-094D：页脚元数据关键词（与 _collect_summary_total_skip_rows 一致）
+_FOOTER_KEYWORDS = (
+    "核算单位", "制单人", "打印时间", "打印日期", "编制单位",
+    "审核人", "记账人", "财务主管", "单位负责人",
+)
+
+# TASK-094D：配置科目 / 非过帐科目关键词（与 _collect_summary_total_skip_rows 一致）
+_CONFIG_NAME_KEYWORDS = (
+    "不过帐", "不记帐", "不记账", "设置用", "系统设置", "暂存",
+)
+
+# TASK-094D：金额容差（与现有 amount_reconciliation 一致）
+_AMOUNT_RECON_TOLERANCE = Decimal("0.01")
+
+
+def _amount_field_indices(period_configs: list[dict], col_id_to_index: dict[str, int]) -> list[int]:
+    """提取 period_configs 中所有「金额」单元格索引。"""
+    indices: list[int] = []
+    for pc in period_configs:
+        if pc.get("mode") == "two_column":
+            for f in (pc.get("debit_field"), pc.get("credit_field")):
+                ci = col_id_to_index.get(f) if f else None
+                if ci is not None:
+                    indices.append(ci)
+        else:
+            f = pc.get("amount_field")
+            ci = col_id_to_index.get(f) if f else None
+            if ci is not None:
+                indices.append(ci)
+    return sorted(set(indices))
+
+
+def _row_decimal_amounts(row: list, amount_cell_indices: list[int]) -> dict[int, Decimal]:
+    """读取一行中所有金额单元格的 Decimal 值（无法解析视为 0）。"""
+    out: dict[int, Decimal] = {}
+    for ci in amount_cell_indices:
+        val = row[ci] if ci < len(row) else None
+        out[ci] = _amount_decimal_or_zero(val)
+    return out
+
+
+def _amount_decimal_or_zero(value: Any) -> Decimal:
+    """与 _amount_decimal 类似，但更宽松（无法解析视为 0）。"""
+    if value is None:
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return Decimal(str(value))
+        except Exception:
+            return Decimal("0")
+    s = str(value).strip()
+    if not s or s in ("None", "—", "-", "·"):
+        return Decimal("0")
+    try:
+        return Decimal(s.replace(",", "").replace("，", ""))
+    except Exception:
+        return Decimal("0")
+
+
+def _row_has_summary_keyword(code: str, name: str) -> bool:
+    """合计/小计/总计/累计 关键词判定（与 _collect_summary_total_skip_rows 一致）。"""
+    code_s = (code or "").strip()
+    name_s = (name or "").strip()
+    combined = f"{code_s} {name_s}"
+    return any(kw in code_s or kw in name_s or kw in combined for kw in _SUMMARY_TOTAL_KEYWORDS)
+
+
+def _row_is_footer_or_config(code: str, name: str) -> bool:
+    """页脚元数据或非过帐配置科目标识（与 _collect_summary_total_skip_rows 一致）。
+
+    旧逻辑把这些行也归入 auto_skip_rows；TASK-094D 将其归入
+    ``zero_amount_template_rows`` / ``summary_total_rows`` 的姊妹分类：
+    不参与入库、不计入业务金额。本函数返回 True 的行不进 eligible。
+    """
+    code_s = (code or "").strip()
+    name_s = (name or "").strip()
+    if any(kw in code_s for kw in _FOOTER_KEYWORDS):
+        return True
+    if any(kw in name_s for kw in _CONFIG_NAME_KEYWORDS):
+        return True
+    return False
+
+
+@dataclass
+class RowClassificationResult:
+    """TASK-094D：统一行分类结果。
+
+    五类行集合（在 leaf 行范围内两两不相交）：
+    - ``eligible_business_leaf_rows``：应入库的业务末级（生成 entry）
+    - ``zero_amount_template_rows``：所有金额字段均为 0/空 的纯模板占位
+    - ``summary_total_rows``：名称或代码含「合计/小计/总计/累计」关键词
+    - ``duplicate_aggregate_rows``：非关键词，但金额约等于子级汇总
+    - ``ignored_business_rows``：用户主动忽略的真实业务末级
+
+    附加：
+    - ``structural_rows``：父级（is_summary=True）行 + 上三类行；用于
+      build_account_tree 时排除，避免结构性汇总污染参与末级。
+    - ``base_leaf_rows``：分类的输入域（即「所有有身份且 is_leaf 且 !is_summary」的
+      原始行），五类行集合均 ⊆ ``base_leaf_rows``。
+    """
+
+    eligible_business_leaf_rows: set[int] = field(default_factory=set)
+    zero_amount_template_rows: set[int] = field(default_factory=set)
+    summary_total_rows: set[int] = field(default_factory=set)
+    duplicate_aggregate_rows: set[int] = field(default_factory=set)
+    ignored_business_rows: set[int] = field(default_factory=set)
+    base_leaf_rows: set[int] = field(default_factory=set)
+    structural_rows: set[int] = field(default_factory=set)
+
+    # 兼容旧字段语义：所有「自动跳过」行的并集（不含 user-ignored）。
+    def auto_skip_rows(self) -> set[int]:
+        return (
+            self.zero_amount_template_rows
+            | self.summary_total_rows
+            | self.duplicate_aggregate_rows
+        )
+
+    @property
+    def raw_identified_leaf_count(self) -> int:
+        """五类行集合计数之和（应等于 base_leaf_rows 大小）。"""
+        return (
+            len(self.eligible_business_leaf_rows)
+            + len(self.zero_amount_template_rows)
+            + len(self.summary_total_rows)
+            + len(self.duplicate_aggregate_rows)
+            + len(self.ignored_business_rows)
+        )
+
+    @property
+    def entry_count(self) -> int:
+        return len(self.eligible_business_leaf_rows)
+
+
+def classify_import_rows(
+    *,
+    rows: list[list],
+    period_configs: list[dict],
+    col_id_to_index: dict[str, int],
+    code_col_id: str | None,
+    name_col_id: str | None,
+    hierarchy: list[dict],
+    user_ignored_rows: set[int] | None = None,
+    tolerance: Decimal | None = None,
+) -> RowClassificationResult:
+    """TASK-094D：统一行分类 — Analyze 与 Execute 共用入口。
+
+    参数：
+    - ``rows`` / ``period_configs`` / ``col_id_to_index``：与
+      ``_collect_zero_amount_template_rows`` 一致。
+    - ``code_col_id`` / ``name_col_id``：用于读取每行 code/name。
+    - ``hierarchy``：``merge_hierarchy`` 输出（list of dict），含
+      ``row_index / is_leaf / is_summary / parent_key / parent_row_index``。
+    - ``user_ignored_rows``：用户主动忽略的行（仅 leaf）。
+    - ``tolerance``：duplicate_aggregate 检测的金额容差。
+
+    返回 ``RowClassificationResult``。该函数无副作用、纯计算，可在 Analyze
+    与 Execute 中分别调用得到一致的分类口径。
+    """
+    user_ignored_rows = set(user_ignored_rows or set())
+    tol = tolerance if tolerance is not None else _AMOUNT_RECON_TOLERANCE
+
+    code_idx = col_id_to_index.get(code_col_id) if code_col_id else None
+    name_idx = col_id_to_index.get(name_col_id) if name_col_id else None
+    amount_indices = _amount_field_indices(period_configs, col_id_to_index)
+
+    # 1) 收集 base_leaf_rows 与 hierarchy_summary_rows
+    hier_by_row: dict[int, dict] = {h.get("row_index"): h for h in hierarchy}
+    base_leaf_rows: set[int] = set()
+    hierarchy_summary_rows: set[int] = set()
+    for ri, row in enumerate(rows):
+        h = hier_by_row.get(ri, {})
+        code = _safe_str(row[code_idx]) if code_idx is not None and code_idx < len(row) else ""
+        name = _safe_str(row[name_idx]) if name_idx is not None and name_idx < len(row) else ""
+        is_leaf = bool(h.get("is_leaf", True))
+        is_summary = bool(h.get("is_summary", False))
+        if not (code or name):
+            continue
+        if is_summary:
+            hierarchy_summary_rows.add(ri)
+            continue
+        if is_leaf:
+            base_leaf_rows.add(ri)
+
+    # 2) 计算每行六个金额字段值（leaf + 父级都计算，用于 duplicate_aggregate 检测）
+    row_amounts: dict[int, dict[int, Decimal]] = {}
+    for ri in (base_leaf_rows | hierarchy_summary_rows):
+        if 0 <= ri < len(rows):
+            row_amounts[ri] = _row_decimal_amounts(rows[ri], amount_indices)
+
+    def _row_sum(r: int) -> Decimal:
+        amts = row_amounts.get(r, {})
+        s = Decimal("0")
+        for v in amts.values():
+            s += v
+        return s
+
+    # 3) 名称 / 代码读出（仅 leaf + parent）
+    code_name_by_row: dict[int, tuple[str, str]] = {}
+    for ri in (base_leaf_rows | hierarchy_summary_rows):
+        if 0 <= ri < len(rows):
+            row = rows[ri]
+            code = _safe_str(row[code_idx]) if code_idx is not None and code_idx < len(row) else ""
+            name = _safe_str(row[name_idx]) if name_idx is not None and name_idx < len(row) else ""
+            code_name_by_row[ri] = (code, name)
+
+    # 4) duplicate_aggregate 检测：父级（is_summary=True）且非关键词，
+    #    且任一金额字段约等于其直接子级金额合计。
+    children_by_row: dict[int, list[int]] = {}
+    for ri in hierarchy_summary_rows:
+        for child_ri in base_leaf_rows:
+            h_child = hier_by_row.get(child_ri, {})
+            pk = h_child.get("parent_key")
+            if pk is None:
+                continue
+            parent_match = False
+            try:
+                if int(pk) == ri:
+                    parent_match = True
+            except (ValueError, TypeError):
+                if pk == code_name_by_row.get(ri, ("", ""))[0]:
+                    parent_match = True
+            if parent_match:
+                children_by_row.setdefault(ri, []).append(child_ri)
+
+    duplicate_aggregate_rows: set[int] = set()
+    for ri in hierarchy_summary_rows:
+        code, name = code_name_by_row.get(ri, ("", ""))
+        if _row_has_summary_keyword(code, name):
+            continue
+        children = children_by_row.get(ri, [])
+        if not children:
+            continue
+        amts_self = row_amounts.get(ri, {})
+        amts_children = [row_amounts.get(c, {}) for c in children]
+        # 至少有一个金额字段「父级 ≈ 子级合计」才算 duplicate aggregate
+        match_count = 0
+        nonzero_count = 0
+        for ci, amt_self in amts_self.items():
+            child_sum = sum((a.get(ci, Decimal("0")) for a in amts_children), Decimal("0"))
+            if abs(amt_self) > Decimal("0") or abs(child_sum) > Decimal("0"):
+                nonzero_count += 1
+            if abs(amt_self - child_sum) <= tol:
+                match_count += 1
+        if nonzero_count > 0 and match_count == len(amts_self):
+            duplicate_aggregate_rows.add(ri)
+
+    # 5) zero_amount_template：所有金额字段均为 0/空（无论是否叶子）
+    zero_amount_template_rows: set[int] = set()
+    for ri in (base_leaf_rows | hierarchy_summary_rows):
+        amts = row_amounts.get(ri, {})
+        if not amts:
+            continue
+        if all(abs(v) <= tol for v in amts.values()):
+            zero_amount_template_rows.add(ri)
+
+    # 6) summary_total：名称 / 代码含合计关键词 OR 页脚/配置关键词（与旧逻辑一致）
+    summary_total_rows: set[int] = set()
+    for ri in (base_leaf_rows | hierarchy_summary_rows):
+        code, name = code_name_by_row.get(ri, ("", ""))
+        if _row_has_summary_keyword(code, name) or _row_is_footer_or_config(code, name):
+            summary_total_rows.add(ri)
+
+    # 7) ignored_business：仅 leaf 中由用户主动忽略的部分
+    ignored_business_rows: set[int] = set(user_ignored_rows & base_leaf_rows)
+
+    # 8) 在 leaf 范围内做「优先级降序」分配（互斥）：
+    #    ignored > summary_total > zero_amount_template > duplicate_aggregate > eligible
+    assigned: set[int] = set()
+    eligible: set[int] = set()
+    zero_leaf: set[int] = set()
+    summary_leaf: set[int] = set()
+    duplicate_leaf: set[int] = set()
+
+    for ri in base_leaf_rows:
+        if ri in ignored_business_rows:
+            continue  # ignored_business_rows 已记录
+        if ri in summary_total_rows:
+            summary_leaf.add(ri)
+            assigned.add(ri)
+            continue
+        if ri in zero_amount_template_rows:
+            zero_leaf.add(ri)
+            assigned.add(ri)
+            continue
+        if ri in duplicate_aggregate_rows:
+            duplicate_leaf.add(ri)
+            assigned.add(ri)
+            continue
+        eligible.add(ri)
+        assigned.add(ri)
+
+    # 9) structural_rows = 父级 + leaf 中的 summary_total + leaf 中的 duplicate_aggregate
+    structural_rows: set[int] = set(hierarchy_summary_rows)
+    structural_rows |= summary_leaf
+    structural_rows |= duplicate_leaf
+
+    return RowClassificationResult(
+        eligible_business_leaf_rows=eligible,
+        zero_amount_template_rows=zero_leaf,
+        summary_total_rows=summary_leaf,
+        duplicate_aggregate_rows=duplicate_leaf,
+        ignored_business_rows=ignored_business_rows,
+        base_leaf_rows=set(base_leaf_rows),
+        structural_rows=structural_rows,
+    )
+
+
+def summarize_amount_reconciliation(
+    *,
+    eligible_business_leaf_rows: set[int],
+    ignored_business_rows: set[int],
+    entry_amount_totals: dict[str, Decimal],
+    row_amount_lookups: dict[int, dict[str, Decimal]],
+    fields: list[str],
+    tolerance: Decimal | None = None,
+) -> dict[str, dict[str, str]]:
+    """TASK-094D：业务金额勾稽 — 仅使用真正业务末级（不混入汇总/重复）。
+
+    等式（任务文档第 5 节）：
+        eligible_business_leaf_amount = entry_amount + ignored_business_amount
+    其中 eligible_business_leaf_amount 在任务文档上下文中指「全部业务末级
+    金额」= eligible + ignored；eligible 是「应生成 entry 的末级集合」
+    （去掉了 user-ignored）。
+
+    注：此等式是分类正确性的恒等式 — 当分类正确时，entry 仅来自 eligible
+    集合（被 ignored 的行不会再生成 entry），ignored 与 entry 互斥。
+    任何「eligible 行但 entry 漏算」或「ignored 行但生成了 entry」都会让
+    difference 非零。该函数暴露四个分量供报告与断言使用。
+    """
+    tol = tolerance if tolerance is not None else _AMOUNT_RECON_TOLERANCE
+    out: dict[str, dict[str, str]] = {}
+    for field in fields:
+        eligible_total = sum(
+            (row_amount_lookups.get(ri, {}).get(field, Decimal("0"))
+             for ri in eligible_business_leaf_rows),
+            Decimal("0"),
+        )
+        ignored_total = sum(
+            (row_amount_lookups.get(ri, {}).get(field, Decimal("0"))
+             for ri in ignored_business_rows),
+            Decimal("0"),
+        )
+        entry_total = entry_amount_totals.get(field, Decimal("0"))
+        # 任务文档口径：eligible_business_leaf_amount = entry + ignored
+        # 也就是 total_business_leaf_amount = entry + ignored
+        total_business_leaf_amount = eligible_total + ignored_total
+        difference = total_business_leaf_amount - entry_total - ignored_total
+        out[field] = {
+            "source": str(total_business_leaf_amount),
+            "entry": str(entry_total),
+            "eligible": str(eligible_total),
+            "ignored": str(ignored_total),
+            "difference": str(difference),
+            "ok": "true" if abs(difference) <= tol else "false",
+        }
+    return out
+
+
+def summarize_summary_reconciliation(
+    *,
+    summary_total_rows: set[int],
+    duplicate_aggregate_rows: set[int],
+    hierarchy_summary_rows: set[int],
+    children_by_row: dict[int, list[int]],
+    row_amount_lookups: dict[int, dict[str, Decimal]],
+    fields: list[str],
+    tolerance: Decimal | None = None,
+) -> dict[str, dict[str, Any]]:
+    """TASK-094D：汇总 / 重复 行父子金额勾稽 — 与业务勾稽分离。
+
+    等式：父级金额 ≈ 直接或全部子级金额合计（允许 0.01 误差）。
+    不通过则 ``warning=summary_amount_mismatch``，但仍可生成 entry（汇总行
+    不参与 entry，所以该告警只是诊断信息）。
+    """
+    tol = tolerance if tolerance is not None else _AMOUNT_RECON_TOLERANCE
+    out: dict[str, dict[str, Any]] = {}
+    parent_rows = (hierarchy_summary_rows | summary_total_rows | duplicate_aggregate_rows)
+    for ri in parent_rows:
+        amts_self = row_amount_lookups.get(ri, {})
+        children = children_by_row.get(ri, [])
+        if not children:
+            continue
+        per_field: dict[str, dict[str, str]] = {}
+        mismatch_count = 0
+        for field in fields:
+            v_self = amts_self.get(field, Decimal("0"))
+            v_child = sum(
+                (row_amount_lookups.get(c, {}).get(field, Decimal("0"))
+                 for c in children),
+                Decimal("0"),
+            )
+            diff = v_self - v_child
+            ok = abs(diff) <= tol
+            if not ok and (abs(v_self) > tol or abs(v_child) > tol):
+                mismatch_count += 1
+            per_field[field] = {
+                "self": str(v_self),
+                "children_sum": str(v_child),
+                "difference": str(diff),
+                "ok": "true" if ok else "false",
+            }
+        out[str(ri)] = {
+            "fields": per_field,
+            "mismatch_count": mismatch_count,
+            "warning": None if mismatch_count == 0 else "summary_amount_mismatch",
+        }
+    return out
 
 
 # ── TASK-078：辅助核算明细行识别与父科目继承 ────────────
@@ -729,17 +1164,32 @@ async def analyze_standard_import(
             "participates_in_entry": participates_in_entry,
         }
 
-    # TASK-078：自动跳过零金额模板行（金蝶在每个模板科目下甚至成片空金额行）。
-    # 仅当「该行所有已配置金额字段都为空/0」时，且本身不是带非空子行的父级，
-    # 才认定为零金额模板行，跳过其入库参与与标准映射校验。
-    auto_skip_rows = _collect_zero_amount_template_rows(
-        rows, period_configs, col_id_to_index,
+    # TASK-094D：统一行分类 — Analyze 与 Execute 共用 classify_import_rows。
+    # 五类行：eligible / zero / summary_total / duplicate_aggregate / ignored。
+    # Analyze 阶段 user_ignored 暂为空集（前端尚未提交忽略）。
+    classification = classify_import_rows(
+        rows=rows,
+        period_configs=period_configs,
+        col_id_to_index=col_id_to_index,
+        code_col_id=code_col_id,
+        name_col_id=name_col_id,
+        hierarchy=hierarchy,
+        user_ignored_rows=set(),
     )
-    # TASK-079：小计/合计行也自动跳过
-    summary_skip_rows = _collect_summary_total_skip_rows(
-        rows, col_id_to_index, code_col_id=code_col_id, name_col_id=name_col_id,
-    )
-    auto_skip_rows |= summary_skip_rows
+    # 兼容旧字段语义：所有「自动跳过」行（不含 user-ignored）
+    auto_skip_rows = classification.auto_skip_rows()
+    # TASK-094C：从 auto_skip_rows 中排除父级（is_summary=True）行。
+    # 父级即使金额为 0，仍然应当作为 anchor / 继承源点参与映射计划，
+    # 否则其子节点无法继承，会全部变成 unresolved。
+    hierarchy_summary_rows = {
+        h["row_index"]
+        for h in hierarchy
+        if h.get("is_summary")
+    }
+    auto_skip_rows = {
+        ri for ri in auto_skip_rows
+        if ri not in hierarchy_summary_rows
+    }
     for ridx in auto_skip_rows:
         if ridx in row_mapping_meta:
             row_mapping_meta[ridx]["participates_in_entry"] = False
@@ -791,6 +1241,14 @@ async def analyze_standard_import(
         },
     )
 
+    # TASK-094C：构建唯一科目节点图 + 行→节点绑定
+    unique_graph = build_unique_account_graph(
+        tree=tree,
+        rows_meta=rows_meta_for_tree,
+    )
+    row_to_node_key_map = dict(unique_graph.row_to_node_key)
+    node_by_key_map = dict(unique_graph.nodes_by_key)
+
     # 10. 轻量锚点发现（不做 recommend_mappings，仅分类 + 强信号 + 中断检测）
     discovery = await discover_anchor_candidates(
         tree=tree,
@@ -801,6 +1259,10 @@ async def analyze_standard_import(
     # 11. 决定哪些 client_accounts 必须送进 recommend_mappings：
     #     anchor_rows + breakpoint_candidate_rows
     #     普通 inherited / structural / ignored 一律跳过
+    # TASK-094C：把 anchor/breakpoint 行集合按 node_key 折叠，
+    # 避免同一唯一节点被送进多次完整推荐。
+    # 注意：折叠会导致锚点丢失 + 继承链断裂（不同行同 node_key 但有各自子节点），
+    # 因此保留原始行集合但注入 node_key 元数据供后续处理。
     full_rec_row_indexes: set[int] = (
         discovery.anchor_rows | discovery.breakpoint_candidate_rows
     )
@@ -900,6 +1362,26 @@ async def analyze_standard_import(
         rec["parent_client_account_code"] = (
             tree.nodes_by_row[ri].parent_key if ri in tree.nodes_by_row else None
         )
+        # TASK-094C：注入 node_key 与节点级元数据
+        nk = row_to_node_key_map.get(ri) if ri is not None else None
+        rec["node_key"] = nk
+        if nk and nk in node_by_key_map:
+            un = node_by_key_map[nk]
+            rec["node_type"] = un.node_type
+            rec["node_source_row_indexes"] = list(un.source_row_indexes)
+            rec["node_representative_row_index"] = un.representative_row_index
+            rec["node_duplicate_binding"] = (
+                un.representative_row_index != ri
+            )
+            rec["mapping_editable"] = (
+                un.representative_row_index == ri and un.node_type == "account"
+            )
+        else:
+            rec["node_type"] = "account"
+            rec["node_source_row_indexes"] = [ri] if ri is not None else []
+            rec["node_representative_row_index"] = ri
+            rec["node_duplicate_binding"] = False
+            rec["mapping_editable"] = ri is not None
         mapping_recommendations.append(rec)
 
     # TASK-078：辅助核算明细行继承父科目候选注入。
@@ -1261,6 +1743,20 @@ async def analyze_standard_import(
             "header_rows": header_rows,
             "merged_headers": headers,
         }
+    # TASK-094C：唯一节点统计
+    node_type_count = {"account": 0, "auxiliary": 0, "summary": 0}
+    account_node_count = 0
+    auxiliary_node_count = 0
+    for un in unique_graph.nodes_by_key.values():
+        node_type_count[un.node_type] = node_type_count.get(un.node_type, 0) + 1
+        if un.node_type == "account":
+            account_node_count += 1
+        elif un.node_type == "auxiliary":
+            auxiliary_node_count += 1
+    duplicate_binding_count = sum(
+        max(len(un.source_row_indexes) - 1, 0)
+        for un in unique_graph.nodes_by_key.values()
+    )
     batch.hierarchy_config = {
         "mode": hierarchy_mode,
         "parse_config": existing_parse_config,
@@ -1269,6 +1765,12 @@ async def analyze_standard_import(
         "mapping_strategy_version": 2,
         "full_recommendation_node_count": mapping_summary.full_recommendation_node_count,
         "inherited_without_recommendation_count": mapping_summary.inherited_without_recommendation_count,
+        # TASK-094C：唯一节点图统计
+        "unique_node_count": len(unique_graph.nodes_by_key),
+        "account_node_count": account_node_count,
+        "auxiliary_node_count": auxiliary_node_count,
+        "summary_node_count": node_type_count.get("summary", 0),
+        "duplicate_binding_count": duplicate_binding_count,
     }
     batch.fiscal_year = fiscal_year
     batch.period = period
@@ -1288,6 +1790,31 @@ async def analyze_standard_import(
         "warnings": warnings,
         "mapping_summary": mapping_summary_to_dict(mapping_summary),
         "mapping_strategy": "anchor_inheritance_v2",
+        # TASK-094C：唯一节点图统计（前端可直接展示压缩率）
+        "unique_node_count": len(unique_graph.nodes_by_key),
+        "account_node_count": account_node_count,
+        "auxiliary_node_count": auxiliary_node_count,
+        "summary_node_count": node_type_count.get("summary", 0),
+        "duplicate_binding_count": duplicate_binding_count,
+        "raw_row_compression_ratio": (
+            round(len(client_accounts_for_mapping) / max(len(unique_graph.nodes_by_key), 1), 2)
+        ),
+        # TASK-094D：Analyze 阶段返回 5 类行集合计数（Execute 同口径）
+        "raw_identified_leaf_count": classification.raw_identified_leaf_count,
+        "eligible_business_leaf_count": len(classification.eligible_business_leaf_rows),
+        "ignored_business_count": len(classification.ignored_business_rows),
+        "zero_template_count": len(classification.zero_amount_template_rows),
+        "summary_total_count": len(classification.summary_total_rows),
+        "duplicate_aggregate_count": len(classification.duplicate_aggregate_rows),
+        "classification": {
+            "eligible_business_leaf_rows": sorted(classification.eligible_business_leaf_rows),
+            "zero_amount_template_rows": sorted(classification.zero_amount_template_rows),
+            "summary_total_rows": sorted(classification.summary_total_rows),
+            "duplicate_aggregate_rows": sorted(classification.duplicate_aggregate_rows),
+            "ignored_business_rows": sorted(classification.ignored_business_rows),
+            "base_leaf_rows": sorted(classification.base_leaf_rows),
+            "structural_rows": sorted(classification.structural_rows),
+        },
     }
 
 
@@ -1532,14 +2059,6 @@ async def execute_standard_import(
         ))
 
     _timings["build_base_rows"] = round(_time.time() - _t0, 2)
-    # TASK-078：重算零金额模板行（与 analyze 一致规则），自动不参与入库/映射校验。
-    execute_auto_skip_rows = _collect_zero_amount_template_rows(
-        rows, period_configs, col_id_to_index,
-    )
-    # TASK-079：小计/合计行也自动跳过
-    execute_auto_skip_rows |= _collect_summary_total_skip_rows(
-        rows, col_id_to_index, code_col_id=code_col_id, name_col_id=name_col_id,
-    )
 
     # ANCHOR-INHERITANCE-MAPPING：在 execute 阶段重新构建客户科目树，
     # 应用用户提交的 confirmed_mappings（仅锚点 / 显式覆盖），重新计算
@@ -1578,6 +2097,31 @@ async def execute_standard_import(
         and hier_by_row_exec.get(ri.row_index, {}).get("is_leaf", True)
         and not hier_by_row_exec.get(ri.row_index, {}).get("is_summary", False)
     }
+    # TASK-094D：Analyze / Execute 共用同一份行分类逻辑。
+    # 五类行：eligible / zero_amount_template / summary_total /
+    #         duplicate_aggregate / ignored_business。
+    # 与 Analyze 的差异：Execute 阶段把 user-ignored 真正从
+    # eligible / zero / summary / duplicate 中扣减（优先级降序）。
+    execute_classification = classify_import_rows(
+        rows=rows,
+        period_configs=period_configs,
+        col_id_to_index=col_id_to_index,
+        code_col_id=code_col_id,
+        name_col_id=name_col_id,
+        hierarchy=hier_merged_exec,
+        user_ignored_rows=ignored_row_set,
+    )
+    eligible_business_leaf_rows = set(execute_classification.eligible_business_leaf_rows)
+    zero_amount_template_leaf_rows = set(execute_classification.zero_amount_template_rows)
+    summary_total_leaf_rows = set(execute_classification.summary_total_rows)
+    duplicate_aggregate_leaf_rows = set(execute_classification.duplicate_aggregate_rows)
+    ignored_leaf_rows = set(execute_classification.ignored_business_rows)
+    # 兼容旧字段 auto_skip_rows：去掉 ignored 的部分（旧逻辑语义）
+    execute_auto_skip_rows = (
+        zero_amount_template_leaf_rows
+        | summary_total_leaf_rows
+        | duplicate_aggregate_leaf_rows
+    )
     invalid_ignored_rows = sorted(ignored_row_set - base_leaf_rows)
     if invalid_ignored_rows:
         batch.status = "blocked"
@@ -1586,8 +2130,6 @@ async def execute_standard_import(
         raise ValueError(
             f"忽略行只能选择参与入库的末级客户科目行，以下行不可忽略: {detail}"
         )
-    ignored_leaf_rows = ignored_row_set & base_leaf_rows
-    zero_amount_skipped_leaf_rows = (execute_auto_skip_rows & base_leaf_rows) - ignored_leaf_rows
     participating_leaf_rows = base_leaf_rows
     row_input_by_row = {ri.row_index: ri for ri in row_inputs}
 
@@ -1672,6 +2214,27 @@ async def execute_standard_import(
     )
     tree_exec = mapping_plan.tree
     leaf_standard_accounts = mapping_plan.leaf_standard_accounts
+
+    # TASK-094C：构建唯一节点图（用于统计报告 + DB 去重，不改变解析结果）
+    execute_unique_graph = build_unique_account_graph(
+        tree=tree_exec,
+        rows_meta=rows_meta_exec,
+    )
+    execute_node_by_key: dict[str, UniqueAccountNode] = dict(execute_unique_graph.nodes_by_key)
+    execute_row_to_node_key: dict[int, str] = dict(execute_unique_graph.row_to_node_key)
+
+    # 统计重复提交行数（同 node_key 不同 row_index 的 confirmed 提交）
+    duplicate_row_bindings: int = 0
+    for cm in confirmed_mappings:
+        ri = cm.get("row_index")
+        if ri is None:
+            continue
+        nk = execute_row_to_node_key.get(ri)
+        if nk and nk in execute_node_by_key:
+            un = execute_node_by_key[nk]
+            if un.representative_row_index is not None and un.representative_row_index != ri:
+                duplicate_row_bindings += 1
+
     structural_skipped_leaf_rows = {
         row_index
         for row_index in participating_leaf_rows
@@ -1683,7 +2246,16 @@ async def execute_standard_import(
     if structural_skipped_leaf_rows:
         participating_leaf_rows = participating_leaf_rows - structural_skipped_leaf_rows
         ignored_leaf_rows = ignored_leaf_rows - structural_skipped_leaf_rows
-        zero_amount_skipped_leaf_rows = zero_amount_skipped_leaf_rows - structural_skipped_leaf_rows
+        zero_amount_template_leaf_rows = (
+            zero_amount_template_leaf_rows - structural_skipped_leaf_rows
+        )
+        summary_total_leaf_rows = summary_total_leaf_rows - structural_skipped_leaf_rows
+        duplicate_aggregate_leaf_rows = (
+            duplicate_aggregate_leaf_rows - structural_skipped_leaf_rows
+        )
+        eligible_business_leaf_rows = (
+            eligible_business_leaf_rows - structural_skipped_leaf_rows
+        )
 
     _timings["anchor_plan_rebuild"] = round(_time.time() - _t0_tree, 2)
 
@@ -2033,62 +2605,153 @@ async def execute_standard_import(
     await db.flush()
     _timings["entry_insert"] = round(_time.time() - _t0, 2)
 
+    # TASK-094D：5 类行集合计数之和 = base_leaf_rows 数量（业务末级）
+    raw_identified_leaf_count = (
+        len(eligible_business_leaf_rows)
+        + len(zero_amount_template_leaf_rows)
+        + len(summary_total_leaf_rows)
+        + len(duplicate_aggregate_leaf_rows)
+        + len(ignored_leaf_rows)
+    )
     participating_leaf_count = len(participating_leaf_rows)
-    ignored_leaf_count = len(ignored_leaf_rows)
-    zero_amount_skipped_leaf_count = len(zero_amount_skipped_leaf_rows)
-    if participating_leaf_count != entry_count + ignored_leaf_count + zero_amount_skipped_leaf_count:
+    if participating_leaf_count != raw_identified_leaf_count:
+        batch.status = "blocked"
+        await db.flush()
+        raise ValueError(
+            "raw_identified_leaf_count reconciliation failed: "
+            "base_leaf_rows == eligible + zero + summary + duplicate + ignored "
+            f"({participating_leaf_count} != {raw_identified_leaf_count})"
+        )
+    if entry_count != len(eligible_business_leaf_rows):
         batch.status = "blocked"
         await db.flush()
         raise ValueError(
             "entry reconciliation failed: "
-            "participating_leaf_count == entry_count + ignored_leaf_count + zero_amount_skipped_leaf_count "
-            f"({participating_leaf_count} != {entry_count} + {ignored_leaf_count} + {zero_amount_skipped_leaf_count})"
+            "entry_count must equal eligible_business_leaf_count "
+            f"({entry_count} != {len(eligible_business_leaf_rows)})"
         )
 
-    source_amount_totals = _sum_leaf_amounts(participating_leaf_rows)
-    ignored_amount_totals = _sum_leaf_amounts(ignored_leaf_rows)
-    zero_amount_totals = _sum_leaf_amounts(zero_amount_skipped_leaf_rows)
-    amount_reconciliation: dict[str, dict[str, str]] = {}
+    # TASK-094D：业务金额勾稽 — 仅使用真正业务末级（不混入汇总/重复）
+    # 等式：eligible_business_leaf_amount + ignored_business_amount == entry_amount
+    def _sum_by_row_indices(row_indices: set[int]) -> dict[str, Decimal]:
+        totals = _empty_amount_totals()
+        for leaf_row in leaves:
+            if leaf_row.row_index not in row_indices:
+                continue
+            for field in amount_fields:
+                totals[field] += _amount_decimal(getattr(leaf_row, field, None))
+        return totals
+
+    row_amount_lookups: dict[int, dict[str, Decimal]] = {}
+    for leaf_row in leaves:
+        row_amount_lookups[leaf_row.row_index] = {
+            field: _amount_decimal(getattr(leaf_row, field, None))
+            for field in amount_fields
+        }
+    # 也覆盖父级（汇总/重复勾稽需要）
+    for tr in transform_result.rows:
+        if tr.row_index in row_amount_lookups:
+            continue
+        row_amount_lookups[tr.row_index] = {
+            field: _amount_decimal(getattr(tr, field, None))
+            for field in amount_fields
+        }
+
+    business_amount_reconciliation = summarize_amount_reconciliation(
+        eligible_business_leaf_rows=eligible_business_leaf_rows,
+        ignored_business_rows=ignored_leaf_rows,
+        entry_amount_totals=entry_amount_totals,
+        row_amount_lookups=row_amount_lookups,
+        fields=amount_fields,
+    )
     amount_tolerance = Decimal("0.01")
     for field in amount_fields:
-        difference = (
-            source_amount_totals[field]
-            - entry_amount_totals[field]
-            - ignored_amount_totals[field]
-            - zero_amount_totals[field]
-        )
-        amount_reconciliation[field] = {
-            "source": str(source_amount_totals[field]),
-            "entry": str(entry_amount_totals[field]),
-            "ignored": str(ignored_amount_totals[field]),
-            "zero_skip": str(zero_amount_totals[field]),
-            "difference": str(difference),
-        }
-        if abs(difference) > amount_tolerance:
+        info = business_amount_reconciliation[field]
+        if info["ok"] != "true":
             batch.status = "blocked"
             await db.flush()
             raise ValueError(
-                f"amount reconciliation failed for {field}: difference={difference}"
+                f"business amount reconciliation failed for {field}: "
+                f"difference={info['difference']} (eligible={info['eligible']}, "
+                f"ignored={info['ignored']}, entry={info['entry']})"
             )
+
+    # TASK-094D：汇总 / 重复 父子金额勾稽 — 与业务勾稽分离
+    # children_by_row 基于 hier_merged_exec 的 parent_key 重新推导
+    summary_children_by_row: dict[int, list[int]] = {}
+    for ri, h in hier_by_row_exec.items():
+        pk = h.get("parent_key")
+        if pk is None:
+            continue
+        parent_idx = None
+        try:
+            parent_idx = int(pk)
+        except (ValueError, TypeError):
+            parent_idx = code_to_row_idx_exec.get(str(pk).strip())
+        if parent_idx is None or parent_idx == ri:
+            continue
+        summary_children_by_row.setdefault(parent_idx, []).append(ri)
+    hierarchy_summary_rows_exec = {
+        h["row_index"]
+        for h in hier_merged_exec
+        if h.get("is_summary")
+    }
+    summary_amount_reconciliation = summarize_summary_reconciliation(
+        summary_total_rows=summary_total_leaf_rows,
+        duplicate_aggregate_rows=duplicate_aggregate_leaf_rows,
+        hierarchy_summary_rows=hierarchy_summary_rows_exec,
+        children_by_row=summary_children_by_row,
+        row_amount_lookups=row_amount_lookups,
+        fields=amount_fields,
+    )
+
+    # 兼容旧 API 字段（保留 zero_skip 命名用于历史报告脚本）
+    legacy_zero_amount_totals = _sum_by_row_indices(zero_amount_template_leaf_rows)
+    legacy_source_amount_totals = _sum_by_row_indices(participating_leaf_rows)
+    legacy_ignored_amount_totals = _sum_by_row_indices(ignored_leaf_rows)
+    legacy_amount_reconciliation: dict[str, dict[str, str]] = {}
+    for field in amount_fields:
+        legacy_difference = (
+            legacy_source_amount_totals[field]
+            - entry_amount_totals[field]
+            - legacy_ignored_amount_totals[field]
+            - legacy_zero_amount_totals[field]
+        )
+        legacy_amount_reconciliation[field] = {
+            "source": str(legacy_source_amount_totals[field]),
+            "entry": str(entry_amount_totals[field]),
+            "ignored": str(legacy_ignored_amount_totals[field]),
+            "zero_skip": str(legacy_zero_amount_totals[field]),
+            "difference": str(legacy_difference),
+            # TASK-094D：标记新口径
+            "deprecated": "true",
+            "use_business_amount_reconciliation": "true",
+        }
 
     # 11. 保存映射经验 — ANCHOR-INHERITANCE-MAPPING：
     # 只保存 anchor / breakpoint / explicit_override 行；
     # 普通 inherited 行不进入经验库（防止经验污染）。
     # TASK-085 性能优化：按 (code, name, standard_account_id) 去重。
+    # TASK-094C：按 node_key 去重 — 同一唯一节点（不论绑定多少行）只保存一次。
     _t0 = _time.time()
     mapping_saved: list[dict] = []
+    mapping_saved_node_keys: set[str] = set()
     if save_mapping_experience:
-        seen_keys: set[tuple] = set()
-        for n in tree_exec.nodes_by_row.values():
+        for node_key, un in execute_node_by_key.items():
+            if un.node_type == "summary":
+                continue
+            rep_ri = un.representative_row_index
+            if rep_ri is None:
+                continue
+            n = tree_exec.nodes_by_row.get(rep_ri)
+            if n is None:
+                continue
             if n.is_ignored:
                 continue
             if n.mapping_role not in {"anchor", "breakpoint", "explicit_override"}:
                 continue
             if not n.resolved_standard_account_id:
                 continue
-            if n.is_summary and not n.participates_in_entry:
-                # 非参与父级锚点：仍可保存映射经验（用于跨批次）
-                pass
             if not n.client_account_code and not n.client_account_name:
                 continue
             try:
@@ -2098,15 +2761,10 @@ async def execute_standard_import(
             if sa is None:
                 continue
 
-            # 去重：同 (code, name, sa_id) 只保存一次
-            dedup_key = (
-                (n.client_account_code or "").strip(),
-                (n.client_account_name or "").strip(),
-                n.resolved_standard_account_id,
-            )
-            if dedup_key in seen_keys:
+            # TASK-094C：node_key 级去重 — 同一唯一节点只保存一次。
+            if node_key in mapping_saved_node_keys:
                 continue
-            seen_keys.add(dedup_key)
+            mapping_saved_node_keys.add(node_key)
 
             mapping_kind = (
                 "override" if n.mapping_role == "explicit_override" else "anchor"
@@ -2137,6 +2795,8 @@ async def execute_standard_import(
                     "status": result.get("status", "unknown"),
                     "mapping_kind": mapping_kind,
                     "client_account_full_path": n.full_path or None,
+                    "node_key": node_key,
+                    "duplicate_source_row_count": max(len(un.source_row_indexes) - 1, 0),
                 })
             except Exception as e:
                 logger.warning(f"保存映射经验失败: {e}")
@@ -2153,14 +2813,48 @@ async def execute_standard_import(
     for n in tree_exec.nodes_by_row.values():
         role_count[n.mapping_role] = role_count.get(n.mapping_role, 0) + 1
 
+    # TASK-094C：唯一节点图统计
+    node_type_count = {"account": 0, "auxiliary": 0, "summary": 0}
+    account_node_count = 0
+    auxiliary_node_count = 0
+    for un in execute_unique_graph.nodes_by_key.values():
+        node_type_count[un.node_type] = node_type_count.get(un.node_type, 0) + 1
+        if un.node_type == "account":
+            account_node_count += 1
+        elif un.node_type == "auxiliary":
+            auxiliary_node_count += 1
+    duplicate_binding_count = sum(
+        max(len(un.source_row_indexes) - 1, 0)
+        for un in execute_unique_graph.nodes_by_key.values()
+    )
+    execute_full_recommendation_node_count = len({
+        nk for nk, un in execute_node_by_key.items()
+        if un.representative_row_index is not None
+    })
+
     return {
         "batch_id": str(batch.id),
         "status": batch.status,
         "entry_count": entry_count,
+        # TASK-094D：5 类行集合计数 — Analyze / Execute 同口径
+        "raw_identified_leaf_count": raw_identified_leaf_count,
+        "eligible_business_leaf_count": len(eligible_business_leaf_rows),
+        "ignored_business_count": len(ignored_leaf_rows),
+        "zero_template_count": len(zero_amount_template_leaf_rows),
+        "summary_total_count": len(summary_total_leaf_rows),
+        "duplicate_aggregate_count": len(duplicate_aggregate_leaf_rows),
+        "business_amount_reconciliation": business_amount_reconciliation,
+        "summary_amount_reconciliation": summary_amount_reconciliation,
+        # 兼容旧字段（标记 deprecated）
         "participating_leaf_count": participating_leaf_count,
-        "ignored_leaf_count": ignored_leaf_count,
-        "zero_amount_skipped_leaf_count": zero_amount_skipped_leaf_count,
-        "amount_reconciliation": amount_reconciliation,
+        "ignored_leaf_count": len(ignored_leaf_rows),
+        "zero_amount_skipped_leaf_count": (
+            len(zero_amount_template_leaf_rows)
+            + len(summary_total_leaf_rows)
+            + len(duplicate_aggregate_leaf_rows)
+        ),
+        "amount_reconciliation": legacy_amount_reconciliation,
+        "amount_reconciliation_deprecated": True,
         "raw_row_count": len(row_inputs),
         "mapping_saved_count": len(mapping_saved),
         "mapping_saved": mapping_saved,
@@ -2175,6 +2869,32 @@ async def execute_standard_import(
         ),
         "mapping_strategy_version": mapping_strategy_version,
         "debug_timings": _timings,
+        # TASK-094C：唯一节点图统计
+        "unique_node_count": len(execute_unique_graph.nodes_by_key),
+        "account_node_count": account_node_count,
+        "auxiliary_node_count": auxiliary_node_count,
+        "summary_node_count": node_type_count.get("summary", 0),
+        "duplicate_binding_count": duplicate_binding_count,
+        "duplicate_row_submit_count": duplicate_row_bindings,
+        "row_to_node_key_size": len(execute_unique_graph.row_to_node_key),
+        "full_recommendation_node_count": execute_full_recommendation_node_count,
+        "raw_row_compression_ratio": (
+            round(len(row_inputs) / max(len(execute_unique_graph.nodes_by_key), 1), 2)
+        ),
+        # TASK-094D：分类行集合本身，供前端展示
+        "classification": {
+            "eligible_business_leaf_rows": sorted(eligible_business_leaf_rows),
+            "zero_amount_template_rows": sorted(zero_amount_template_leaf_rows),
+            "summary_total_rows": sorted(summary_total_leaf_rows),
+            "duplicate_aggregate_rows": sorted(duplicate_aggregate_leaf_rows),
+            "ignored_business_rows": sorted(ignored_leaf_rows),
+            "base_leaf_rows": sorted(participating_leaf_rows),
+            "structural_rows": sorted(
+                set(hierarchy_summary_rows_exec)
+                | set(summary_total_leaf_rows)
+                | set(duplicate_aggregate_leaf_rows)
+            ),
+        },
     }
 
 

@@ -623,6 +623,70 @@
                   <p v-else>{{ stdExecuteError }}</p>
                 </div>
               </div>
+
+              <!-- TASK-094D：5 类行集合 + 业务/汇总 金额勾稽 -->
+              <div v-if="!stdExecuteError && stdExecuteResult.raw_identified_leaf_count !== undefined" class="std-classification-summary">
+                <h4 class="std-classification-title">行集合分类（按 TASK-094D 口径）</h4>
+                <div class="std-classification-stats">
+                  <div class="std-classification-stat emphasis">
+                    <div class="std-classification-stat-value">{{ stdExecuteResult.entry_count }}</div>
+                    <div class="std-classification-stat-label">最终 entry</div>
+                  </div>
+                  <div class="std-classification-stat success">
+                    <div class="std-classification-stat-value">{{ stdExecuteResult.eligible_business_leaf_count ?? 0 }}</div>
+                    <div class="std-classification-stat-label">应入库业务末级</div>
+                  </div>
+                  <div class="std-classification-stat muted">
+                    <div class="std-classification-stat-value">{{ stdExecuteResult.ignored_business_count ?? 0 }}</div>
+                    <div class="std-classification-stat-label">已忽略业务末级</div>
+                  </div>
+                  <div class="std-classification-stat info">
+                    <div class="std-classification-stat-value">{{ stdExecuteResult.zero_template_count ?? 0 }}</div>
+                    <div class="std-classification-stat-label">零金额模板</div>
+                  </div>
+                  <div class="std-classification-stat warning">
+                    <div class="std-classification-stat-value">{{ stdExecuteResult.summary_total_count ?? 0 }}</div>
+                    <div class="std-classification-stat-label">汇总/小计</div>
+                  </div>
+                  <div class="std-classification-stat danger">
+                    <div class="std-classification-stat-value">{{ stdExecuteResult.duplicate_aggregate_count ?? 0 }}</div>
+                    <div class="std-classification-stat-label">重复汇总</div>
+                  </div>
+                </div>
+                <div class="std-classification-count-identity">
+                  五类合计：<strong>{{ stdExecuteResult.raw_identified_leaf_count }}</strong>
+                  行（应与「参与末级」一致）
+                </div>
+
+                <!-- 业务金额勾稽 -->
+                <div v-if="stdBusinessAmountReconciliations.length > 0" class="std-recon-section">
+                  <h5 class="std-recon-title">业务金额勾稽（仅业务末级，不混入汇总）</h5>
+                  <div class="std-recon-fields">
+                    <div
+                      v-for="r in stdBusinessAmountReconciliations"
+                      :key="r.field"
+                      class="std-recon-row"
+                      :class="{ 'is-ok': r.ok, 'is-mismatch': !r.ok }"
+                    >
+                      <span class="std-recon-field-name">{{ r.label }}</span>
+                      <span class="std-recon-diff">差异 {{ r.difference }}</span>
+                      <el-tag v-if="r.ok" type="success" size="small">通过</el-tag>
+                      <el-tag v-else type="danger" size="small">差异</el-tag>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 汇总金额勾稽告警 -->
+                <div v-if="stdSummaryAmountWarnings.length > 0" class="std-recon-section">
+                  <h5 class="std-recon-title">汇总金额勾稽告警</h5>
+                  <el-alert type="warning" :closable="false" show-icon>
+                    <template #title>
+                      共 {{ stdSummaryAmountWarnings.length }} 条汇总行父子金额不一致（容差 0.01），但不影响入库
+                    </template>
+                  </el-alert>
+                </div>
+              </div>
+
               <div class="result-actions">
                 <el-button type="primary" @click="stdResetImport">继续导入</el-button>
                 <el-button @click="$router.push('/data/view')">查看数据</el-button>
@@ -2465,6 +2529,35 @@ const stdExecuteResult = ref<import('@/types').StdExecuteResponse>({
 })
 const stdExecuteError = ref('')
 
+// TASK-094D：业务金额勾稽 computed（按字段 label 渲染）
+const stdBusinessAmountReconciliations = computed(() => {
+  const recon = stdExecuteResult.value.business_amount_reconciliation
+  if (!recon) return []
+  const fieldLabels: Record<string, string> = {
+    opening_debit: '期初借方',
+    opening_credit: '期初贷方',
+    current_debit: '本期借方',
+    current_credit: '本期贷方',
+    ending_debit: '期末借方',
+    ending_credit: '期末贷方',
+  }
+  return Object.entries(recon).map(([field, info]) => ({
+    field,
+    label: fieldLabels[field] ?? field,
+    ok: info.ok === 'true',
+    difference: info.difference,
+  }))
+})
+
+// TASK-094D：汇总金额勾稽告警 computed（仅展示存在 warning 的行）
+const stdSummaryAmountWarnings = computed(() => {
+  const recon = stdExecuteResult.value.summary_amount_reconciliation
+  if (!recon) return []
+  return Object.entries(recon)
+    .filter(([, info]) => info.warning === 'summary_amount_mismatch')
+    .map(([rowIdx, info]) => ({ rowIdx, ...info }))
+})
+
 async function stdGoExecute() {
   stdExecuting.value = true
   stdExecuteError.value = ''
@@ -3357,6 +3450,120 @@ watch(dataType, (newVal, oldVal) => {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 4px;
+}
+
+/* TASK-094D：5 类行集合分类 + 勾稽展示 */
+.std-classification-summary {
+  margin: var(--spacing-4) 0;
+  padding: var(--spacing-4);
+  background: var(--color-bg-soft, #f5f7fa);
+  border-radius: var(--radius-md, 6px);
+}
+
+.std-classification-title {
+  font-size: var(--font-size-md, 14px);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-3, 12px);
+}
+
+.std-classification-stats {
+  display: flex;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-3);
+}
+
+.std-classification-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--color-bg-primary, #fff);
+  border: 1px solid var(--color-border, #ebeef5);
+  border-radius: var(--radius-sm, 4px);
+  min-width: 90px;
+}
+
+.std-classification-stat.success { border-color: var(--color-success, #67c23a); }
+.std-classification-stat.warning { border-color: var(--color-warning, #e6a23c); }
+.std-classification-stat.info { border-color: var(--color-info, #909399); }
+.std-classification-stat.muted { border-color: var(--color-border, #ebeef5); opacity: 0.75; }
+.std-classification-stat.danger { border-color: var(--color-danger, #f56c6c); }
+.std-classification-stat.emphasis {
+  border-color: var(--color-primary, #409eff);
+  background: var(--color-primary-light-9, #ecf5ff);
+}
+
+.std-classification-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.std-classification-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  text-align: center;
+}
+
+.std-classification-count-identity {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: var(--spacing-2);
+}
+
+.std-recon-section {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--color-border, #ebeef5);
+}
+
+.std-recon-title {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-2, 8px);
+}
+
+.std-recon-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1, 4px);
+}
+
+.std-recon-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3, 12px);
+  padding: 6px 10px;
+  background: var(--color-bg-primary, #fff);
+  border: 1px solid var(--color-border, #ebeef5);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+}
+
+.std-recon-row.is-ok {
+  border-color: var(--color-success-light-5, #c2e7b0);
+  background: var(--color-success-light-9, #f0f9eb);
+}
+
+.std-recon-row.is-mismatch {
+  border-color: var(--color-danger-light-5, #fab6b6);
+  background: var(--color-danger-light-9, #fef0f0);
+}
+
+.std-recon-field-name {
+  font-weight: var(--font-weight-medium, 500);
+  color: var(--text-primary);
+  min-width: 80px;
+}
+
+.std-recon-diff {
+  color: var(--text-secondary);
+  font-family: var(--font-family-mono, monospace);
+  flex: 1;
 }
 
 /* 继承展示行 */

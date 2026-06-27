@@ -15,9 +15,20 @@ def test_entry_generation_skips_ignored_and_zero_skip_rows_and_reports_counts():
     assert '"participating_leaf_count"' in execute_source
     assert '"ignored_leaf_count"' in execute_source
     assert '"zero_amount_skipped_leaf_count"' in execute_source
-    assert "participating_leaf_count == entry_count + ignored_leaf_count + zero_amount_skipped_leaf_count" in execute_source
-    assert '"amount_reconciliation"' in execute_source
-    assert "amount reconciliation failed" in execute_source
+    # TASK-094D：5 类行集合勾稽（与 094D 新口径一致）
+    assert "raw_identified_leaf_count" in execute_source
+    assert "eligible_business_leaf_rows" in execute_source
+    assert "zero_amount_template_leaf_rows" in execute_source
+    assert "summary_total_leaf_rows" in execute_source
+    assert "duplicate_aggregate_leaf_rows" in execute_source
+    assert "ignored_leaf_rows" in execute_source
+    assert (
+        "base_leaf_rows == eligible + zero + summary + duplicate + ignored" in execute_source
+    )
+    assert "entry_count must equal eligible_business_leaf_count" in execute_source
+    assert '"business_amount_reconciliation"' in execute_source
+    assert '"summary_amount_reconciliation"' in execute_source
+    assert "business amount reconciliation failed" in execute_source
     assert "opening_debit" in execute_source
     assert "opening_credit" in execute_source
     assert "current_debit" in execute_source

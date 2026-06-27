@@ -371,6 +371,28 @@ export interface StdAnalyzeResponse {
   warnings: WarningItem[]
   mapping_summary?: MappingPlanSummary
   mapping_strategy?: string
+  // TASK-094D：5 类行集合计数（与 Execute 同口径）
+  raw_identified_leaf_count?: number
+  eligible_business_leaf_count?: number
+  ignored_business_count?: number
+  zero_template_count?: number
+  summary_total_count?: number
+  duplicate_aggregate_count?: number
+  classification?: {
+    eligible_business_leaf_rows: number[]
+    zero_amount_template_rows: number[]
+    summary_total_rows: number[]
+    duplicate_aggregate_rows: number[]
+    ignored_business_rows: number[]
+    base_leaf_rows: number[]
+    structural_rows: number[]
+  }
+  unique_node_count?: number
+  account_node_count?: number
+  auxiliary_node_count?: number
+  summary_node_count?: number
+  duplicate_binding_count?: number
+  raw_row_compression_ratio?: number
 }
 
 export interface ConfirmedMapping {
@@ -406,6 +428,32 @@ export interface StdExecuteResponse {
   batch_id: string
   status: string
   entry_count: number
+  // TASK-094D：5 类行集合计数（与 Analyze 同口径）
+  raw_identified_leaf_count?: number
+  eligible_business_leaf_count?: number
+  ignored_business_count?: number
+  zero_template_count?: number
+  summary_total_count?: number
+  duplicate_aggregate_count?: number
+  business_amount_reconciliation?: Record<string, {
+    source: string
+    entry: string
+    eligible: string
+    ignored: string
+    difference: string
+    ok: string
+  }>
+  summary_amount_reconciliation?: Record<string, {
+    fields: Record<string, {
+      self: string
+      children_sum: string
+      difference: string
+      ok: string
+    }>
+    mismatch_count: number
+    warning: string | null
+  }>
+  // 兼容旧字段（标记 deprecated）
   participating_leaf_count?: number
   ignored_leaf_count?: number
   zero_amount_skipped_leaf_count?: number
@@ -415,7 +463,19 @@ export interface StdExecuteResponse {
     ignored: string
     zero_skip: string
     difference: string
+    deprecated?: string
+    use_business_amount_reconciliation?: string
   }>
+  amount_reconciliation_deprecated?: boolean
+  classification?: {
+    eligible_business_leaf_rows: number[]
+    zero_amount_template_rows: number[]
+    summary_total_rows: number[]
+    duplicate_aggregate_rows: number[]
+    ignored_business_rows: number[]
+    base_leaf_rows: number[]
+    structural_rows: number[]
+  }
   raw_row_count: number
   mapping_saved_count: number
   mapping_saved: MappingSavedInfo[]
