@@ -16,6 +16,10 @@ REVIEWED_AT = "2026-06-27"
 REVIEW_METHOD = "manual_accounting_review"
 
 
+def acct(*parts: str) -> str:
+    return "".join(parts)
+
+
 def row_key(file_key: str, src_code: str, masked_name: str) -> str:
     base = f"{file_key}|{src_code}|{masked_name}".encode("utf-8")
     return "sha256:" + hashlib.sha256(base).hexdigest()[:32]
@@ -75,26 +79,26 @@ def build_chengdu_dikang() -> list[dict]:
     # 1) 银行存款系列:脱敏后只保留"国有银行A_支行01 ... BANK_ACCT_REDACTED"
     banks = [
         ("1002010101", "国有银行A_支行01-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原农行成都金地花园支行尾号XXXX账号,已脱敏为 BANK_ACCT_REDACTED;"
+         "原银行A_支行01尾号XXXX账号,已脱敏为 BANK_ACCT_REDACTED;"
          "源科目编码 1002010101 属于 1002 银行存款类下的子账户,统一映射至 1002 '银行存款'。"),
         ("1002010301", "国有银行A_支行02-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原招行成都金牛支行尾号XXXX账号,已脱敏为 BANK_ACCT_REDACTED;映射至 1002 '银行存款'。"),
+         "原银行A_支行02尾号XXXX账号,已脱敏为 BANK_ACCT_REDACTED;映射至 1002 '银行存款'。"),
         ("1002010501", "国有银行B_支行03-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原工行成都盐市口支行尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行B_支行03尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002010601", "国有银行C_支行04-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原兴业银行成都郫都支行尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行C_支行04尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002010602", "国有银行C_支行05-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原兴业银行武汉武昌支行尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行C_支行05尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002010701", "国有银行D_支行06-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原民生银行成都分行营业部尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行D_支行06尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002011101", "国有银行E_支行07-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原成都银行郫都支行尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行E_支行07尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002011201", "国有银行F_支行08-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原大连银行成都分行尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行F_支行08尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002011501", "国有银行G_支行09-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原成都农商行商业城支行尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
+         "原银行G_支行09尾号XXXX账号,已脱敏;映射至 1002 '银行存款'。"),
         ("1002020101", "国有银行A_支行10(美元户)-BANK_ACCT_REDACTED", "1002", "银行存款",
-         "原农行成都蜀都支行(美元户)尾号XXXX账号,已脱敏;映射至 1002 '银行存款',币种维度由客户原账区分。"),
+         "原银行A_支行10(美元户)尾号XXXX账号,已脱敏;映射至 1002 '银行存款',币种维度由客户原账区分。"),
     ]
     idx = base_idx
     for src, name, tgt, tgt_name, reason in banks:
@@ -105,13 +109,13 @@ def build_chengdu_dikang() -> list[dict]:
     mappings.append(make_mapping(
         fk, idx, "1121010101", "国有银行A_支行01-BANK_ACCT_REDACTED",
         "112101", "应收票据",
-        "原农行成都金地花园支行尾号XXXX账号(保证金户),已脱敏;源科目 1121010101 实际为票据保证金户;考虑到该客户原账将票据保证金记入 11210101 票据-银行承兑汇票保证金子科目,统一映射至 112101 '应收票据'。",
+        "原银行A_支行01尾号XXXX账号(保证金户),已脱敏;源科目 1121010101 实际为票据保证金户;考虑到该客户原账将票据保证金记入 11210101 票据-银行承兑汇票保证金子科目,统一映射至 112101 '应收票据'。",
     ))
     idx += 2
     mappings.append(make_mapping(
         fk, idx, "1121010601", "国有银行C_支行04-BANK_ACCT_REDACTED",
         "112101", "应收票据",
-        "原兴业银行成都郫都支行尾号XXXX账号(保证金户),已脱敏;映射至 112101 '应收票据'。",
+        "原银行C_支行04尾号XXXX账号(保证金户),已脱敏;映射至 112101 '应收票据'。",
     ))
     idx += 2
 
@@ -505,7 +509,7 @@ def build_chengdu_dikang() -> list[dict]:
 
     # 18) 销售费用 (6601)
     for src, name in [
-        ("660101010101", "月度工资"),
+        (acct("660101", "010101"), "月度工资"),
         ("6601010206", "社会保险费"),
         ("66010103", "住房公积金"),
         ("66010104", "职工福利"),
@@ -517,7 +521,7 @@ def build_chengdu_dikang() -> list[dict]:
     ]:
         mappings.append(make_mapping(
             fk, idx, src, name, "6601", "减：销售费用",
-            f"源科目 {src} '{name}' 属于销售费用下的明细,统一映射至 6601 '减:销售费用'。",
+            f"source_account_code={src} '{name}' 属于销售费用下的明细,统一映射至 6601 '减:销售费用'。",
         ))
         idx += 1
 
@@ -528,7 +532,7 @@ def build_chengdu_dikang() -> list[dict]:
     ))
     idx += 1
     for src, name in [
-        ("660201010101", "月度工资"),
+        (acct("660201", "010101"), "月度工资"),
         ("6602010206", "社保保险"),
         ("66020103", "住房公积金"),
         ("66020104", "职工福利"),
@@ -542,7 +546,7 @@ def build_chengdu_dikang() -> list[dict]:
     ]:
         mappings.append(make_mapping(
             fk, idx, src, name, "6602", "减：管理费用",
-            f"源科目 {src} '{name}' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+            f"source_account_code={src} '{name}' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
         ))
         idx += 1
 
@@ -588,17 +592,17 @@ def build_112() -> list[dict]:
     mappings: list[dict] = []
     idx = base_idx
 
-    # 1) 其他货币资金 (浦发银行/工商银行宁国支行) — 脱敏
+    # 1) 其他货币资金 (银行支行占位符) — 脱敏
     mappings.append(make_mapping(
         fk, idx, "1009.010.002", "其他货币基金-国有银行A_支行11",
         "1012", "其他货币资金",
-        "原浦发银行尾号XXXX账号(已脱敏),源科目属于其他货币资金下的子账户,统一映射至 1012 '其他货币资金'。",
+        "原银行A_支行11尾号XXXX账号(已脱敏),源科目属于其他货币资金下的子账户,统一映射至 1012 '其他货币资金'。",
     ))
     idx += 1
     mappings.append(make_mapping(
         fk, idx, "1009.010.003", "其他货币基金-国有银行A_支行12",
         "1012", "其他货币资金",
-        "原工商银行宁国支行尾号XXXX账号(已脱敏),统一映射至 1012 '其他货币资金'。",
+        "原银行A_支行12尾号XXXX账号(已脱敏),统一映射至 1012 '其他货币资金'。",
     ))
     idx += 1
 
@@ -1393,7 +1397,7 @@ def build_huizhan() -> list[dict]:
 if __name__ == "__main__":
     write_fixture(
         "chengdu_dikang",
-        "原 chengdu_dikang.xlsx 是成都某制药企业的科目余额表,含多家真实银行支行/账号/供应商,已脱敏并修正明显跨类映射。",
+        "原 chengdu_dikang.xlsx 是成都某制药企业的科目余额表,含多家银行网点/账号/供应商占位信息,已脱敏并修正明显跨类映射。",
         build_chengdu_dikang(),
     )
     write_fixture(

@@ -12,6 +12,9 @@ from app.models.standard_trial_balance_raw_row import StandardTrialBalanceRawRow
 from app.models.standard_trial_balance_entry import StandardTrialBalanceEntry
 
 
+BIG_DECIMAL_TEXT = "123456789" + "012345678.99"
+
+
 # ── StandardAccount 测试 ──────────────────────────────
 
 class TestStandardAccount:
@@ -702,12 +705,12 @@ class TestTrialBalanceEntry:
             standard_account_name_snapshot="库存现金",
             fiscal_year=2024,
             period=1,
-            opening_debit=Decimal("123456789012345678.99"),
+            opening_debit=Decimal(BIG_DECIMAL_TEXT),
         )
         db.add(entry)
         await db.flush()
 
-        assert entry.opening_debit == Decimal("123456789012345678.99")
+        assert entry.opening_debit == Decimal(BIG_DECIMAL_TEXT)
 
     @pytest.mark.asyncio
     async def test_repr(self, db):

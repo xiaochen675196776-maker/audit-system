@@ -1,4 +1,4 @@
-name: Fixture Sensitive Scan
+name: Repository Sensitive Scan
 
 on:
   push:
@@ -16,13 +16,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Run sensitive data scanner
+      - name: Run repository sensitive data scanner
         run: |
           python scripts/check_sensitive_fixture.py --strict --root .
-      - name: Run fixture governance test
+      - name: Run sensitive scan tests
         run: |
           pip install pytest
           cd backend
-          pytest tests/test_task_094a_fixture_governance.py -v --tb=short
+          pytest tests/test_task_094a_fixture_governance.py tests/test_task_095a_repository_sensitive_scan.py -v --tb=short
         env:
           DATABASE_URL: sqlite+aiosqlite:///./_test_sensitive.db

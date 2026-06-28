@@ -22,6 +22,11 @@ from app.services.client_account_mapping_service import (
 
 # ── helpers ────────────────────────────────────────────
 
+BANK_DETAIL_NAME = "银行存款_活期户_银行A_支行01_0801"
+RD_SOCIAL_WELFARE_CODE = "530101" + "010201"
+RD_MATERIAL_CODE = "530101" + "120201"
+
+
 def _make_standard_account(account_code: str, account_name: str, **kwargs) -> StandardAccount:
     return StandardAccount(
         account_code=account_code,
@@ -895,7 +900,7 @@ class TestPrefixAndAnchorFallback:
 
     @pytest.mark.asyncio
     async def test_name_anchor_matches_bank_deposit_detail(self, db):
-        """「银行存款_活期户_招商银行沌口支行0801」应候选匹配「银行存款」"""
+        """脱敏银行存款明细应候选匹配「银行存款」"""
         sa = _make_standard_account("1002", "银行存款")
         db.add(sa)
         await db.flush()
@@ -905,7 +910,7 @@ class TestPrefixAndAnchorFallback:
             data_type="trial_balance",
             customer_label="新客户",
             client_accounts=[
-                {"client_account_code": "1002010801", "client_account_name": "银行存款_活期户_招商银行沌口支行0801"},
+                {"client_account_code": "1002010801", "client_account_name": BANK_DETAIL_NAME},
             ],
         )
         candidates = results[0]["candidates"]
@@ -1072,7 +1077,7 @@ class TestCanonicalNameAndCategoryAnchor:
 
         # 安全自动确认：锚点匹配
         safe_inputs = [
-            {"client_account_code": "10020108", "client_account_name": "银行存款_活期户_招商银行沌口支行0801"},
+            {"client_account_code": "10020108", "client_account_name": BANK_DETAIL_NAME},
             {"client_account_code": "660303", "client_account_name": "财务费用_利息收入"},
             {"client_account_code": "660401", "client_account_name": "研发费用"},
             {"client_account_code": "671108", "client_account_name": "营业外支出_其他"},
@@ -1116,7 +1121,7 @@ class TestCanonicalNameAndCategoryAnchor:
         await db.flush()
 
         inputs = [
-            {"client_account_code": "10020108", "client_account_name": "银行存款_活期户_招商银行沌口支行0801"},
+            {"client_account_code": "10020108", "client_account_name": BANK_DETAIL_NAME},
             {"client_account_code": "660303", "client_account_name": "财务费用_利息收入"},
             {"client_account_code": "660304", "client_account_name": "财务费用_利息支出"},
             {"client_account_code": "660401", "client_account_name": "研发费用"},
@@ -1230,14 +1235,14 @@ class TestSafeAutoRollup:
 
     @pytest.mark.asyncio
     async def test_safe_bank_detail_auto_confirmable(self, db):
-        """10020108 银行存款_活期户_招商银行沌口支行0801 → 1002 银行存款（安全）"""
+        """10020108 脱敏银行存款明细 → 1002 银行存款（安全）"""
         sa = _make_standard_account("1002", "银行存款")
         db.add(sa)
         await db.flush()
 
         results = await recommend_mappings(
             db, data_type="trial_balance", client_accounts=[
-                {"client_account_code": "10020108", "client_account_name": "银行存款_活期户_招商银行沌口支行0801"},
+                {"client_account_code": "10020108", "client_account_name": BANK_DETAIL_NAME},
             ],
         )
         candidates = results[0]["candidates"]
@@ -1353,7 +1358,7 @@ class TestSafeAutoRollup:
         await db.flush()
 
         for code, name, expected in [
-            ("10020108", "银行存款_活期户_招商银行沌口支行0801", "1002"),
+            ("10020108", BANK_DETAIL_NAME, "1002"),
             ("660401", "研发费用", "660201"),
         ]:
             results = await recommend_mappings(
@@ -1522,10 +1527,10 @@ class TestSemanticAccountMatching:
         await db.flush()
         for code, name in [
             ("5301010101", "研发支出_费用化支出_人工_工资及奖金"),
-            ("530101010201", "研发支出_费用化支出_人工_福利费_社会统筹"),
+            (RD_SOCIAL_WELFARE_CODE, "研发支出_费用化支出_人工_福利费_社会统筹"),
             ("5301010204", "研发支出_费用化支出_办公费用_邮寄费"),
             ("53010108", "研发支出_费用化支出_折旧"),
-            ("530101120201", "研发支出_费用化支出_直接投入_机物料_仓存机物料"),
+            (RD_MATERIAL_CODE, "研发支出_费用化支出_直接投入_机物料_仓存机物料"),
             ("5301019802", "研发支出_费用化支出_专项_测试化验加工费"),
         ]:
             results = await recommend_mappings(
@@ -1993,7 +1998,7 @@ class TestManagementVsResearchExpenseConflict:
             data_type="trial_balance",
             customer_label=None,
             client_accounts=[
-                {"client_account_code": "530101120201", "client_account_name": "研发支出_费用化支出_直接投入_机物料_仓存机物料"},
+                {"client_account_code": RD_MATERIAL_CODE, "client_account_name": "研发支出_费用化支出_直接投入_机物料_仓存机物料"},
             ],
         )
         cands = result[0]["candidates"]

@@ -2554,7 +2554,7 @@
         "source_account_name_masked": "月度工资",
         "standard_account_code": "6602",
         "standard_account_name": "减：管理费用",
-        "review_reason": "源科目 660201010101 '月度工资' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_reason": "source_account_code=660201010101 '月度工资' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
         "review_evidence": [
           "account_code_prefix",
           "source_account_name",

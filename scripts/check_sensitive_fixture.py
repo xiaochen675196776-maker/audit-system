@@ -1,203 +1,263 @@
 #!/usr/bin/env python3
 """
-TASK-094A: 敏感数据扫描脚本
+TASK-095A: repository sensitive data scanner.
 
-扫描 backend/tests/fixtures/、backend/test_reports/、docs/tasks/ 以及 frontend 测试
-fixture 目录,检测:
-  1. 连续 12 位以上数字 (疑似银行账号)
-  2. 18 位身份证号 (中国大陆)
-  3. 11 位 / 13 位 / 14 位手机号
-  4. 邮箱地址
-  5. 银行账号关键词 (account / 账号 / 银行)
-  6. 真实客户名称黑名单
-  7. 乱码 review_reason (全部是 ? 或全角 ?)
-  8. 同一 row_key 重复确认到不同标准科目
-
-通用会计科目代码白名单内的 12 位数字 (例如 160101020101) 不应误报,因此脚本会
-先用白名单过滤再报警。
-
-Usage:
-  python scripts/check_sensitive_fixture.py [--strict] [--root <repo-root>]
-
-默认扫描项目根目录下上述路径;--strict 时遇到疑似敏感数据以非零退出码退出,
-适合接入 pre-commit 和 CI。
+The scanner covers repository text files by default. It intentionally includes
+docs/tasks, docs/security, backend/test_reports, tests, frontend source, scripts,
+and GitHub workflow files. Only technical/generated directories and binary file
+types are excluded.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
+
+
+TASK_ID = "TASK-095A"
+
+DEFAULT_EXCLUDE_DIRS = {
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    "__pycache__",
+    ".pytest_cache",
+}
+
+TEXT_EXTENSIONS = {
+    ".py",
+    ".ts",
+    ".vue",
+    ".js",
+    ".json",
+    ".md",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".ini",
+    ".txt",
+    ".csv",
+}
+
+BINARY_EXTENSIONS = {
+    ".xlsx",
+    ".xls",
+    ".xlsm",
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".gz",
+    ".tar",
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+}
+
+LOCAL_SENSITIVE_TERMS = Path("scripts") / "sensitive_terms.local.json"
+
 
 # ---------------------------------------------------------------------------
-# 规则与白名单
+# Rules and safe placeholders
 # ---------------------------------------------------------------------------
 
-# 通用会计科目代码:最多 14 位数字,以 1/2/3/4/5/6 开头 (允许客户自定义明细编码)
 ACCOUNT_CODE_WHITELIST_PATTERN = re.compile(r"^[123456]\d{0,13}$")
+ACCOUNT_CODE_CONTEXT_PATTERN = re.compile(
+    r'(?i)(?:"?(?:account_code|source_account_code)"?|\b科目代码\b)\s*[:：=]\s*["“”\'`]*$'
+)
+ACCOUNT_CODE_TABLE_CONTEXT_PATTERN = re.compile(
+    r"(?i)(?:^|[|,])\s*(?:account_code|source_account_code|科目代码)\s*(?:[|,]|$)"
+)
 
-# 连续 12 位以上纯数字 (疑似银行账号) - 但只报警不在白名单内的
 LONG_DIGIT_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])\d{12,}(?![A-Za-z0-9_:-])")
-
-# 中国大陆身份证号 (18 位,末位 X/x)
 ID_CARD_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])\d{17}[\dXx](?![A-Za-z0-9_:-])")
-
-# 中国大陆手机号 (11 位)
 CN_MOBILE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])1[3-9]\d{9}(?![A-Za-z0-9_:.])")
-
-# row_key 字段 (sha256:hex...) 不参与数字命中
-ROW_KEY_PATTERN = re.compile(r'"row_key"\s*:\s*"sha256:[0-9a-f]+"')
-
-# 邮箱地址
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-
-# 银行账号/账户关键字 (避免将"账号"用作名词时漏报)
-BANK_KEYWORDS = (
-    "银行账号", "银行账户", "银行帐号",
-    "银行卡号", "银行卡账户",
+TAX_ID_CONTEXT_PATTERN = re.compile(r"(统一社会信用代码|纳税人识别号|税号)")
+TAX_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-Z0-9]{15,20}(?![A-Za-z0-9])")
+PROPERTY_CERT_PATTERN = re.compile(
+    r"(不动产权|房产证|土地证)[^，。；;\n]{0,20}[A-Za-z0-9第\-]{6,}号?"
+)
+REAL_BANK_BRANCH_PATTERN = re.compile(
+    r"[\u4e00-\u9fff]{2,12}(?:银行|农商行|信用社|商业银行)"
+    r"[\u4e00-\u9fffA-Za-z0-9_]{0,20}(?:支行|分行|营业部)"
 )
 
-# 真实银行名全称关键词 (行内 substring 即可触发)
-REAL_BANK_NAME_KEYWORDS = (
-    "中国农业银行", "中国工商银行", "中国建设银行", "中国银行",
-    "交通银行", "中国邮政储蓄", "招商银行", "兴业银行", "民生银行",
-    "浦发银行", "中信银行", "光大银行", "华夏银行", "平安银行",
-    "农行", "工行", "建行", "中行", "交行", "招行", "兴行",
-    "成都银行", "成都农商行", "大连银行",
-)
+ROW_KEY_PATTERN = re.compile(r'"row_key"\s*:\s*"sha256:[0-9a-f]+"')
+GARBLED_REASON_PATTERN = re.compile(r"^[\s?？□◇◆○●]+$")
 
-# 这些是 fixture 中已脱敏的占位符,不应触发敏感数据报警
 DESENSITIZED_PLACEHOLDERS = (
-    "BANK_ACCT_REDACTED", "国有银行A_支行", "国有银行B_支行",
-    "国有银行C_支行", "国有银行D_支行", "国有银行E_支行",
-    "国有银行F_支行", "国有银行G_支行", "国有银行A/B/C 支行账号",
-    "脱敏后国有银行", "已脱敏为",
+    "<账户号样例",
+    "<银行账号样例",
+    "<客户名样例",
+    "<真实客户名样例",
+    "<真实供应商名样例",
+    "<真实员工名样例",
+    "<不动产权证样例>",
+    "BANK_ACCT_REDACTED",
+    "银行A_支行",
+    "银行B_支行",
+    "国有银行A_支行",
+    "国有银行B_支行",
+    "国有银行C_支行",
+    "客户A",
+    "供应商B",
+    "员工001",
+    "项目P001",
+    "已脱敏为",
+    "脱敏后",
 )
-
-# 真实客户名称黑名单 (来自旧 fixture)
-REAL_CUSTOMER_BLACKLIST = (
-    "海达源", "小天鹅", "美的", "海信", "聚隆", "惠而浦",
-    "宁国聚隆", "Tcl", "TCL", "澳柯玛", "蓝凌", "金蝶",
-    "宁国", "合肥", "青岛", "无锡",
-)
-
-# 乱码 review_reason
-GARBLED_REASON_PATTERN = re.compile(r"^[\s?？?□◇◆○●]+$")
+PUBLIC_DEPENDENCY_EMAILS = {
+    "i" + "@izs.me",
+}
 
 
-def is_whitelisted_digit_run(digits: str) -> bool:
-    """判断一个连续数字串是否属于通用会计科目代码白名单。"""
-    return ACCOUNT_CODE_WHITELIST_PATTERN.match(digits) is not None
+def is_whitelisted_digit_run(
+    digits: str,
+    *,
+    text: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+) -> bool:
+    """Allow long account-code-like digits only in explicit field context."""
+    if not ACCOUNT_CODE_WHITELIST_PATTERN.match(digits):
+        return False
+    if text is None or start is None or end is None:
+        return False
+
+    left = text[max(0, start - 80):start]
+    if ACCOUNT_CODE_CONTEXT_PATTERN.search(left):
+        return True
+
+    # Markdown/CSV table rows may be represented as "account_code | 100201...".
+    row_left = text[:start]
+    if ACCOUNT_CODE_TABLE_CONTEXT_PATTERN.search(row_left):
+        return True
+
+    return False
 
 
-def scan_text_for_sensitive(text: str, source_path: str | Path,
-                            line_no: int | None = None) -> list[dict]:
-    """扫描一段字符串,返回疑似敏感命中。
+def load_sensitive_terms(root: str | Path) -> list[str]:
+    """Load local sensitive terms without requiring them to be committed."""
+    path = Path(root) / LOCAL_SENSITIVE_TERMS
+    if not path.exists():
+        return []
 
-    返回的每个命中包含:
-        rule: 命中的规则名
-        match: 命中片段
-        path, line_no, context: 位置 + 上下文
-    """
-    hits: list[dict] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    terms: list[str] = []
+
+    def collect(node: Any) -> None:
+        if isinstance(node, str):
+            value = node.strip()
+            if len(value) >= 2:
+                terms.append(value)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+        elif isinstance(node, dict):
+            for value in node.values():
+                collect(value)
+
+    collect(data)
+    return sorted(set(terms), key=len, reverse=True)
+
+
+def scan_text_for_sensitive(
+    text: str,
+    source_path: str | Path,
+    line_no: int | None = None,
+    *,
+    sensitive_terms: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
     if not text:
         return hits
 
-    # 已脱敏占位符的行/字符串:跳过"支行/账号"等关键字命中(它们是占位符的一部分)
     is_desensitized = any(p in text for p in DESENSITIZED_PLACEHOLDERS)
+
+    for m in ID_CARD_PATTERN.finditer(text):
+        hits.append(_hit("id_card", m.group(0), source_path, line_no, text, m.start(), m.end()))
+
+    for m in CN_MOBILE_PATTERN.finditer(text):
+        hits.append(_hit("cn_mobile", m.group(0), source_path, line_no, text, m.start(), m.end()))
 
     for m in LONG_DIGIT_PATTERN.finditer(text):
         run = m.group(0)
-        if not is_whitelisted_digit_run(run):
-            hits.append({
-                "rule": "long_digit_run",
-                "match": run,
-                "path": str(source_path),
-                "line_no": line_no,
-                "context": _context(text, m.start(), m.end()),
-            })
-
-    for m in ID_CARD_PATTERN.finditer(text):
-        hits.append({
-            "rule": "id_card",
-            "match": m.group(0),
-            "path": str(source_path),
-            "line_no": line_no,
-            "context": _context(text, m.start(), m.end()),
-        })
-
-    # 跳过已脱敏占位符所在的行
-    if any(p in text for p in DESENSITIZED_PLACEHOLDERS):
-        # 已脱敏:不再对"支行/账号"等做命中,但仍扫描数字/邮箱/手机号
-        # 由于占位符本身含 BANK_ACCT_REDACTED 但不含真实账号,无需额外处理
-        pass
-
-    for m in CN_MOBILE_PATTERN.finditer(text):
-        hits.append({
-            "rule": "cn_mobile",
-            "match": m.group(0),
-            "path": str(source_path),
-            "line_no": line_no,
-            "context": _context(text, m.start(), m.end()),
-        })
+        if ID_CARD_PATTERN.fullmatch(run):
+            continue
+        if is_whitelisted_digit_run(run, text=text, start=m.start(), end=m.end()):
+            continue
+        hits.append(_hit("long_digit_run", run, source_path, line_no, text, m.start(), m.end()))
 
     for m in EMAIL_PATTERN.finditer(text):
-        hits.append({
-            "rule": "email",
-            "match": m.group(0),
-            "path": str(source_path),
-            "line_no": line_no,
-            "context": _context(text, m.start(), m.end()),
-        })
+        if _is_allowed_public_dependency_email(m.group(0), source_path):
+            continue
+        hits.append(_hit("email", m.group(0), source_path, line_no, text, m.start(), m.end()))
 
-    lower = text.lower()
     if not is_desensitized:
-        for kw in BANK_KEYWORDS:
-            idx = lower.find(kw.lower())
-            if idx >= 0:
-                hits.append({
-                    "rule": "bank_keyword",
-                    "match": kw,
-                    "path": str(source_path),
-                    "line_no": line_no,
-                    "context": _context(text, idx, idx + len(kw)),
-                })
+        for m in REAL_BANK_BRANCH_PATTERN.finditer(text):
+            if _is_generic_bank_branch_category(m.group(0)):
+                continue
+            hits.append(_hit("real_bank_name", m.group(0), source_path, line_no, text, m.start(), m.end()))
 
-        for kw in REAL_BANK_NAME_KEYWORDS:
-            idx = text.find(kw)
-            if idx >= 0:
-                hits.append({
-                    "rule": "real_bank_name",
-                    "match": kw,
-                    "path": str(source_path),
-                    "line_no": line_no,
-                    "context": _context(text, idx, idx + len(kw)),
-                })
+        if TAX_ID_CONTEXT_PATTERN.search(text):
+            for m in TAX_ID_PATTERN.finditer(text):
+                hits.append(_hit("tax_id", m.group(0), source_path, line_no, text, m.start(), m.end()))
 
-    for kw in REAL_CUSTOMER_BLACKLIST:
-        idx = text.find(kw)
-        if idx >= 0:
-            hits.append({
-                "rule": "real_customer_blacklist",
-                "match": kw,
-                "path": str(source_path),
-                "line_no": line_no,
-                "context": _context(text, idx, idx + len(kw)),
-            })
+        for m in PROPERTY_CERT_PATTERN.finditer(text):
+            hits.append(_hit("property_certificate", m.group(0), source_path, line_no, text, m.start(), m.end()))
+
+        for term in sensitive_terms or ():
+            idx = text.find(term)
+            if idx >= 0:
+                hits.append(_hit("local_sensitive_term", term, source_path, line_no, text, idx, idx + len(term)))
 
     if GARBLED_REASON_PATTERN.match(text.strip()) and text.strip():
         hits.append({
             "rule": "garbled_reason",
             "match": text.strip(),
-            "path": str(source_path),
+            "path": _path_string(source_path),
             "line_no": line_no,
             "context": text.strip()[:60],
         })
 
     return hits
+
+
+def _hit(
+    rule: str,
+    match: str,
+    source_path: str | Path,
+    line_no: int | None,
+    text: str,
+    start: int,
+    end: int,
+) -> dict[str, Any]:
+    return {
+        "rule": rule,
+        "match": match,
+        "path": _path_string(source_path),
+        "line_no": line_no,
+        "context": _context(text, start, end),
+    }
 
 
 def _context(text: str, start: int, end: int, *, window: int = 30) -> str:
@@ -206,91 +266,206 @@ def _context(text: str, start: int, end: int, *, window: int = 30) -> str:
     return text[s:e].replace("\n", " ")
 
 
-# ---------------------------------------------------------------------------
-# 扫描文件 / 目录
-# ---------------------------------------------------------------------------
+def _path_string(path: str | Path) -> str:
+    return str(path).replace("\\", "/")
 
-DEFAULT_SCAN_DIRS = (
-    "backend/tests/fixtures",
-    "backend/test_reports",
-    # 注意:docs/tasks/ 下是历史任务报告,本身含有真实案例用于说明问题,
-    # 不属于 fixture 治理范围;但 docs/security/ 与本任务相关,会被扫描。
-    "docs/security",
-)
 
+def _is_allowed_public_dependency_email(email: str, source_path: str | Path) -> bool:
+    path = _path_string(source_path)
+    return path.endswith("package-lock.json") and email in PUBLIC_DEPENDENCY_EMAILS
+
+
+def _is_generic_bank_branch_category(value: str) -> bool:
+    return "真实银行支行" in value or "银行支行占位" in value
+
+
+# ---------------------------------------------------------------------------
+# File and repository scanning
+# ---------------------------------------------------------------------------
 
 def iter_scan_files(root: Path) -> Iterable[Path]:
-    """枚举所有需要扫描的文件路径。
+    root = Path(root).resolve()
+    files: list[Path] = []
 
-    - JSON fixture (含 task_093_confirmations 目录)
-    - 任意 .md 任务文档
-    - frontend 测试 fixture (前端测试 fixtures 目录,如存在)
-    """
-    candidates: list[Path] = []
+    git_candidates = _iter_git_candidate_files(root)
+    if git_candidates is not None:
+        for path in git_candidates:
+            if _is_local_sensitive_terms_file(root, path):
+                continue
+            if _has_excluded_dir(root, path):
+                continue
+            if path.is_file() and is_scan_text_file(path):
+                files.append(path)
+        return sorted(files, key=lambda p: _path_string(p.relative_to(root)))
 
-    for rel in DEFAULT_SCAN_DIRS:
-        p = root / rel
-        if p.is_dir():
-            for fp in p.rglob("*"):
-                if fp.is_file() and (
-                    fp.suffix in {".json", ".md", ".txt", ".log"}
-                    or fp.name.startswith(".")
-                ):
-                    candidates.append(fp)
+    for current, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in DEFAULT_EXCLUDE_DIRS]
+        current_path = Path(current)
+        for filename in filenames:
+            path = current_path / filename
+            if _is_local_sensitive_terms_file(root, path):
+                continue
+            if is_scan_text_file(path):
+                files.append(path)
 
-    frontend_fixtures = root / "frontend"
-    if frontend_fixtures.is_dir():
-        for fp in frontend_fixtures.rglob("**/fixtures/*"):
-            if fp.is_file():
-                candidates.append(fp)
-        for fp in frontend_fixtures.rglob("**/__fixtures__/*"):
-            if fp.is_file():
-                candidates.append(fp)
-
-    return candidates
+    return sorted(files, key=lambda p: _path_string(p.relative_to(root)))
 
 
-def scan_file(path: Path) -> list[dict]:
-    hits: list[dict] = []
+def _iter_git_candidate_files(root: Path) -> list[Path] | None:
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(root),
+                "-c",
+                "core.quotePath=false",
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    if proc.returncode != 0:
+        return None
+
+    return [root / line for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _has_excluded_dir(root: Path, path: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to(root)
+    except ValueError:
+        return False
+    return any(part in DEFAULT_EXCLUDE_DIRS for part in rel.parts[:-1])
+
+
+def is_scan_text_file(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    if suffix in BINARY_EXTENSIONS:
+        return False
+    return suffix in TEXT_EXTENSIONS
+
+
+def scan_file(
+    path: Path,
+    *,
+    display_path: str | Path | None = None,
+    sensitive_terms: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
+    source_path = display_path if display_path is not None else path
+
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         text = path.read_text(encoding="gbk", errors="replace")
+    except OSError as exc:
+        return [{
+            "rule": "file_read_error",
+            "match": type(exc).__name__,
+            "path": _path_string(source_path),
+            "line_no": None,
+            "context": str(exc),
+        }]
 
-    # 行号
-    lines = text.splitlines()
-    for ln, line in enumerate(lines, start=1):
-        # 跳过 row_key 字段行,避免 sha256:hex 中的连续数字被误判
+    for ln, line in enumerate(text.splitlines(), start=1):
         clean_line = ROW_KEY_PATTERN.sub('"row_key":"<sha256>"', line)
-        hits.extend(scan_text_for_sensitive(clean_line, path, line_no=ln))
+        hits.extend(
+            scan_text_for_sensitive(
+                clean_line,
+                source_path,
+                line_no=ln,
+                sensitive_terms=sensitive_terms,
+            )
+        )
 
-    # 额外的 "review_reason" 键扫描
-    if path.suffix == ".json":
+    if path.suffix.lower() == ".json":
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
             return hits
-        hits.extend(_scan_review_reasons_in_json(data, path))
+        hits.extend(_scan_review_reasons_in_json(data, source_path))
 
     return hits
 
 
-def _scan_review_reasons_in_json(node, path: Path) -> list[dict]:
-    """深度优先遍历 JSON,识别 review_reason 字段中的乱码。"""
-    found: list[dict] = []
+def scan_repository(root: str | Path) -> dict[str, Any]:
+    root_path = Path(root).resolve()
+    sensitive_terms = load_sensitive_terms(root_path)
+    scan_files = list(iter_scan_files(root_path))
+
+    all_hits: list[dict[str, Any]] = []
+    for path in scan_files:
+        rel_path = path.relative_to(root_path)
+        all_hits.extend(scan_file(path, display_path=rel_path, sensitive_terms=sensitive_terms))
+
+    all_hits.extend(scan_duplicate_row_keys(root_path))
+
+    return {
+        "task": TASK_ID,
+        "root": _path_string(root_path),
+        "files_scanned": len(scan_files),
+        "scanned_directories": _summarize_scanned_directories(root_path, scan_files),
+        "directories_excluded": sorted(DEFAULT_EXCLUDE_DIRS),
+        "scan_extensions": sorted(TEXT_EXTENSIONS),
+        "local_sensitive_terms_loaded": len(sensitive_terms),
+        "hits": all_hits,
+        "hit_count": len(all_hits),
+        "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+    }
+
+
+def _is_local_sensitive_terms_file(root: Path, path: Path) -> bool:
+    try:
+        return path.resolve().relative_to(root) == LOCAL_SENSITIVE_TERMS
+    except ValueError:
+        return False
+
+
+def _summarize_scanned_directories(root: Path, files: list[Path]) -> list[str]:
+    directories: set[str] = set()
+    for path in files:
+        rel = path.relative_to(root)
+        parts = rel.parts
+        if not parts:
+            continue
+        if parts[0] == "docs" and len(parts) > 1:
+            directories.add(_path_string(Path(*parts[:2])))
+        elif parts[0] == "backend" and len(parts) > 1:
+            directories.add(_path_string(Path(*parts[:2])))
+        elif parts[0] == "frontend" and len(parts) > 1:
+            directories.add(_path_string(Path(*parts[:2])))
+        elif parts[0] == ".github" and len(parts) > 1:
+            directories.add(_path_string(Path(*parts[:2])))
+        else:
+            directories.add(parts[0])
+    return sorted(directories)
+
+
+def _scan_review_reasons_in_json(node: Any, path: str | Path) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
     if isinstance(node, dict):
-        for k, v in node.items():
-            if k == "review_reason" and isinstance(v, str):
-                if GARBLED_REASON_PATTERN.match(v.strip()):
+        for key, value in node.items():
+            if key == "review_reason" and isinstance(value, str):
+                stripped = value.strip()
+                if stripped and GARBLED_REASON_PATTERN.match(stripped):
                     found.append({
                         "rule": "garbled_reason_in_json",
-                        "match": v.strip()[:60],
-                        "path": str(path),
+                        "match": stripped[:60],
+                        "path": _path_string(path),
                         "line_no": None,
-                        "context": f"review_reason={v.strip()[:60]}",
+                        "context": f"review_reason={stripped[:60]}",
                     })
             else:
-                found.extend(_scan_review_reasons_in_json(v, path))
+                found.extend(_scan_review_reasons_in_json(value, path))
     elif isinstance(node, list):
         for item in node:
             found.extend(_scan_review_reasons_in_json(item, path))
@@ -298,16 +473,12 @@ def _scan_review_reasons_in_json(node, path: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 重复 row_key 校验 (跨类跨文件)
+# Duplicate row_key governance scan
 # ---------------------------------------------------------------------------
 
-def scan_duplicate_row_keys(root: Path) -> list[dict]:
-    """扫描所有 fixture,确认同一 stable row_key 未被确认到不同标准科目。
-
-    如果两个 mapping 的 row_key 相同但 standard_account_code 不同,则视为冲突。
-    """
+def scan_duplicate_row_keys(root: Path) -> list[dict[str, Any]]:
     seen: dict[str, tuple[str, str]] = {}
-    conflicts: list[dict] = []
+    conflicts: list[dict[str, Any]] = []
 
     fixtures_dir = root / "backend" / "tests" / "fixtures"
     if not fixtures_dir.is_dir():
@@ -316,70 +487,117 @@ def scan_duplicate_row_keys(root: Path) -> list[dict]:
     for fp in fixtures_dir.rglob("*.json"):
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             continue
 
         mappings = data.get("confirmed_mappings") if isinstance(data, dict) else None
         if not isinstance(mappings, list):
             continue
 
-        for m in mappings:
-            if not isinstance(m, dict):
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
                 continue
-            rk = m.get("row_key")
-            tgt = m.get("standard_account_code")
-            if not rk or not tgt:
+            row_key = mapping.get("row_key")
+            target = mapping.get("standard_account_code")
+            if not row_key or not target:
                 continue
-            key = f"{data.get('file_key', fp.stem)}|{rk}"
+            key = f"{data.get('file_key', fp.stem)}|{row_key}"
             if key in seen:
-                prev_file, prev_tgt = seen[key]
-                if prev_tgt != tgt:
+                prev_file, prev_target = seen[key]
+                if prev_target != target:
                     conflicts.append({
                         "rule": "duplicate_row_key_conflict",
                         "match": key,
-                        "path": str(fp),
+                        "path": _path_string(fp.relative_to(root)),
                         "line_no": None,
-                        "context": f"prev={prev_file}@{prev_tgt}, new={fp.name}@{tgt}",
+                        "context": f"prev={prev_file}@{prev_target}, new={fp.name}@{target}",
                     })
             else:
-                seen[key] = (fp.name, tgt)
+                seen[key] = (fp.name, target)
     return conflicts
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Reporting and CLI
 # ---------------------------------------------------------------------------
 
+def write_json_report(result: dict[str, Any], path: str | Path) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_markdown_report(result: dict[str, Any], path: str | Path) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        f"# {result['task']} 敏感数据扫描报告",
+        "",
+        f"- 生成时间: {result['generated_at']}",
+        f"- 扫描根目录: `{result['root']}`",
+        f"- files_scanned: {result['files_scanned']}",
+        f"- hit_count: {result['hit_count']}",
+        f"- excluded_dirs: {', '.join(result['directories_excluded'])}",
+        f"- local_sensitive_terms_loaded: {result['local_sensitive_terms_loaded']}",
+        "",
+        "## 扫描目录",
+        "",
+    ]
+    lines.extend(f"- `{directory}`" for directory in result["scanned_directories"])
+    lines.extend(["", "## 命中结果", ""])
+    if result["hit_count"] == 0:
+        lines.append("未发现疑似敏感数据。")
+    else:
+        lines.append("发现疑似敏感数据。为避免报告写入敏感值,以下仅列出规则和位置。")
+        lines.append("")
+        for hit in result["hits"]:
+            loc = f"{hit['path']}:{hit['line_no']}" if hit.get("line_no") else hit["path"]
+            lines.append(f"- `{hit['rule']}` at `{loc}`")
+
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def print_human_report(result: dict[str, Any]) -> None:
+    print(f"files_scanned: {result['files_scanned']}")
+    print(f"hit_count: {result['hit_count']}")
+    print(f"excluded_dirs: {', '.join(result['directories_excluded'])}")
+
+    if not result["hits"]:
+        print("PASS 未发现疑似敏感数据")
+        return
+
+    print(f"FAIL 共发现 {result['hit_count']} 处疑似敏感数据:")
+    for hit in result["hits"]:
+        loc = f"{hit['path']}:{hit['line_no']}" if hit.get("line_no") else hit["path"]
+        print(f"  - [{hit['rule']}] {loc} match=<redacted> ctx=<redacted>")
+
+
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(
-        description="TASK-094A sensitive data scanner")
-    p.add_argument("--root", default=".", help="项目根目录")
-    p.add_argument("--strict", action="store_true",
-                   help="发现任何命中则返回非零退出码")
-    p.add_argument("--json", action="store_true",
-                   help="以 JSON 格式输出结果")
-    args = p.parse_args(argv)
+    parser = argparse.ArgumentParser(description="TASK-095A repository sensitive data scanner")
+    parser.add_argument("--root", default=".", help="项目根目录")
+    parser.add_argument("--strict", action="store_true", help="发现任何命中则返回非零退出码")
+    parser.add_argument("--json", action="store_true", help="以 JSON 格式输出扫描摘要")
+    parser.add_argument("--report-json", help="写入 JSON 扫描报告")
+    parser.add_argument("--report-md", help="写入 Markdown 扫描报告")
+    args = parser.parse_args(argv)
 
-    root = Path(args.root).resolve()
+    result = scan_repository(args.root)
 
-    all_hits: list[dict] = []
-    for fp in iter_scan_files(root):
-        all_hits.extend(scan_file(fp))
-    all_hits.extend(scan_duplicate_row_keys(root))
+    if args.report_json:
+        write_json_report(result, args.report_json)
+    if args.report_md:
+        write_markdown_report(result, args.report_md)
 
     if args.json:
-        print(json.dumps(all_hits, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        if not all_hits:
-            print("✓ 未发现疑似敏感数据")
-        else:
-            print(f"× 共发现 {len(all_hits)} 处疑似敏感数据:")
-            for h in all_hits:
-                ln = h.get("line_no")
-                loc = f"{h['path']}:{ln}" if ln else h["path"]
-                print(f"  - [{h['rule']}] {loc}  match={h['match']!r}  ctx={h['context']!r}")
+        print_human_report(result)
 
-    return 1 if (args.strict and all_hits) else 0
+    return 1 if (args.strict and result["hit_count"]) else 0
 
 
 if __name__ == "__main__":

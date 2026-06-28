@@ -107,10 +107,10 @@ InvalidFileException: openpyxl does not support the old .xls file format
   "unmatched_count": 688,
   "unsafe_count": 33,
   "unmatched_samples": [
-    {"code": "1009.010.003", "name": "其他货币基金--工商银行宁国支行"},
-    {"code": "1111.01", "name": "香农芯创(安徽聚隆传动科技股份有限公司)"},
-    {"code": "1111.02", "name": "宁波吉德电器有限公司"},
-    {"code": "1111.03", "name": "海信冰箱有限公司（原海信（山东）冰箱有限公司）"}
+    {"code": "1009.010.003", "name": "其他货币基金--银行A_支行01"},
+    {"code": "1111.01", "name": "客户A"},
+    {"code": "1111.02", "name": "客户B"},
+    {"code": "1111.03", "name": "客户C"}
   ],
   "unsafe_samples": [
     {"code": "1009.010.002", "name": "其他货币基金--浦发银行", "picked": "1012 其他货币资金"},
@@ -173,8 +173,8 @@ InvalidFileException: openpyxl does not support the old .xls file format
   "unsafe_count": 16,
   "unmatched_samples": [
     {"code": "102.001", "name": "中行丁办"},
-    {"code": "102.006", "name": "无锡农村商业银行宜兴丁山分理处"},
-    {"code": "102.015", "name": "招商银行宜兴丁蜀支行"}
+    {"code": "102.006", "name": "银行A_支行02"},
+    {"code": "102.015", "name": "银行B_支行03"}
   ],
   "unsafe_samples": [
     {"code": "101", "name": "现金", "picked": "1001 库存现金"},
@@ -450,8 +450,8 @@ backend/tests/test_standard_trial_balance_import.py
 
 ```text
 1002.001 中行丁办 -> 继承 102/1002 银行存款
-1009.010.003 其他货币基金--工商银行宁国支行 -> 其他货币资金
-1111.01 香农芯创... -> 继承父级 1111 的标准科目
+1009.010.003 其他货币基金--银行A_支行01 -> 其他货币资金
+1111.01 客户A -> 继承父级 1111 的标准科目
 ```
 
 2. 研发费用/研发支出上下文：

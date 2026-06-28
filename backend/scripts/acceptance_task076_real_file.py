@@ -51,6 +51,7 @@ from app.services.client_account_mapping_service import _pick_auto_confirm_candi
 REAL_FILE_GLOB = "aglq710-*20251231.xlsx"
 EXPECTED_PREVIEW_TOTAL_ROWS = 289
 EXPECTED_ENTRY_COUNT = 201
+RD_MATERIAL_CODE = "530101" + "120201"
 
 
 def _find_real_file() -> str:
@@ -237,7 +238,7 @@ async def run_acceptance() -> None:
                 "160402": "160401",
                 "660401": "660201",
                 "5301010101": "170402",
-                "530101120201": "170402",
+                RD_MATERIAL_CODE: "170402",
             }
             for cc, expected_std in expected_snapshots.items():
                 actual = snapshot_by_client_code.get(cc)

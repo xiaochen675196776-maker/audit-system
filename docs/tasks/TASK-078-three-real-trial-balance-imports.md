@@ -185,7 +185,7 @@ row 3+: 数据
 ```json
 {
   "client_account_code": "1002001",
-  "client_account_name": "中国建设银行股份有限公司钦州港区支行",
+  "client_account_name": "银行A_支行01",
   "picked": {
     "standard_account_code": "1002",
     "standard_account_name": "银行存款",

@@ -54,3 +54,6 @@ frontend/ui-acceptance-shots/*
 nul
 backend/nul
 frontend/nul
+
+# Local sensitive scan dictionary (must not be committed)
+scripts/sensitive_terms.local.json
