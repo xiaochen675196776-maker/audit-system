@@ -981,10 +981,65 @@ DEFAULT_REPORT_DIR = BACKEND_ROOT / "test_reports"
 DOCS_TASKS_DIR = PROJECT_ROOT / "docs" / "tasks"
 
 
+# TASK-095C §2.2：六表报告强一致性 — 必须严格匹配预期 file_key
+EXPECTED_SIX_FILE_KEYS = frozenset({
+    "huizhan",
+    "112",
+    "205201",
+    "tb_2023",
+    "yiliao",
+    "chengdu_dikang",
+})
+
+
+def _atomic_write_text(path: str, content: str) -> None:
+    """TASK-095C §2.1：先写 .tmp 再 os.replace，避免半截报告覆盖完整报告。"""
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp_path, path)
+
+
+def _validate_six_table_report() -> tuple[bool, str]:
+    """TASK-095C §2.2：强制校验六表报告的 file_key 完整性。
+
+    返回 (is_valid, message)。
+    - len(REGRESSION_REPORT) 必须 == 6
+    - 6 个 file_key 必须完全匹配 EXPECTED_SIX_FILE_KEYS
+    - 每个文件的 execute_status 必须 == 'executed'
+    """
+    if len(REGRESSION_REPORT) != 6:
+        return False, f"行数 {len(REGRESSION_REPORT)} ≠ 6（单文件跑不会写六表报告）"
+    actual_keys = {r.get("file_key") for r in REGRESSION_REPORT}
+    if actual_keys != EXPECTED_SIX_FILE_KEYS:
+        missing = EXPECTED_SIX_FILE_KEYS - actual_keys
+        extra = actual_keys - EXPECTED_SIX_FILE_KEYS
+        return False, f"file_key 不匹配，缺 {missing}，多 {extra}"
+    for r in REGRESSION_REPORT:
+        if r.get("execute_status") != "executed":
+            return False, f"{r.get('file_key')} execute_status={r.get('execute_status')}（应 executed）"
+    return True, "OK"
+
+
 def _generate_regression_reports(report_dir: str = str(DEFAULT_REPORT_DIR)):
-    """生成 TASK-093 指定的 JSON / CSV / MD / 专项诊断报告。"""
+    """生成 TASK-093 指定的 JSON / CSV / MD / 专项诊断报告。
+
+    TASK-095C §2：只有完整六表跑（file_key 严格匹配 EXPECTED_SIX_FILE_KEYS）
+    才写六表最终报告；单文件专项测试不得覆盖。
+    """
     os.makedirs(report_dir, exist_ok=True)
     os.makedirs(DOCS_TASKS_DIR, exist_ok=True)
+
+    # §2.2 强制校验
+    is_valid, msg = _validate_six_table_report()
+    if not is_valid:
+        # 单文件跑 / 校验失败 — 不写六表最终报告
+        print(
+            f"\n[Regression Report] SKIP 六表报告生成（{msg}）。"
+            "本测试为单文件专项或运行未完成，六表报告不会被覆盖。"
+        )
+        return None
+
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total_anchors = sum(r["anchor_count"] for r in REGRESSION_REPORT)
     total_inherited = sum(r["inherited_count"] for r in REGRESSION_REPORT)
@@ -1017,203 +1072,229 @@ def _generate_regression_reports(report_dir: str = str(DEFAULT_REPORT_DIR)):
         ("ending_credit", "期末贷差异"),
     ]
 
-    # JSON
-    json_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "task": "TASK-093",
-                "generated_at": now,
-                "strategy": "anchor_inheritance_v2",
-                "strategy_version": 2,
-                "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
-                "summary": {
-                    "files": len(REGRESSION_REPORT),
-                    "executed_files": executed_count,
-                    "failed_files": failed_count,
-                    "total_entries": total_entries,
-                    "total_participating_leaves": total_leaves,
-                    "total_ignored": total_ignored,
-                    # TASK-094D：5 类行集合（业务末级）
-                    "total_eligible_business": total_eligible_business,
-                    "total_zero_template": total_zero_template,
-                    "total_summary_total": total_summary_total,
-                    "total_duplicate_aggregate": total_duplicate_aggregate,
-                    # 兼容旧字段
-                    "total_zero_skip": total_zero_skip,
-                    "total_dynamic_unresolved": total_unresolved,
-                    "fixture_manual_confirm_count": total_manual,
-                    "auto_unique_confirm_count": total_auto_unique,
-                    "auto_highest_confirm_count": 0,
-                    "auto_ignored_count": 0,
-                    "total_nodes": sum(r["total_nodes"] for r in REGRESSION_REPORT),
-                    "full_recommendation_nodes": total_full_rec,
-                    "inherited_without_recommendation": total_inh_no_rec,
-                    "total_anchors": total_anchors,
-                    "total_inherited": total_inherited,
-                    "total_breakpoints": total_breakpoints,
-                    "total_submit_anchors": total_submits,
-                    "total_t_seconds": round(total_t, 2),
-                    "inheritance_reduction_ratio": (
-                        round(total_inherited / (total_inherited + total_anchors), 4)
-                        if (total_inherited + total_anchors) > 0 else 0
-                    ),
-                },
-                "rows": REGRESSION_REPORT,
-            },
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
+    # JSON — TASK-095C §2.1 原子写入（先写 .tmp 再 os.replace）
+    base_payload = {
+        "task": "TASK-093+TASK-095C",
+        "generated_at": now,
+        "strategy": "anchor_inheritance_v2",
+        "strategy_version": 2,
+        "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
+        "summary": {
+            "files": len(REGRESSION_REPORT),
+            "executed_files": executed_count,
+            "failed_files": failed_count,
+            "total_entries": total_entries,
+            "total_participating_leaves": total_leaves,
+            "total_ignored": total_ignored,
+            # TASK-094D：5 类行集合（业务末级）
+            "total_eligible_business": total_eligible_business,
+            "total_zero_template": total_zero_template,
+            "total_summary_total": total_summary_total,
+            "total_duplicate_aggregate": total_duplicate_aggregate,
+            # 兼容旧字段
+            "total_zero_skip": total_zero_skip,
+            "total_dynamic_unresolved": total_unresolved,
+            "fixture_manual_confirm_count": total_manual,
+            "auto_unique_confirm_count": total_auto_unique,
+            "auto_highest_confirm_count": 0,
+            "auto_ignored_count": 0,
+            "total_nodes": sum(r["total_nodes"] for r in REGRESSION_REPORT),
+            "full_recommendation_nodes": total_full_rec,
+            "inherited_without_recommendation": total_inh_no_rec,
+            "total_anchors": total_anchors,
+            "total_inherited": total_inherited,
+            "total_breakpoints": total_breakpoints,
+            "total_submit_anchors": total_submits,
+            "total_t_seconds": round(total_t, 2),
+            "inheritance_reduction_ratio": (
+                round(total_inherited / (total_inherited + total_anchors), 4)
+                if (total_inherited + total_anchors) > 0 else 0
+            ),
+        },
+        "rows": REGRESSION_REPORT,
+    }
 
-    # CSV
-    csv_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.csv")
-    with open(csv_path, "w", encoding="utf-8", newline="") as f:
-        if REGRESSION_REPORT:
-            writer = csv.DictWriter(f, fieldnames=list(REGRESSION_REPORT[0].keys()))
-            writer.writeheader()
-            for r in REGRESSION_REPORT:
-                writer.writerow(r)
+    # §2.2 强一致性：files 必须是 6，rows 必须是 6
+    assert len(REGRESSION_REPORT) == 6, f"REGRESSION_REPORT 长度 {len(REGRESSION_REPORT)} ≠ 6"
+    actual_keys = sorted(r.get("file_key") for r in REGRESSION_REPORT)
+    expected_keys = sorted(EXPECTED_SIX_FILE_KEYS)
+    assert actual_keys == expected_keys, (
+        f"file_key 不匹配: actual={actual_keys} expected={expected_keys}"
+    )
 
-    # MD
-    md_path = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.md")
-    with open(md_path, "w", encoding="utf-8") as f:
-        f.write("# TASK-093 锚点继承式映射真实生产闭环回归报告（含 TASK-094D 口径）\n\n")
-        f.write(f"**生成时间**: {now}\n\n")
-        f.write(f"**策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)\n\n")
-        f.write("## 1. 总体统计\n\n")
-        f.write(f"- 文件数: {len(REGRESSION_REPORT)}\n")
-        f.write(f"- 执行成功文件数: {executed_count}\n")
-        f.write(f"- 执行失败文件数: {failed_count}\n")
-        f.write(f"- 映射锚点总数: {total_anchors}\n")
-        f.write(f"- 自动继承总数: {total_inherited}\n")
-        f.write(f"- 继承中断点总数: {total_breakpoints}\n")
-        f.write(f"- 提交 execute 的锚点/覆盖: {total_submits}\n")
-        f.write(f"- 入库 entry 总数: {total_entries}\n")
-        f.write(f"- 完整推荐节点数: {total_full_rec}\n")
-        f.write(f"- 轻量处理但未推荐的继承节点数: {total_inh_no_rec}\n")
-        f.write(f"- 参与末级: {total_leaves}\n")
-        f.write("## TASK-094D：5 类业务末级行\n")
-        f.write(f"- 应入库业务末级 (eligible): {total_eligible_business}\n")
-        f.write(f"- 已忽略业务末级 (ignored_business): {total_ignored}\n")
-        f.write(f"- 零金额模板 (zero_template): {total_zero_template}\n")
-        f.write(f"- 汇总/小计 (summary_total): {total_summary_total}\n")
-        f.write(f"- 重复汇总 (duplicate_aggregate): {total_duplicate_aggregate}\n")
-        f.write("## 兼容字段\n")
-        f.write(f"- zero skip (兼容旧字段): {total_zero_skip}\n")
-        f.write(f"- 动态未解决: {total_unresolved}\n")
-        f.write(f"- 人工 fixture 确认: {total_manual}\n")
-        f.write(f"- 唯一安全候选自动确认: {total_auto_unique}\n")
-        f.write(f"- 继承减少比: {round(total_inherited / max(total_inherited + total_anchors, 1), 4)}\n")
-        f.write(f"- 总耗时: {round(total_t, 2)}s\n\n")
-        f.write("## 2. 逐表统计（按 TASK-094D 新口径）\n\n")
-        f.write(
-            "| 文件 | Analyze | 前端确认模拟 | Execute | entry | 业务末级 | ignored | 零模板 | 汇总行 | 重复汇总 | 动态未解决 | inherited | 耗时 |\n"
-        )
-        f.write(
-            "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n"
-        )
+    # 同时写两个名字：保留 093 + 新增 095C（同一份 JSON 内容，便于回溯）
+    json_path_093 = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.json")
+    json_path_095c = os.path.join(report_dir, "task_095c_final_e2e.json")
+    json_text = json.dumps(base_payload, ensure_ascii=False, indent=2)
+    _atomic_write_text(json_path_093, json_text)
+    _atomic_write_text(json_path_095c, json_text)
+
+    # CSV — TASK-095C §2.1 原子写入
+    csv_path_093 = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.csv")
+    csv_path_095c = os.path.join(report_dir, "task_095c_final_e2e.csv")
+    import io as _io
+    csv_buf = _io.StringIO()
+    if REGRESSION_REPORT:
+        writer = csv.DictWriter(csv_buf, fieldnames=list(REGRESSION_REPORT[0].keys()))
+        writer.writeheader()
         for r in REGRESSION_REPORT:
-            f.write(
-                f"| {r['file_name']} | success | fixture {r['fixture_manual_confirm_count']} + unique {r['auto_unique_confirm_count']} | "
-                f"{r['execute_status']} | {r['entry_count']} | {r['eligible_business_leaf_count']} | "
-                f"{r['ignored_business_count']} | {r['zero_template_count']} | "
-                f"{r['summary_total_count']} | {r['duplicate_aggregate_count']} | "
-                f"{r['dynamic_unresolved_count']} | {r['inherited_count']} | {r['t_total']} |\n"
-            )
-        f.write("\n## 3. 业务金额勾稽（新口径）\n\n")
-        f.write("| 文件 | 期初借差异 | 期初贷差异 | 本期借差异 | 本期贷差异 | 期末借差异 | 期末贷差异 |\n")
-        f.write("|---|---:|---:|---:|---:|---:|---:|\n")
-        for r in REGRESSION_REPORT:
-            f.write(
-                f"| {r['file_name']} | "
-                + " | ".join(f"{r['amount_differences'].get(field, 0):.2f}" for field, _ in amount_fields)
-                + " |\n"
-            )
-        f.write("\n## 4. 红线\n\n")
-        f.write(f"- 最高分自动确认数量: 0\n")
-        f.write(f"- 自动 ignored 数量: 0\n")
-        f.write(f"- 六表 6/6 成功: {executed_count}/6\n")
-        f.write(f"- 动态未解决合计: {total_unresolved}\n")
-        f.write(f"- entry_count == eligible_business_leaf_count: ✅\n")
-        f.write(f"- 5 类行集合勾稽: ✅\n")
-        f.write(f"- 业务金额勾稽差 < 0.01: ✅\n")
-        f.write(f"- 总耗时: {round(total_t, 2)}s\n")
+            writer.writerow(r)
+    csv_text = csv_buf.getvalue()
+    _atomic_write_text(csv_path_093, csv_text)
+    _atomic_write_text(csv_path_095c, csv_text)
+
+    # MD — TASK-095C §2.1 原子写入 + 同时写 093/095C 两份
+    md_path_093 = os.path.join(report_dir, "task_093_anchor_inheritance_e2e.md")
+    md_path_095c = os.path.join(report_dir, "task_095c_final_e2e.md")
+    md_buf = _io.StringIO()
+    md_writer = md_buf.write
+    md_writer("# TASK-093 锚点继承式映射真实生产闭环回归报告（含 TASK-094D 口径）\n\n")
+    md_writer(f"**生成时间**: {now}\n\n")
+    md_writer(f"**策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)\n\n")
+    md_writer("## 1. 总体统计\n\n")
+    md_writer(f"- 文件数: {len(REGRESSION_REPORT)}\n")
+    md_writer(f"- 执行成功文件数: {executed_count}\n")
+    md_writer(f"- 执行失败文件数: {failed_count}\n")
+    md_writer(f"- 映射锚点总数: {total_anchors}\n")
+    md_writer(f"- 自动继承总数: {total_inherited}\n")
+    md_writer(f"- 继承中断点总数: {total_breakpoints}\n")
+    md_writer(f"- 提交 execute 的锚点/覆盖: {total_submits}\n")
+    md_writer(f"- 入库 entry 总数: {total_entries}\n")
+    md_writer(f"- 完整推荐节点数: {total_full_rec}\n")
+    md_writer(f"- 轻量处理但未推荐的继承节点数: {total_inh_no_rec}\n")
+    md_writer(f"- 参与末级: {total_leaves}\n")
+    md_writer("## TASK-094D：5 类业务末级行\n")
+    md_writer(f"- 应入库业务末级 (eligible): {total_eligible_business}\n")
+    md_writer(f"- 已忽略业务末级 (ignored_business): {total_ignored}\n")
+    md_writer(f"- 零金额模板 (zero_template): {total_zero_template}\n")
+    md_writer(f"- 汇总/小计 (summary_total): {total_summary_total}\n")
+    md_writer(f"- 重复汇总 (duplicate_aggregate): {total_duplicate_aggregate}\n")
+    md_writer("## 兼容字段\n")
+    md_writer(f"- zero skip (兼容旧字段): {total_zero_skip}\n")
+    md_writer(f"- 动态未解决: {total_unresolved}\n")
+    md_writer(f"- 人工 fixture 确认: {total_manual}\n")
+    md_writer(f"- 唯一安全候选自动确认: {total_auto_unique}\n")
+    md_writer(f"- 继承减少比: {round(total_inherited / max(total_inherited + total_anchors, 1), 4)}\n")
+    md_writer(f"- 总耗时: {round(total_t, 2)}s\n\n")
+    md_writer("## 2. 逐表统计（按 TASK-094D 新口径）\n\n")
+    md_writer("| 文件 | Analyze | 前端确认模拟 | Execute | entry | 业务末级 | ignored | 零模板 | 汇总行 | 重复汇总 | 动态未解决 | inherited | 耗时 |\n")
+    md_writer("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+    for r in REGRESSION_REPORT:
+        md_writer(
+            f"| {r['file_name']} | success | fixture {r['fixture_manual_confirm_count']} + unique {r['auto_unique_confirm_count']} | "
+            f"{r['execute_status']} | {r['entry_count']} | {r['eligible_business_leaf_count']} | "
+            f"{r['ignored_business_count']} | {r['zero_template_count']} | "
+            f"{r['summary_total_count']} | {r['duplicate_aggregate_count']} | "
+            f"{r['dynamic_unresolved_count']} | {r['inherited_count']} | {r['t_total']} |\n"
+        )
+    md_writer("\n## 3. 业务金额勾稽（新口径）\n\n")
+    md_writer("| 文件 | 期初借差异 | 期初贷差异 | 本期借差异 | 本期贷差异 | 期末借差异 | 期末贷差异 |\n")
+    md_writer("|---|---:|---:|---:|---:|---:|---:|\n")
+    for r in REGRESSION_REPORT:
+        md_writer(
+            f"| {r['file_name']} | "
+            + " | ".join(f"{r['amount_differences'].get(field, 0):.2f}" for field, _ in amount_fields)
+            + " |\n"
+        )
+    md_writer("\n## 4. 红线\n\n")
+    md_writer(f"- 最高分自动确认数量: 0\n")
+    md_writer(f"- 自动 ignored 数量: 0\n")
+    md_writer(f"- 六表 6/6 成功: {executed_count}/6\n")
+    md_writer(f"- 动态未解决合计: {total_unresolved}\n")
+    md_writer(f"- entry_count == eligible_business_leaf_count: ✅\n")
+    md_writer(f"- 5 类行集合勾稽: ✅\n")
+    md_writer(f"- 业务金额勾稽差 < 0.01: ✅\n")
+    md_writer(f"- 总耗时: {round(total_t, 2)}s\n")
+    md_text = md_buf.getvalue()
+    _atomic_write_text(md_path_093, md_text)
+    _atomic_write_text(md_path_095c, md_text)
 
     row_205201 = next((r for r in REGRESSION_REPORT if r["file_key"] == "205201"), None)
     diag_path = os.path.join(report_dir, "task_093_205201_hierarchy_diagnostic.md")
-    with open(diag_path, "w", encoding="utf-8") as f:
-        f.write("# TASK-093 205201 层级与性能专项诊断\n\n")
-        if row_205201:
-            f.write(f"- 总行数: {row_205201['total_rows']}\n")
-            f.write(f"- 唯一科目代码数: {row_205201['unique_account_code_count']}\n")
-            f.write(f"- 唯一完整路径数: {row_205201['unique_account_path_count']}\n")
-            f.write(f"- 根节点数: {row_205201['root_node_count']}\n")
-            f.write(f"- 父子关系数: {row_205201['parent_child_relation_count']}\n")
-            f.write(f"- 最大层级: {row_205201['max_level']}\n")
-            f.write(f"- 层级来源分布: {row_205201['level_source_distribution']}\n")
-            f.write(f"- structural: {row_205201['structural_summary_count']}\n")
-            f.write(f"- anchor: {row_205201['anchor_count']}\n")
-            f.write(f"- inherited: {row_205201['inherited_count']}\n")
-            f.write(f"- unresolved: {row_205201['unresolved_count']}\n")
-            f.write(f"- 重复代码数量: {row_205201['duplicate_code_count']}\n")
-            f.write(f"- 重复路径数量: {row_205201['duplicate_path_count']}\n")
-            f.write(f"- 完整推荐唯一节点数: {row_205201['full_recommendation_node_count']}\n")
-            ratio = round(row_205201['total_rows'] / max(row_205201['unique_account_path_count'], 1), 2)
-            f.write(f"- 原始行到唯一节点的压缩比例: {ratio}\n")
-            f.write(f"- 耗时: {row_205201['t_total']}s\n\n")
-            f.write("`anchor=0/inherited=0` 的原因已定位为字段嗅探未识别 `科目全称`，误把 `公司` 列作为科目名称；修复后 205201 已形成锚点和继承。\n")
+    diag_buf = _io.StringIO()
+    diag_buf.write("# TASK-093 205201 层级与性能专项诊断\n\n")
+    if row_205201:
+        diag_buf.write(f"- 总行数: {row_205201['total_rows']}\n")
+        diag_buf.write(f"- 唯一科目代码数: {row_205201['unique_account_code_count']}\n")
+        diag_buf.write(f"- 唯一完整路径数: {row_205201['unique_account_path_count']}\n")
+        diag_buf.write(f"- 根节点数: {row_205201['root_node_count']}\n")
+        diag_buf.write(f"- 父子关系数: {row_205201['parent_child_relation_count']}\n")
+        diag_buf.write(f"- 最大层级: {row_205201['max_level']}\n")
+        diag_buf.write(f"- 层级来源分布: {row_205201['level_source_distribution']}\n")
+        diag_buf.write(f"- structural: {row_205201['structural_summary_count']}\n")
+        diag_buf.write(f"- anchor: {row_205201['anchor_count']}\n")
+        diag_buf.write(f"- inherited: {row_205201['inherited_count']}\n")
+        diag_buf.write(f"- unresolved: {row_205201['unresolved_count']}\n")
+        diag_buf.write(f"- 重复代码数量: {row_205201['duplicate_code_count']}\n")
+        diag_buf.write(f"- 重复路径数量: {row_205201['duplicate_path_count']}\n")
+        diag_buf.write(f"- 完整推荐唯一节点数: {row_205201['full_recommendation_node_count']}\n")
+        ratio = round(row_205201['total_rows'] / max(row_205201['unique_account_path_count'], 1), 2)
+        diag_buf.write(f"- 原始行到唯一节点的压缩比例: {ratio}\n")
+        diag_buf.write(f"- 耗时: {row_205201['t_total']}s\n\n")
+        diag_buf.write("`anchor=0/inherited=0` 的原因已定位为字段嗅探未识别 `科目全称`，误把 `公司` 列作为科目名称；修复后 205201 已形成锚点和继承。\n")
+    _atomic_write_text(diag_path, diag_buf.getvalue())
 
     chengdu = next((r for r in REGRESSION_REPORT if r["file_key"] == "chengdu_dikang"), None)
     chengdu_path = os.path.join(report_dir, "task_093_chengdu_dikang_mapping_check.md")
-    with open(chengdu_path, "w", encoding="utf-8") as f:
-        f.write("# TASK-093 成都迪康跨类错配检查\n\n")
-        if chengdu:
-            f.write(f"- 跨类错配数量: {len(chengdu['chengdu_dikang_mismatches'])}\n")
-            f.write(f"- entry: {chengdu['entry_count']}\n")
-            f.write(f"- 金额差异: {chengdu['amount_differences']}\n\n")
-            f.write("检查项: 其他货币资金/应收账款/管理费用/研发费用/营业外支出已按 TASK-093 红线检查。\n")
-            if chengdu["chengdu_dikang_mismatches"]:
-                f.write("\n## 明细\n\n")
-                for item in chengdu["chengdu_dikang_mismatches"]:
-                    f.write(f"- {item}\n")
+    chengdu_buf = _io.StringIO()
+    chengdu_buf.write("# TASK-093 成都迪康跨类错配检查\n\n")
+    if chengdu:
+        chengdu_buf.write(f"- 跨类错配数量: {len(chengdu['chengdu_dikang_mismatches'])}\n")
+        chengdu_buf.write(f"- entry: {chengdu['entry_count']}\n")
+        chengdu_buf.write(f"- 金额差异: {chengdu['amount_differences']}\n\n")
+        chengdu_buf.write("检查项: 其他货币资金/应收账款/管理费用/研发费用/营业外支出已按 TASK-093 红线检查。\n")
+        if chengdu["chengdu_dikang_mismatches"]:
+            chengdu_buf.write("\n## 明细\n\n")
+            for item in chengdu["chengdu_dikang_mismatches"]:
+                chengdu_buf.write(f"- {item}\n")
+    _atomic_write_text(chengdu_path, chengdu_buf.getvalue())
 
     completion_path = str(DOCS_TASKS_DIR / "TASK-093_锚点继承式映射真实生产闭环修复完成报告.md")
-    with open(completion_path, "w", encoding="utf-8") as f:
-        f.write("# TASK-093 锚点继承式映射真实生产闭环修复完成报告\n\n")
-        f.write(f"生成时间: {now}\n\n")
-        f.write(f"- 六表 Execute 成功: {executed_count}/6\n")
-        f.write(f"- 动态未解决: {total_unresolved}\n")
-        f.write(f"- entry 总数: {total_entries}\n")
-        f.write(f"- 参与末级: {total_leaves}\n")
-        # TASK-094D：5 类业务末级
-        f.write("## TASK-094D：5 类业务末级（按新口径）\n")
-        f.write(f"- 应入库业务末级 (eligible): {total_eligible_business}\n")
-        f.write(f"- 已忽略业务末级 (ignored_business): {total_ignored}\n")
-        f.write(f"- 零金额模板 (zero_template): {total_zero_template}\n")
-        f.write(f"- 汇总/小计 (summary_total): {total_summary_total}\n")
-        f.write(f"- 重复汇总 (duplicate_aggregate): {total_duplicate_aggregate}\n")
-        f.write("## 兼容字段\n")
-        f.write(f"- zero skip (兼容旧字段): {total_zero_skip}\n")
-        f.write(f"- 总耗时: {round(total_t, 2)}s\n")
-        f.write(f"- 人工确认 fixture: {total_manual}\n")
-        f.write(f"- 唯一安全候选: {total_auto_unique}\n")
-        f.write(f"- 最高分自动确认: 0\n")
-        f.write(f"- 自动 ignored: 0\n")
-        f.write(f"- 回归 JSON: `{json_path}`\n")
-        f.write(f"- 回归 CSV: `{csv_path}`\n")
-        f.write(f"- 回归 MD: `{md_path}`\n")
-        f.write(f"- 205201 诊断: `{diag_path}`\n")
-        f.write(f"- 成都迪康检查: `{chengdu_path}`\n")
+    completion_buf = _io.StringIO()
+    completion_buf.write("# TASK-093 锚点继承式映射真实生产闭环修复完成报告\n\n")
+    completion_buf.write(f"生成时间: {now}\n\n")
+    completion_buf.write(f"- 六表 Execute 成功: {executed_count}/6\n")
+    completion_buf.write(f"- 动态未解决: {total_unresolved}\n")
+    completion_buf.write(f"- entry 总数: {total_entries}\n")
+    completion_buf.write(f"- 参与末级: {total_leaves}\n")
+    completion_buf.write("## TASK-094D：5 类业务末级（按新口径）\n")
+    completion_buf.write(f"- 应入库业务末级 (eligible): {total_eligible_business}\n")
+    completion_buf.write(f"- 已忽略业务末级 (ignored_business): {total_ignored}\n")
+    completion_buf.write(f"- 零金额模板 (zero_template): {total_zero_template}\n")
+    completion_buf.write(f"- 汇总/小计 (summary_total): {total_summary_total}\n")
+    completion_buf.write(f"- 重复汇总 (duplicate_aggregate): {total_duplicate_aggregate}\n")
+    completion_buf.write("## 兼容字段\n")
+    completion_buf.write(f"- zero skip (兼容旧字段): {total_zero_skip}\n")
+    completion_buf.write(f"- 总耗时: {round(total_t, 2)}s\n")
+    completion_buf.write(f"- 人工确认 fixture: {total_manual}\n")
+    completion_buf.write(f"- 唯一安全候选: {total_auto_unique}\n")
+    completion_buf.write(f"- 最高分自动确认: 0\n")
+    completion_buf.write(f"- 自动 ignored: 0\n")
+    completion_buf.write(f"- 回归 JSON (093): `{json_path_093}`\n")
+    completion_buf.write(f"- 回归 CSV (093): `{csv_path_093}`\n")
+    completion_buf.write(f"- 回归 MD (093): `{md_path_093}`\n")
+    completion_buf.write(f"- 回归 JSON (095C): `{json_path_095c}`\n")
+    completion_buf.write(f"- 回归 CSV (095C): `{csv_path_095c}`\n")
+    completion_buf.write(f"- 回归 MD (095C): `{md_path_095c}`\n")
+    completion_buf.write(f"- 205201 诊断: `{diag_path}`\n")
+    completion_buf.write(f"- 成都迪康检查: `{chengdu_path}`\n")
+    _atomic_write_text(completion_path, completion_buf.getvalue())
 
-    return json_path, csv_path, md_path
+    return json_path_095c, csv_path_095c, md_path_095c
 
 
 # ── 报告生成（在 session 结束后） ──────────────────────
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """pytest 钩子：所有测试结束后生成报告。"""
+    """pytest 钩子：所有测试结束后生成报告。
+
+    TASK-095C §2：只有完整六表跑（REGRESSION_REPORT 长度=6 且 file_key 完全匹配）
+    才生成最终报告；单文件专项测试不会覆盖六表报告。
+    """
     if REGRESSION_REPORT:
         paths = _generate_regression_reports()
+        if paths is None:
+            # _validate_six_table_report 已打印原因，这里不再重复
+            return
         print(f"\n[Regression Report] Generated: {paths}")
