@@ -20,7 +20,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        # 与 frontend-vitest.yml 同因：package-lock.json 含
+        # @esbuild/netbsd-arm64@0.28.1，npm ci 在 linux x64 报 EBADPLATFORM。
+        # 改 npm install 让其跳过不匹配平台的 optionalDependencies。
+        run: npm install --no-audit --no-fund --include=optional
       - name: Type check (vue-tsc)
         working-directory: frontend
         run: npm run type-check

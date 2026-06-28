@@ -22,7 +22,11 @@ jobs:
       - name: Install backend test deps
         working-directory: backend
         run: |
-          pip install sqlalchemy aiosqlite pytest pytest-asyncio
+          # §10 仅装了 sqlalchemy/aiosqlite/pytest/pytest-asyncio，遗漏 pydantic
+          # 与 pydantic-settings，导致 conftest.py → app.core.config 触发 ImportError。
+          # 改为按 backend/requirements.txt 全量装，对齐 backend-integration-tests.yml。
+          pip install -r requirements.txt
+          pip install pytest-asyncio
       - name: Run sensitive scan tests
         working-directory: backend
         run: |

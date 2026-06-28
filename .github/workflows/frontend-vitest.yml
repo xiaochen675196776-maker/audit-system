@@ -20,7 +20,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        # §10 用 npm ci 仍 EBADPLATFORM：package-lock.json 包含
+        # @esbuild/netbsd-arm64@0.28.1（vitest 4.x → esbuild 0.28.x 多出的平台包），
+        # 本机 linux x64 npm ci 严格按 lockfile 装就报 notsup。
+        # 改为 npm install 让 npm 自动跳过不匹配平台的 optionalDependencies。
+        run: npm install --no-audit --no-fund --include=optional
       - name: Run vitest
         working-directory: frontend
         run: npm run test -- --run --reporter=default
