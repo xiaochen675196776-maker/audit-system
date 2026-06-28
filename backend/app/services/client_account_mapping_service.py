@@ -2902,6 +2902,190 @@ async def save_mapping(
     }
 
 
+# ── TASK-095C §3.1/§3.4/§3.5：批量 save_mapping ──────────────────────
+
+
+async def save_mapping_batch(
+    db: AsyncSession,
+    items: list[dict],
+) -> list[dict]:
+    """TASK-095C §3.1：批量保存映射经验。
+
+    与 save_mapping 等价语义（去重 + 冲突检查 + 覆盖/新建），但：
+
+    - §3.4 批量预加载：先一次 SELECT 把所有 (data_type, customer_label, client_account_code, client_account_name)
+      对应的现有 active 映射加载进 dict，避免循环内 db.execute
+    - §3.1 批量写入：新映射用 db.add_all + 一次 flush
+    - §3.5 单事务：保留外层 execute_standard_import 的事务，不在这里 commit
+
+    输入 items 形如：
+        {
+            "data_type": "trial_balance",
+            "customer_label": "...",
+            "client_account_code": "...",
+            "client_account_name": "...",
+            "standard_account_id": uuid.UUID,
+            "standard_account_code": "...",
+            "standard_account_name": "...",
+            "source": "user_confirmed" | "user_corrected",
+            "confidence": float,
+            "allow_overwrite": bool,
+            "client_account_full_path": str | None,
+            "mapping_kind": "anchor" | "override",
+        }
+
+    返回值与 save_mapping 一致（每条输入对应一条结果），用于调用方记账。
+    """
+    if not items:
+        return []
+
+    # 1) 收集所有查询条件
+    customer_label = items[0].get("customer_label")
+    scope = "company" if customer_label else "global"
+    data_type = items[0].get("data_type", "trial_balance")
+
+    code_set = {it.get("client_account_code") for it in items if it.get("client_account_code")}
+    name_set = {it.get("client_account_name") for it in items if it.get("client_account_name")}
+
+    # 2) 一次 SELECT 把所有现有 active 映射加载出来（§3.4）
+    conds = [
+        ClientAccountMapping.data_type == data_type,
+        ClientAccountMapping.is_active == True,
+    ]
+    if scope == "company":
+        conds.append(ClientAccountMapping.customer_label == customer_label)
+    else:
+        conds.append(ClientAccountMapping.customer_label.is_(None))
+    # 用 IN 限定可能的 code/name 集合（避免全表扫描）
+    if code_set:
+        conds.append(ClientAccountMapping.client_account_code.in_(list(code_set)))
+    elif name_set:
+        conds.append(ClientAccountMapping.client_account_name.in_(list(name_set)))
+    else:
+        # 没有任何 code/name 标识，根本无法匹配（应仅在极端空数据场景出现）
+        return [_empty_save_result(it, reason="no_identifier") for it in items]
+
+    existing_result = await db.execute(select(ClientAccountMapping).where(and_(*conds)))
+    existing_list = list(existing_result.scalars().all())
+
+    # 3) 构建现有索引 (data_type, scope, code, name) -> ClientAccountMapping
+    def _key(m: ClientAccountMapping) -> tuple:
+        return (
+            (m.client_account_code or "").strip(),
+            (m.client_account_name or "").strip(),
+        )
+
+    existing_by_key: dict[tuple, ClientAccountMapping] = {}
+    for m in existing_list:
+        existing_by_key[_key(m)] = m
+
+    # 4) 处理每条 item
+    new_mappings: list[ClientAccountMapping] = []
+    results: list[dict] = []
+    now = datetime.now(timezone.utc)
+
+    for it in items:
+        code = (it.get("client_account_code") or "").strip() or None
+        name = (it.get("client_account_name") or "").strip() or None
+        std_id = it.get("standard_account_id")
+        std_code = it.get("standard_account_code")
+        std_name = it.get("standard_account_name")
+        full_path = it.get("client_account_full_path")
+        confidence = float(it.get("confidence", 1.0))
+        allow_overwrite = bool(it.get("allow_overwrite", False))
+        mapping_kind = it.get("mapping_kind", "anchor")
+        source = it.get("source", "user_confirmed")
+        normalized_name = _normalize_name(name) if name else None
+
+        # 命中现有：尝试精确 (code, name) 匹配；仅 code 匹配作为 fallback
+        existing = existing_by_key.get((code or "", name or "")) if (code or name) else None
+        if existing is None and code:
+            existing = existing_by_key.get((code, ""))
+        if existing is None and name:
+            existing = existing_by_key.get(("", name))
+
+        if existing is not None and existing.standard_account_id != std_id:
+            if not allow_overwrite:
+                results.append({
+                    "status": "conflict",
+                    "mapping_id": None,
+                    "conflict_detail": {
+                        "existing_mapping_id": str(existing.id),
+                        "existing_standard_account_id": str(existing.standard_account_id) if existing.standard_account_id else None,
+                        "existing_standard_account_code": existing.standard_account_code_snapshot,
+                        "existing_standard_account_name": existing.standard_account_name_snapshot,
+                        "message": (
+                            f"客户科目「{code or '?'} {name or '?'}」"
+                            f"已有映射到「{existing.standard_account_code_snapshot} {existing.standard_account_name_snapshot}」，"
+                            f"确认覆盖为「{std_code} {std_name}」？"
+                        ),
+                    },
+                })
+                continue
+            # 允许覆盖：停用旧
+            existing.is_active = False
+            existing.usage_count = (existing.usage_count or 0) + 1
+            existing_by_key[_key(existing)] = None  # 标记已处理
+
+        if existing is not None and existing.standard_account_id == std_id:
+            # 同目标：累加使用计数
+            existing.usage_count = (existing.usage_count or 0) + 1
+            existing.last_used_at = now
+            existing.confidence = max(existing.confidence, confidence)
+            results.append({
+                "status": "updated",
+                "mapping_id": str(existing.id),
+                "conflict_detail": None,
+            })
+            continue
+
+        # 新建映射
+        new_mapping = ClientAccountMapping(
+            data_type=data_type,
+            customer_label=customer_label,
+            source_label=None,
+            client_account_code=code,
+            client_account_name=name,
+            normalized_client_account_name=normalized_name,
+            client_account_full_path=full_path,
+            standard_account_id=std_id,
+            standard_account_code_snapshot=std_code,
+            standard_account_name_snapshot=std_name,
+            confidence=confidence,
+            scope=scope,
+            mapping_kind=mapping_kind,
+            usage_count=0,
+            last_used_at=now,
+            is_active=True,
+        )
+        new_mappings.append(new_mapping)
+        results.append({
+            "status": "created",
+            "mapping_id": None,  # flush 后再回填
+            "conflict_detail": None,
+        })
+
+    # 5) 批量插入新映射（§3.1）
+    if new_mappings:
+        db.add_all(new_mappings)
+        await db.flush()
+        # 回填 mapping_id
+        for new_mapping, res in zip(new_mappings, [
+            r for r, it in zip(results, items) if r["status"] == "created" and r["mapping_id"] is None
+        ]):
+            res["mapping_id"] = str(new_mapping.id)
+
+    return results
+
+
+def _empty_save_result(item: dict, reason: str = "no_match") -> dict:
+    return {
+        "status": "noop",
+        "mapping_id": None,
+        "conflict_detail": {"reason": reason, "code": item.get("client_account_code")},
+    }
+
+
 
 # ── TASK-081：性能缓存 ──────────────────────────────
 # 避免大文件（如 205201 98k 行）反复计算 crosswalk 和查询 DB

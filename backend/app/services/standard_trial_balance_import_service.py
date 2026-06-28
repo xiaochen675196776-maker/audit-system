@@ -56,6 +56,7 @@ from app.services.trial_balance_transform import (
 from app.services.client_account_mapping_service import (
     recommend_mappings,
     save_mapping,
+    save_mapping_batch,
     _pick_auto_confirm_candidate,
     pick_unique_auto_confirm_candidate,
 )
@@ -3061,10 +3062,14 @@ async def execute_standard_import(
     # 普通 inherited 行不进入经验库（防止经验污染）。
     # TASK-085 性能优化：按 (code, name, standard_account_id) 去重。
     # TASK-094C：按 node_key 去重 — 同一唯一节点（不论绑定多少行）只保存一次。
+    # TASK-095C §3.1/§3.4/§3.5：批量 save_mapping（一次 SELECT + 一次 flush）。
     _t0 = _time.time()
     mapping_saved: list[dict] = []
     mapping_saved_node_keys: set[str] = set()
     if save_mapping_experience:
+        # 第一步：按 node_key 去重，收集待保存的 batch items
+        batch_items: list[dict] = []
+        batch_meta: list[dict] = []  # 与 batch_items 一一对应的元数据（用于回写 mapping_saved）
         for node_key, un in execute_node_by_key.items():
             if un.node_type == "summary":
                 continue
@@ -3097,37 +3102,44 @@ async def execute_standard_import(
             mapping_kind = (
                 "override" if n.mapping_role == "explicit_override" else "anchor"
             )
+            batch_items.append({
+                "data_type": "trial_balance",
+                "customer_label": customer_label,
+                "client_account_code": n.client_account_code,
+                "client_account_name": n.client_account_name,
+                "standard_account_id": sa.id,
+                "standard_account_code": sa.account_code,
+                "standard_account_name": sa.account_name,
+                "source": (
+                    "user_confirmed"
+                    if n.mapping_mode in {"direct_confirmed", "override_confirmed"}
+                    else "user_corrected"
+                ),
+                "confidence": 1.0,
+                "allow_overwrite": True,
+                "client_account_full_path": n.full_path or None,
+                "mapping_kind": mapping_kind,
+            })
+            batch_meta.append({
+                "client_account_code": n.client_account_code,
+                "standard_account_code": sa.account_code,
+                "mapping_kind": mapping_kind,
+                "client_account_full_path": n.full_path or None,
+                "node_key": node_key,
+                "duplicate_source_row_count": max(len(un.source_row_indexes) - 1, 0),
+            })
+
+        # 第二步：一次性批量保存（§3.1/§3.4）
+        if batch_items:
             try:
-                result = await save_mapping(
-                    db=db,
-                    data_type="trial_balance",
-                    customer_label=customer_label,
-                    client_account_code=n.client_account_code,
-                    client_account_name=n.client_account_name,
-                    standard_account_id=sa.id,
-                    standard_account_code=sa.account_code,
-                    standard_account_name=sa.account_name,
-                    source=(
-                        "user_confirmed"
-                        if n.mapping_mode in {"direct_confirmed", "override_confirmed"}
-                        else "user_corrected"
-                    ),
-                    confidence=1.0,
-                    allow_overwrite=True,
-                    client_account_full_path=n.full_path or None,
-                    mapping_kind=mapping_kind,
-                )
-                mapping_saved.append({
-                    "client_account_code": n.client_account_code,
-                    "standard_account_code": sa.account_code,
-                    "status": result.get("status", "unknown"),
-                    "mapping_kind": mapping_kind,
-                    "client_account_full_path": n.full_path or None,
-                    "node_key": node_key,
-                    "duplicate_source_row_count": max(len(un.source_row_indexes) - 1, 0),
-                })
+                batch_results = await save_mapping_batch(db, batch_items)
+                for meta, result in zip(batch_meta, batch_results):
+                    mapping_saved.append({
+                        **meta,
+                        "status": result.get("status", "unknown"),
+                    })
             except Exception as e:
-                logger.warning(f"保存映射经验失败: {e}")
+                logger.warning(f"批量保存映射经验失败: {e}")
 
     _timings["save_mapping"] = round(_time.time() - _t0, 2)
 
