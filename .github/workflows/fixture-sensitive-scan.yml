@@ -19,10 +19,13 @@ jobs:
       - name: Run repository sensitive data scanner
         run: |
           python scripts/check_sensitive_fixture.py --strict --root .
-      - name: Run sensitive scan tests
+      - name: Install backend test deps
+        working-directory: backend
         run: |
-          pip install pytest
-          cd backend
+          pip install sqlalchemy aiosqlite pytest pytest-asyncio
+      - name: Run sensitive scan tests
+        working-directory: backend
+        run: |
           pytest tests/test_task_094a_fixture_governance.py tests/test_task_095a_repository_sensitive_scan.py -v --tb=short
         env:
           DATABASE_URL: sqlite+aiosqlite:///./_test_sensitive.db

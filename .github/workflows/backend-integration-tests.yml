@@ -40,6 +40,9 @@ jobs:
       - name: Run integration tests
         working-directory: backend
         run: |
+          # 当前项目没有 @pytest.mark.integration 标记的测试。
+          # 改用：1) 真 DB (Postgres) 跑后端测试；2) 排除不能在 Postgres 上跑的大型 e2e。
           pytest tests/ \
-            -m "integration" \
+            --ignore=tests/test_anchor_inheritance_regression.py \
+            --ignore=tests/test_task_093_real_regression.py \
             --tb=short -q --no-header
