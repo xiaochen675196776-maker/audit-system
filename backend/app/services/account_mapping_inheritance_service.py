@@ -311,6 +311,8 @@ def compute_unique_node_key(
     client_account_code: str | None,
     client_account_name: str | None,
     parent_full_path: str | None,
+    *,
+    customer_label: str | None = None,
 ) -> str:
     """生成唯一节点 key。
 
@@ -321,11 +323,12 @@ def compute_unique_node_key(
     - 同代码同父路径但不同名称 → 不同 node_key（区分同名不同码）
     - 空代码与空名称保留（不当作 None 跳过）
     """
+    customer = _normalize_for_node_key(customer_label)
     code = _normalize_for_node_key(client_account_code)
     name = _normalize_for_node_key(client_account_name)
     parent = _normalize_parent_path(parent_full_path)
-    payload = f"{code}|{name}|{parent}".encode("utf-8")
-    return "uak:" + hashlib.sha256(payload).hexdigest()
+    payload = f"{customer}|{code}|{name}|{parent}".encode("utf-8")
+    return "uak:v2:" + hashlib.sha256(payload).hexdigest()
 
 
 def classify_node_type(
@@ -609,6 +612,8 @@ def build_account_tree(
 def build_unique_account_graph(
     tree: "AccountTree",
     rows_meta: list[dict] | None = None,
+    *,
+    customer_label: str | None = None,
 ) -> UniqueAccountGraph:
     """从已构建的客户科目树派生唯一节点图。
 
@@ -645,6 +650,7 @@ def build_unique_account_graph(
 
     # row_index → full_path
     full_path_by_row: dict[int, str] = {}
+    parent_path_by_row: dict[int, str] = {}
     # row_index → node_key
     key_by_row: dict[int, str] = {}
     # row_index → parent_node_key
@@ -662,9 +668,20 @@ def build_unique_account_graph(
             return "\\".join(p for p in names_for_path if p)
         return node.full_path or ""
 
+    def _build_parent_path_for_node(node: AccountTreeNode) -> str:
+        if node.parent_row_index is not None:
+            return full_path_by_row.get(node.parent_row_index, "")
+        meta = rows_meta_by_row.get(node.row_index)
+        if meta:
+            ancestor_names = list(meta.get("ancestor_names") or [])
+            return "\\".join(p for p in reversed(ancestor_names) if p)
+        return ""
+
     for node in sorted_rows:
         path = _build_path_for_node(node)
         full_path_by_row[node.row_index] = path
+        parent_path = _build_parent_path_for_node(node)
+        parent_path_by_row[node.row_index] = parent_path
 
         # parent_node_key：找 parent_row_index 对应的 node_key
         parent_key: str | None = None
@@ -675,7 +692,8 @@ def build_unique_account_graph(
         node_key = compute_unique_node_key(
             client_account_code=node.client_account_code,
             client_account_name=node.client_account_name,
-            parent_full_path=path,
+            parent_full_path=parent_path,
+            customer_label=customer_label,
         )
         key_by_row[node.row_index] = node_key
 
@@ -722,6 +740,11 @@ def build_unique_account_graph(
             un.resolution_reason = node.resolution_reason or un.resolution_reason
             un.auto_confirm_status = node.auto_confirm_status or un.auto_confirm_status
             un.auto_confirm_reason = node.auto_confirm_reason or un.auto_confirm_reason
+            un.requires_confirmation = node.requires_confirmation
+            un.suggested_standard_account_id = node.suggested_standard_account_id
+            un.suggested_standard_account_code = node.suggested_standard_account_code
+            un.suggested_standard_account_name = node.suggested_standard_account_name
+            un.inheritance_break_reason = node.inheritance_break_reason
         elif (
             node.mapping_role in {"anchor", "breakpoint", "explicit_override"}
             and un.mapping_role not in {"anchor", "breakpoint", "explicit_override"}
@@ -729,6 +752,10 @@ def build_unique_account_graph(
             un.mapping_role = node.mapping_role
             un.mapping_mode = node.mapping_mode
             un.requires_confirmation = node.requires_confirmation
+            un.suggested_standard_account_id = node.suggested_standard_account_id
+            un.suggested_standard_account_code = node.suggested_standard_account_code
+            un.suggested_standard_account_name = node.suggested_standard_account_name
+            un.inheritance_break_reason = node.inheritance_break_reason
 
         # row → node 绑定（重复原始行覆盖同一个 key）
         graph.row_to_node_key[node.row_index] = node_key

@@ -347,6 +347,13 @@ class MappingRecommendEntry(BaseModel):
     auto_confirm_candidate: ClientAccountMappingCandidate | None = None
     auto_confirm_status: str | None = None
     auto_confirm_reason: str | None = None
+    node_key: str | None = None
+    node_type: str | None = None
+    node_source_row_indexes: list[int] = Field(default_factory=list)
+    node_representative_row_index: int | None = None
+    node_duplicate_binding: bool = False
+    mapping_editable: bool = True
+    deprecated: bool = False
 
 
 class ClientAccountMappingRecommendResponse(BaseModel):
@@ -608,6 +615,30 @@ class MappingPlanSummary(BaseModel):
     inherited_without_recommendation_count: int = 0
 
 
+class UniqueMappingNodeResponse(BaseModel):
+    node_key: str
+    representative_row_index: int
+    source_row_count: int
+    source_row_indexes: list[int]
+    account_code: str | None = None
+    account_name: str | None = None
+    full_path: str = ""
+    parent_node_key: str | None = None
+    node_type: str
+    mapping_role: str
+    requires_confirmation: bool = False
+    resolved_standard_account_id: uuid.UUID | None = None
+    suggested_standard_account_id: uuid.UUID | None = None
+    candidates: list[ClientAccountMappingCandidate] = Field(default_factory=list)
+
+
+class RowNodeBindingResponse(BaseModel):
+    row_index: int
+    node_key: str
+    representative_row_index: int | None = None
+    is_representative: bool = False
+
+
 class AnalyzeResponse(BaseModel):
     """分析响应"""
     batch_id: uuid.UUID
@@ -619,6 +650,8 @@ class AnalyzeResponse(BaseModel):
     warnings: list[WarningItem]
     mapping_summary: MappingPlanSummary | None = None
     mapping_strategy: str = "anchor_inheritance_v2"
+    unique_mapping_nodes: list[UniqueMappingNodeResponse] = Field(default_factory=list)
+    row_node_bindings: list[RowNodeBindingResponse] = Field(default_factory=list)
     # TASK-094D：5 类行集合计数（与 Execute 同口径）
     raw_identified_leaf_count: int = 0
     eligible_business_leaf_count: int = 0
@@ -655,6 +688,17 @@ class ConfirmedMapping(BaseModel):
     )
 
 
+class ConfirmedNodeMapping(BaseModel):
+    node_key: str
+    representative_row_index: int | None = None
+    standard_account_id: uuid.UUID
+    standard_account_code: str
+    standard_account_name: str
+    mapping_action: str = Field("anchor", description="anchor / override")
+    apply_to_descendants: bool = True
+    selection_source: str = "user_confirmed"
+
+
 class ExecuteRequest(BaseModel):
     """执行导入请求
 
@@ -662,8 +706,9 @@ class ExecuteRequest(BaseModel):
     普通 inherited 行不需要提交（execute 自动从树继承解析）。
     """
     confirmed_mappings: list[ConfirmedMapping] = Field(
-        ..., min_length=0, description="确认的锚点 / 显式覆盖映射"
+        default_factory=list, description="确认的锚点 / 显式覆盖映射"
     )
+    confirmed_node_mappings: list[ConfirmedNodeMapping] = Field(default_factory=list)
     ignored_rows: list[int] = Field(default_factory=list, description="用户忽略的原始行序号列表")
     warnings_confirmed: bool = Field(False, description="是否确认所有警告，确认后继续")
     save_mapping_experience: bool = Field(True, description="是否保存映射经验")
@@ -721,3 +766,10 @@ class ExecuteResponse(BaseModel):
     explicit_override_count: int = 0
     unresolved_leaf_count: int = 0
     mapping_strategy_version: int = 2
+    confirmed_node_mapping_count: int = 0
+    auto_confirmed_node_count: int = 0
+    manual_confirmed_node_count: int = 0
+    duplicate_row_submit_count: int = 0
+    row_level_confirmed_mapping_count: int = 0
+    mapping_experience_saved_count: int = 0
+    unresolved_node_count: int = 0

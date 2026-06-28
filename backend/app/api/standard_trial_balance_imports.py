@@ -206,6 +206,19 @@ async def execute(
         }
         for cm in body.confirmed_mappings
     ]
+    confirmed_node_mappings = [
+        {
+            "node_key": cm.node_key,
+            "representative_row_index": cm.representative_row_index,
+            "standard_account_id": cm.standard_account_id,
+            "standard_account_code": cm.standard_account_code,
+            "standard_account_name": cm.standard_account_name,
+            "mapping_action": cm.mapping_action,
+            "apply_to_descendants": cm.apply_to_descendants,
+            "selection_source": cm.selection_source,
+        }
+        for cm in body.confirmed_node_mappings
+    ]
 
     try:
         result = await execute_standard_import(
@@ -213,6 +226,7 @@ async def execute(
             batch_id=batch_id,
             file_path=file_path,
             confirmed_mappings=confirmed_mappings,
+            confirmed_node_mappings=confirmed_node_mappings,
             ignored_rows=body.ignored_rows,
             warnings_confirmed=body.warnings_confirmed,
             save_mapping_experience=body.save_mapping_experience,

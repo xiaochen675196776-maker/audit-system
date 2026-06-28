@@ -2412,6 +2412,39 @@ function stdBuildAnchorOnlyConfirmedMappings(): import('@/types').ConfirmedMappi
   return utilBuildAnchorOnlyConfirmed(rows, selectedByRow, stdLocalMappingState.value)
 }
 
+function stdBuildConfirmedNodeMappings(): import('@/types').ConfirmedNodeMapping[] {
+  const analyze = stdAnalyzeResult.value
+  const uniqueNodes = analyze?.unique_mapping_nodes || []
+  if (!uniqueNodes.length) return []
+
+  const rowToNodeKey = new Map<number, string>()
+  for (const binding of analyze?.row_node_bindings || []) {
+    rowToNodeKey.set(binding.row_index, binding.node_key)
+  }
+  for (const rec of stdMappingRecs.value) {
+    if (rec.node_key) rowToNodeKey.set(rec.row_index, rec.node_key)
+  }
+
+  const nodeByKey = new Map(uniqueNodes.map(node => [node.node_key, node]))
+  const byNode = new Map<string, import('@/types').ConfirmedNodeMapping>()
+  for (const rowMapping of stdBuildAnchorOnlyConfirmedMappings()) {
+    const nodeKey = rowToNodeKey.get(rowMapping.row_index)
+    if (!nodeKey || byNode.has(nodeKey)) continue
+    const node = nodeByKey.get(nodeKey)
+    byNode.set(nodeKey, {
+      node_key: nodeKey,
+      representative_row_index: node?.representative_row_index ?? rowMapping.row_index,
+      standard_account_id: rowMapping.standard_account_id,
+      standard_account_code: rowMapping.standard_account_code,
+      standard_account_name: rowMapping.standard_account_name,
+      mapping_action: rowMapping.mapping_action || 'anchor',
+      apply_to_descendants: rowMapping.apply_to_descendants ?? true,
+      selection_source: rowMapping.selection_source || 'user_confirmed',
+    })
+  }
+  return Array.from(byNode.values())
+}
+
 // ANCHOR-INHERITANCE-MAPPING：未解决末级数量
 const stdUnresolvedLeafCount = computed(() => {
   return computeDynamicUnresolvedCount(stdReviewRows.value, stdLocalMappingState.value)
@@ -2569,9 +2602,12 @@ async function stdGoExecute() {
     // ANCHOR-INHERITANCE-MAPPING：只提交锚点 / 中断点 / 显式覆盖
     // 普通 inherited 行不提交，由后端通过继承映射计划自动解析
     const confirmedMappings = stdBuildAnchorOnlyConfirmedMappings()
+    const confirmedNodeMappings = stdBuildConfirmedNodeMappings()
+    const hasNodeApi = (stdAnalyzeResult.value?.unique_mapping_nodes?.length || 0) > 0
 
     const req: import('@/types').StdExecuteRequest = {
-      confirmed_mappings: confirmedMappings,
+      confirmed_mappings: hasNodeApi ? [] : confirmedMappings,
+      confirmed_node_mappings: hasNodeApi ? confirmedNodeMappings : [],
       ignored_rows: stdIgnoredRowIndexes.value,
       warnings_confirmed: stdWarningsConfirmed.value,
       save_mapping_experience: true,
@@ -2652,6 +2688,8 @@ defineExpose({
     canExecute: stdCanExecute,
     canConfirm: stdCanConfirm,
     confirmedMappings: stdBuildAnchorOnlyConfirmedMappings,
+    confirmedNodeMappings: stdBuildConfirmedNodeMappings,
+    execute: stdGoExecute,
     selectCandidate: stdSelectCandidate,
     clearMapping: stdClearMapping,
     setOverride: stdSetOverride,

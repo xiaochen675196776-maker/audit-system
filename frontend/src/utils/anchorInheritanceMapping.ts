@@ -157,6 +157,7 @@ export function rowRequiresMapping(
   state?: Partial<LocalMappingState> | null,
 ): boolean {
   if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
+  if (row.rec?.deprecated === true || row.rec?.mapping_editable === false) return false
   const role = effectiveMappingRole(row, state)
 
   if (INHERITED_LIKE_ROLES.includes(role)) return false
@@ -179,6 +180,7 @@ export function rowCanSelectStandardAccount(
   state?: Partial<LocalMappingState> | null,
 ): boolean {
   if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
+  if (row.rec?.deprecated === true || row.rec?.mapping_editable === false) return false
   const role = effectiveMappingRole(row, state)
   if (INHERITED_LIKE_ROLES.includes(role)) return false
   return true
@@ -199,6 +201,7 @@ export function rowShouldSubmitMapping(
   state?: Partial<LocalMappingState> | null,
 ): boolean {
   if (row.is_ignored || state?.ignoredRows?.[row.row_index]) return false
+  if (row.rec?.deprecated === true || row.rec?.mapping_editable === false) return false
   const role = effectiveMappingRole(row, state)
   if (!(SUBMITTABLE_ROLES as readonly string[]).includes(role)) return false
   // explicit_override 必须有用户选择，否则视为空 override 直接阻断
@@ -550,6 +553,13 @@ export function normalizeMappingRecommend(
     auto_confirm_candidate: raw?.auto_confirm_candidate ?? null,
     auto_confirm_status: raw?.auto_confirm_status ?? null,
     auto_confirm_reason: raw?.auto_confirm_reason ?? null,
+    node_key: raw?.node_key ?? null,
+    node_type: raw?.node_type ?? null,
+    node_source_row_indexes: raw?.node_source_row_indexes ?? [],
+    node_representative_row_index: raw?.node_representative_row_index ?? null,
+    node_duplicate_binding: raw?.node_duplicate_binding ?? false,
+    mapping_editable: raw?.mapping_editable ?? true,
+    deprecated: raw?.deprecated ?? false,
   }
   return rec
 }

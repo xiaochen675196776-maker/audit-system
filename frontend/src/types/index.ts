@@ -342,6 +342,13 @@ export interface MappingRecommendEntry {
   auto_confirm_candidate?: MappingCandidate | null
   auto_confirm_status?: 'unique_safe' | 'ambiguous' | 'none'
   auto_confirm_reason?: string
+  node_key?: string | null
+  node_type?: 'account' | 'auxiliary' | 'summary' | string | null
+  node_source_row_indexes?: number[]
+  node_representative_row_index?: number | null
+  node_duplicate_binding?: boolean
+  mapping_editable?: boolean
+  deprecated?: boolean
 }
 
 export interface MappingPlanSummary {
@@ -361,6 +368,30 @@ export interface MappingPlanSummary {
   inherited_without_recommendation_count?: number
 }
 
+export interface UniqueMappingNode {
+  node_key: string
+  representative_row_index: number
+  source_row_count: number
+  source_row_indexes: number[]
+  account_code?: string | null
+  account_name?: string | null
+  full_path: string
+  parent_node_key?: string | null
+  node_type: string
+  mapping_role: string
+  requires_confirmation: boolean
+  resolved_standard_account_id?: string | null
+  suggested_standard_account_id?: string | null
+  candidates: MappingCandidate[]
+}
+
+export interface RowNodeBinding {
+  row_index: number
+  node_key: string
+  representative_row_index?: number | null
+  is_representative: boolean
+}
+
 export interface StdAnalyzeResponse {
   batch_id: string
   status: string
@@ -371,6 +402,8 @@ export interface StdAnalyzeResponse {
   warnings: WarningItem[]
   mapping_summary?: MappingPlanSummary
   mapping_strategy?: string
+  unique_mapping_nodes?: UniqueMappingNode[]
+  row_node_bindings?: RowNodeBinding[]
   // TASK-094D：5 类行集合计数（与 Execute 同口径）
   raw_identified_leaf_count?: number
   eligible_business_leaf_count?: number
@@ -408,8 +441,20 @@ export interface ConfirmedMapping {
   selection_source?: 'auto_confirmed' | 'user_confirmed' | 'user_corrected'
 }
 
+export interface ConfirmedNodeMapping {
+  node_key: string
+  representative_row_index?: number | null
+  standard_account_id: string
+  standard_account_code: string
+  standard_account_name: string
+  mapping_action?: 'anchor' | 'override'
+  apply_to_descendants?: boolean
+  selection_source?: 'auto_confirmed' | 'user_confirmed' | 'user_corrected'
+}
+
 export interface StdExecuteRequest {
   confirmed_mappings: ConfirmedMapping[]
+  confirmed_node_mappings?: ConfirmedNodeMapping[]
   ignored_rows: number[]
   warnings_confirmed: boolean
   save_mapping_experience: boolean
@@ -478,6 +523,7 @@ export interface StdExecuteResponse {
   }
   raw_row_count: number
   mapping_saved_count: number
+  mapping_experience_saved_count?: number
   mapping_saved: MappingSavedInfo[]
   anchor_count?: number
   breakpoint_count?: number
@@ -485,4 +531,10 @@ export interface StdExecuteResponse {
   explicit_override_count?: number
   unresolved_leaf_count?: number
   mapping_strategy_version?: number
+  confirmed_node_mapping_count?: number
+  auto_confirmed_node_count?: number
+  manual_confirmed_node_count?: number
+  duplicate_row_submit_count?: number
+  row_level_confirmed_mapping_count?: number
+  unresolved_node_count?: number
 }

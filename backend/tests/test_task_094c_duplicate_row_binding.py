@@ -321,8 +321,10 @@ async def test_execute_dedups_confirmed_mappings_by_node_key(db):
             pass
 
     assert execute["status"] == "executed"
-    # 重复提交数 = 提交数 - 唯一节点数
-    assert execute["duplicate_row_submit_count"] >= 4
+    # TASK-095B: legacy row_index submissions are folded before execute,
+    # so node-level duplicate submit count must be zero.
+    assert execute["duplicate_row_submit_count"] == 0
+    assert execute["row_level_confirmed_mapping_count"] >= 5
     # 唯一节点数：1 个 100201 节点 + 1 个 1002 节点
     assert execute["unique_node_count"] == 2
     # entry 数：5 行（每行都参与入库，因为重复行都是叶子）

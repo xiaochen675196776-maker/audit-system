@@ -99,6 +99,266 @@ def _safe_str(val: Any) -> str:
     return str(val).strip()
 
 
+def _coerce_uuid_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(value if isinstance(value, uuid.UUID) else uuid.UUID(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _require_v2_node_key(node_key: str | None) -> str:
+    if not node_key or not str(node_key).startswith("uak:v2:"):
+        raise ValueError(f"unsupported node_key version: {node_key}")
+    return str(node_key)
+
+
+def _serialize_row_node_bindings(graph: UniqueAccountGraph) -> list[dict]:
+    bindings: list[dict] = []
+    for row_index, node_key in sorted(graph.row_to_node_key.items()):
+        un = graph.nodes_by_key.get(node_key)
+        representative = un.representative_row_index if un else None
+        bindings.append({
+            "row_index": row_index,
+            "node_key": node_key,
+            "representative_row_index": representative,
+            "is_representative": representative == row_index,
+        })
+    return bindings
+
+
+def _serialize_unique_mapping_nodes(
+    graph: UniqueAccountGraph,
+    rec_by_row: dict[int, dict] | None = None,
+) -> list[dict]:
+    rec_by_row = rec_by_row or {}
+    out: list[dict] = []
+    for node_key, un in sorted(
+        graph.nodes_by_key.items(),
+        key=lambda item: item[1].representative_row_index
+        if item[1].representative_row_index is not None
+        else 10**12,
+    ):
+        if un.representative_row_index is None:
+            continue
+        rep_rec = rec_by_row.get(un.representative_row_index, {})
+        auto = rep_rec.get("auto_confirm_candidate") or {}
+        suggested_id = (
+            un.suggested_standard_account_id
+            or rep_rec.get("suggested_standard_account_id")
+            or auto.get("standard_account_id")
+        )
+        out.append({
+            "node_key": node_key,
+            "representative_row_index": un.representative_row_index,
+            "source_row_count": len(un.source_row_indexes),
+            "source_row_indexes": list(un.source_row_indexes),
+            "account_code": un.account_code,
+            "account_name": un.account_name,
+            "full_path": un.full_path,
+            "parent_node_key": un.parent_node_key,
+            "node_type": un.node_type,
+            "mapping_role": un.mapping_role,
+            "requires_confirmation": un.requires_confirmation,
+            "resolved_standard_account_id": un.resolved_standard_account_id,
+            "suggested_standard_account_id": suggested_id,
+            "candidates": list(rep_rec.get("candidates") or un.candidates or []),
+        })
+    return out
+
+
+def _collapse_confirmed_mappings_to_node_mappings(
+    *,
+    graph: UniqueAccountGraph,
+    tree: AccountTree,
+    confirmed_mappings: list[dict] | None,
+    confirmed_node_mappings: list[dict] | None,
+) -> tuple[list[dict], int, int, int]:
+    by_node: dict[str, dict] = {}
+
+    def add_mapping(node_key_value: str | None, payload: dict, source: str) -> None:
+        node_key = _require_v2_node_key(node_key_value)
+        un = graph.nodes_by_key.get(node_key)
+        if un is None:
+            raise ValueError(f"unknown node_key: {node_key}")
+        standard_id = _coerce_uuid_str(payload.get("standard_account_id"))
+        if standard_id is None:
+            raise ValueError(f"confirmed mapping for node_key {node_key} missing standard_account_id")
+        existing = by_node.get(node_key)
+        if existing is not None:
+            existing_id = _coerce_uuid_str(existing.get("standard_account_id"))
+            if existing_id != standard_id:
+                raise ValueError(
+                    f"same node_key maps to different standard accounts: {node_key}"
+                )
+            return
+
+        representative = un.representative_row_index
+        if representative is None:
+            raise ValueError(f"node_key {node_key} has no representative row")
+        node = tree.nodes_by_row.get(representative)
+        row_payload = {
+            "row_index": representative,
+            "client_account_code": (
+                payload.get("client_account_code")
+                or (node.client_account_code if node else None)
+            ),
+            "client_account_name": (
+                payload.get("client_account_name")
+                or (node.client_account_name if node else None)
+            ),
+            "standard_account_id": uuid.UUID(standard_id),
+            "standard_account_code": payload.get("standard_account_code"),
+            "standard_account_name": payload.get("standard_account_name"),
+            "mapping_action": payload.get("mapping_action") or "anchor",
+            "apply_to_descendants": bool(payload.get("apply_to_descendants", True)),
+            "selection_source": payload.get("selection_source") or "user_confirmed",
+            "node_key": node_key,
+            "confirmation_source": source,
+        }
+        by_node[node_key] = row_payload
+
+    for cm in confirmed_node_mappings or []:
+        add_mapping(cm.get("node_key"), cm, "node")
+
+    for cm in confirmed_mappings or []:
+        try:
+            row_index = int(cm.get("row_index"))
+        except (TypeError, ValueError):
+            continue
+        node_key = graph.row_to_node_key.get(row_index)
+        if node_key is None:
+            raise ValueError(f"row_index {row_index} has no node_key binding")
+        add_mapping(node_key, cm, "row")
+
+    normalized = sorted(by_node.values(), key=lambda cm: int(cm["row_index"]))
+    auto_count = sum(
+        1 for cm in normalized
+        if cm.get("selection_source") == "auto_confirmed"
+    )
+    manual_count = len(normalized) - auto_count
+    return normalized, len(normalized), auto_count, manual_count
+
+
+def _count_unresolved_unique_nodes(
+    graph: UniqueAccountGraph,
+    tree: AccountTree,
+) -> int:
+    count = 0
+    for un in graph.nodes_by_key.values():
+        participating_rows = [
+            ri for ri in un.source_row_indexes
+            if (
+                tree.nodes_by_row.get(ri) is not None
+                and tree.nodes_by_row[ri].participates_in_entry
+                and not tree.nodes_by_row[ri].is_ignored
+            )
+        ]
+        if not participating_rows:
+            continue
+        if not any(
+            tree.nodes_by_row[ri].resolved_standard_account_id
+            for ri in participating_rows
+        ):
+            count += 1
+    return count
+
+
+def _propagate_unique_node_resolution(
+    graph: UniqueAccountGraph,
+    tree: AccountTree,
+) -> None:
+    fields = (
+        "mapping_role",
+        "mapping_mode",
+        "requires_confirmation",
+        "anchor_row_index",
+        "anchor_client_account_code",
+        "anchor_client_account_name",
+        "resolved_standard_account_id",
+        "resolved_standard_account_code",
+        "resolved_standard_account_name",
+        "suggested_standard_account_id",
+        "suggested_standard_account_code",
+        "suggested_standard_account_name",
+        "resolution_source",
+        "resolution_reason",
+        "inheritance_break_reason",
+        "auto_confirm_status",
+        "auto_confirm_reason",
+    )
+    for un in graph.nodes_by_key.values():
+        source_node = None
+        for row_index in un.source_row_indexes:
+            node = tree.nodes_by_row.get(row_index)
+            if node is not None and node.resolved_standard_account_id:
+                source_node = node
+                break
+        if source_node is None:
+            continue
+        for row_index in un.source_row_indexes:
+            node = tree.nodes_by_row.get(row_index)
+            if node is None or node is source_node:
+                continue
+            for field_name in fields:
+                setattr(node, field_name, getattr(source_node, field_name))
+            node.inheritance_evidence = list(source_node.inheritance_evidence)
+
+
+def _apply_confirmed_descendant_propagation(
+    tree: AccountTree,
+    confirmed_mappings: list[dict],
+) -> None:
+    confirmed_rows = {
+        int(cm["row_index"])
+        for cm in confirmed_mappings
+        if cm.get("row_index") is not None
+    }
+
+    def iter_descendants(row_index: int):
+        for child_row in tree.children_by_row.get(row_index, []):
+            yield child_row
+            yield from iter_descendants(child_row)
+
+    for cm in confirmed_mappings:
+        if not cm.get("apply_to_descendants", True):
+            continue
+        try:
+            source_row = int(cm.get("row_index"))
+        except (TypeError, ValueError):
+            continue
+        source = tree.nodes_by_row.get(source_row)
+        if source is None or not source.resolved_standard_account_id:
+            continue
+        for child_row in iter_descendants(source_row):
+            if child_row in confirmed_rows:
+                continue
+            node = tree.nodes_by_row.get(child_row)
+            if node is None or node.is_ignored:
+                continue
+            if node.mapping_role in {"anchor", "breakpoint", "explicit_override"}:
+                continue
+            node.mapping_role = "inherited"
+            node.mapping_mode = "inherited_ancestor"
+            node.requires_confirmation = False
+            node.anchor_row_index = source.row_index
+            node.anchor_client_account_code = source.client_account_code
+            node.anchor_client_account_name = source.client_account_name
+            node.resolved_standard_account_id = source.resolved_standard_account_id
+            node.resolved_standard_account_code = source.resolved_standard_account_code
+            node.resolved_standard_account_name = source.resolved_standard_account_name
+            node.suggested_standard_account_id = source.suggested_standard_account_id
+            node.suggested_standard_account_code = source.suggested_standard_account_code
+            node.suggested_standard_account_name = source.suggested_standard_account_name
+            node.resolution_source = "node_binding"
+            node.resolution_reason = "inherited from confirmed node mapping"
+            node.inheritance_break_reason = None
+            node.inheritance_evidence = [f"anchor_row_index={source.row_index}"]
+            node.auto_confirm_status = source.auto_confirm_status
+            node.auto_confirm_reason = source.auto_confirm_reason
+
+
 def _resolve_hierarchy_parent_row_index(
     h: dict,
     code_to_row_index: dict[str, int],
@@ -1245,6 +1505,7 @@ async def analyze_standard_import(
     unique_graph = build_unique_account_graph(
         tree=tree,
         rows_meta=rows_meta_for_tree,
+        customer_label=customer_label,
     )
     row_to_node_key_map = dict(unique_graph.row_to_node_key)
     node_by_key_map = dict(unique_graph.nodes_by_key)
@@ -1376,12 +1637,14 @@ async def analyze_standard_import(
             rec["mapping_editable"] = (
                 un.representative_row_index == ri and un.node_type == "account"
             )
+            rec["deprecated"] = bool(rec["node_duplicate_binding"])
         else:
             rec["node_type"] = "account"
             rec["node_source_row_indexes"] = [ri] if ri is not None else []
             rec["node_representative_row_index"] = ri
             rec["node_duplicate_binding"] = False
             rec["mapping_editable"] = ri is not None
+            rec["deprecated"] = False
         mapping_recommendations.append(rec)
 
     # TASK-078：辅助核算明细行继承父科目候选注入。
@@ -1699,6 +1962,16 @@ async def analyze_standard_import(
             rec["auto_confirm_candidate"] = None
 
     # 20. 未解析叶子行单独检查（基于新映射角色 + 修正 inheritance_break）
+    unique_graph = build_unique_account_graph(
+        tree=tree,
+        rows_meta=rows_meta_for_tree,
+        customer_label=customer_label,
+    )
+    row_to_node_key_map = dict(unique_graph.row_to_node_key)
+    node_by_key_map = dict(unique_graph.nodes_by_key)
+    unique_mapping_nodes = _serialize_unique_mapping_nodes(unique_graph, rec_by_row)
+    row_node_bindings = _serialize_row_node_bindings(unique_graph)
+
     for rec in mapping_recommendations:
         if not rec.get("participates_in_entry", True):
             continue
@@ -1790,6 +2063,8 @@ async def analyze_standard_import(
         "warnings": warnings,
         "mapping_summary": mapping_summary_to_dict(mapping_summary),
         "mapping_strategy": "anchor_inheritance_v2",
+        "unique_mapping_nodes": unique_mapping_nodes,
+        "row_node_bindings": row_node_bindings,
         # TASK-094C：唯一节点图统计（前端可直接展示压缩率）
         "unique_node_count": len(unique_graph.nodes_by_key),
         "account_node_count": account_node_count,
@@ -1844,7 +2119,8 @@ async def execute_standard_import(
     batch_id: uuid.UUID | str,
     file_path: str,
     *,
-    confirmed_mappings: list[dict],
+    confirmed_mappings: list[dict] | None = None,
+    confirmed_node_mappings: list[dict] | None = None,
     ignored_rows: list[int] | None = None,
     warnings_confirmed: bool = False,
     save_mapping_experience: bool = True,
@@ -1863,6 +2139,9 @@ async def execute_standard_import(
     """
     import time as _time
     _timings: dict[str, float] = {}
+    confirmed_mappings = confirmed_mappings or []
+    confirmed_node_mappings = confirmed_node_mappings or []
+    row_level_confirmed_mapping_count = len(confirmed_mappings)
 
     # TASK-091：防御性转换 batch_id 为 UUID 对象（ORM id 字段是 uuid.UUID）
     if isinstance(batch_id, str):
@@ -1896,7 +2175,7 @@ async def execute_standard_import(
     # TASK-083: 如果没有确认映射，直接跳过解析和执行，避免大文件（如205201 98k行）空跑。
     # 不得返回 status=executed，否则调用方会误判「导入成功」。改为 skipped 语义，
     # 验收脚本必须把 skipped 视为未完成导入（除非显式配置允许跳过）。
-    if not confirmed_mappings:
+    if not confirmed_mappings and not confirmed_node_mappings:
         logger.info("execute_standard_import: no confirmed mappings, skipping execution")
         if batch.status not in ("previewed", "analyzed"):
             # 保留批次原状态，不擅自改成 executed
@@ -1907,6 +2186,13 @@ async def execute_standard_import(
             "entry_count": 0,
             "mapping_saved_count": 0,
             "raw_row_count": 0,
+            "confirmed_node_mapping_count": 0,
+            "auto_confirmed_node_count": 0,
+            "manual_confirmed_node_count": 0,
+            "duplicate_row_submit_count": 0,
+            "row_level_confirmed_mapping_count": row_level_confirmed_mapping_count,
+            "mapping_experience_saved_count": 0,
+            "unresolved_node_count": 0,
         }
 
     _t0 = _time.time()
@@ -1983,6 +2269,14 @@ async def execute_standard_import(
     # 避免后续逐行 DB 查询（98k 行 × 2 次查询 = 196k 次 → 1 次批量查询）。
     all_sa_ids: set[uuid.UUID] = set()
     for cm in confirmed_mappings:
+        sid = cm.get("standard_account_id")
+        if not sid:
+            continue
+        try:
+            all_sa_ids.add(sid if isinstance(sid, uuid.UUID) else uuid.UUID(str(sid)))
+        except (ValueError, TypeError):
+            pass
+    for cm in confirmed_node_mappings:
         sid = cm.get("standard_account_id")
         if not sid:
             continue
@@ -2203,6 +2497,23 @@ async def execute_standard_import(
         ignored_rows=ignored_row_set,
     )
 
+    pre_resolution_unique_graph = build_unique_account_graph(
+        tree=tree_exec,
+        rows_meta=rows_meta_exec,
+        customer_label=customer_label,
+    )
+    (
+        confirmed_mappings,
+        confirmed_node_mapping_count,
+        auto_confirmed_node_count,
+        manual_confirmed_node_count,
+    ) = _collapse_confirmed_mappings_to_node_mappings(
+        graph=pre_resolution_unique_graph,
+        tree=tree_exec,
+        confirmed_mappings=confirmed_mappings,
+        confirmed_node_mappings=confirmed_node_mappings,
+    )
+
     mapping_plan = await resolve_mapping_plan(
         db=db,
         tree=tree_exec,
@@ -2213,15 +2524,24 @@ async def execute_standard_import(
         mode="execute",
     )
     tree_exec = mapping_plan.tree
-    leaf_standard_accounts = mapping_plan.leaf_standard_accounts
+    _apply_confirmed_descendant_propagation(tree_exec, confirmed_mappings)
 
     # TASK-094C：构建唯一节点图（用于统计报告 + DB 去重，不改变解析结果）
     execute_unique_graph = build_unique_account_graph(
         tree=tree_exec,
         rows_meta=rows_meta_exec,
+        customer_label=customer_label,
     )
+    _propagate_unique_node_resolution(execute_unique_graph, tree_exec)
+    execute_unique_graph = build_unique_account_graph(
+        tree=tree_exec,
+        rows_meta=rows_meta_exec,
+        customer_label=customer_label,
+    )
+    leaf_standard_accounts = resolve_leaf_standard_accounts(tree_exec)
     execute_node_by_key: dict[str, UniqueAccountNode] = dict(execute_unique_graph.nodes_by_key)
     execute_row_to_node_key: dict[int, str] = dict(execute_unique_graph.row_to_node_key)
+    unresolved_node_count = _count_unresolved_unique_nodes(execute_unique_graph, tree_exec)
 
     # 统计重复提交行数（同 node_key 不同 row_index 的 confirmed 提交）
     duplicate_row_bindings: int = 0
@@ -2407,6 +2727,12 @@ async def execute_standard_import(
         is_auto_skipped = ri.row_index in execute_auto_skip_rows
         node = tree_exec.nodes_by_row.get(ri.row_index)
         resolved_sa_id = node.resolved_standard_account_id if node else None
+        row_node_key = execute_row_to_node_key.get(ri.row_index)
+        anchor_node_key = None
+        if node and node.anchor_row_index is not None:
+            anchor_node_key = execute_row_to_node_key.get(node.anchor_row_index)
+        if node and node.mapping_role in {"anchor", "breakpoint", "explicit_override"}:
+            anchor_node_key = anchor_node_key or row_node_key
 
         if is_user_ignored or is_auto_skipped:
             mapping_status = "ignored"
@@ -2454,7 +2780,9 @@ async def execute_standard_import(
             mapping_status=mapping_status,
             mapping_role=node.mapping_role if node else None,
             mapping_mode=node.mapping_mode if node else None,
-            mapping_source=node.resolution_source if node else None,
+            mapping_source="node_binding" if resolved_sa_uuid else (node.resolution_source if node else None),
+            node_key=row_node_key,
+            anchor_node_key=anchor_node_key,
             mapping_anchor_raw_row_id=anchor_row_id_for_self,
             inheritance_reason=node.resolution_reason if node else None,
             inheritance_break_reason=node.inheritance_break_reason if node else None,
@@ -2857,6 +3185,7 @@ async def execute_standard_import(
         "amount_reconciliation_deprecated": True,
         "raw_row_count": len(row_inputs),
         "mapping_saved_count": len(mapping_saved),
+        "mapping_experience_saved_count": len(mapping_saved),
         "mapping_saved": mapping_saved,
         "anchor_count": role_count["anchor"],
         "breakpoint_count": role_count["breakpoint"],
@@ -2868,6 +3197,11 @@ async def execute_standard_import(
             if n.mapping_role == "unresolved" and n.participates_in_entry
         ),
         "mapping_strategy_version": mapping_strategy_version,
+        "confirmed_node_mapping_count": confirmed_node_mapping_count,
+        "auto_confirmed_node_count": auto_confirmed_node_count,
+        "manual_confirmed_node_count": manual_confirmed_node_count,
+        "row_level_confirmed_mapping_count": row_level_confirmed_mapping_count,
+        "unresolved_node_count": unresolved_node_count,
         "debug_timings": _timings,
         # TASK-094C：唯一节点图统计
         "unique_node_count": len(execute_unique_graph.nodes_by_key),

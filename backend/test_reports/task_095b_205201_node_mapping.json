@@ -1,0 +1,33 @@
+{
+  "task": "TASK-095B",
+  "generated_at": "2026-06-28T15:26:23",
+  "file_name": "205201-2023.xls",
+  "customer_label": "205201",
+  "raw_row_count": 98456,
+  "unique_node_count": 715,
+  "analyze_unique_mapping_nodes": 715,
+  "row_node_bindings": 98456,
+  "confirmed_node_mapping_count": 714,
+  "auto_confirmed_node_count": 0,
+  "manual_confirmed_node_count": 714,
+  "duplicate_row_submit_count": 0,
+  "row_level_confirmed_mapping_count": 0,
+  "mapping_experience_saved_count": 713,
+  "entry_count": 18917,
+  "unresolved_node_count": 0,
+  "ignored_rows": 0,
+  "max_business_amount_difference": "0.00",
+  "preview_seconds": 1.81,
+  "analyze_seconds": 92.14,
+  "execute_seconds": 49.56,
+  "total_seconds": 143.5,
+  "gates": {
+    "confirmed_node_mapping_count_lte_unique_nodes": true,
+    "duplicate_row_submit_count_zero": true,
+    "row_level_confirmed_mapping_count_zero": true,
+    "mapping_experience_lte_confirmed_nodes": true,
+    "unresolved_node_count_zero": true,
+    "entry_count_positive": true,
+    "amount_difference_zero": true
+  }
+}

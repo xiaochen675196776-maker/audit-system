@@ -77,6 +77,12 @@ class StandardTrialBalanceRawRow(Base):
         String(80), nullable=True,
         comment="映射来源: company_history/code_exact/name_exact/semantic_alias/inherited_ancestor/user_override..."
     )
+    node_key: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True, comment="Unique account node key"
+    )
+    anchor_node_key: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Anchor unique account node key"
+    )
     mapping_anchor_raw_row_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("standard_trial_balance_raw_rows.id", ondelete="SET NULL"),
         nullable=True, comment="追溯继承自哪个原始行"
