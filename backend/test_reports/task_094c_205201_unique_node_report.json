@@ -1,0 +1,31 @@
+{
+  "task": "TASK-094C",
+  "generated_at": "2026-06-28T13:01:28",
+  "summary": {
+    "file_name": "205201-2023.xls",
+    "customer_label": "205201",
+    "total_rows": 98456,
+    "total_nodes": 98456,
+    "unique_account_code_count": 714,
+    "unique_account_path_count": 714,
+    "duplicate_code_count": 491,
+    "duplicate_path_count": 491,
+    "structural_summary_count": 49949,
+    "anchor_count": 9876,
+    "inherited_count": 630,
+    "breakpoint_count": 0,
+    "explicit_override_count": 0,
+    "unresolved_count": 8718,
+    "full_recommendation_node_count": 700,
+    "unique_node_count": 715,
+    "account_node_count": 714,
+    "auxiliary_node_count": 0,
+    "summary_node_count": 1,
+    "duplicate_binding_count": 97741,
+    "raw_row_compression_ratio": 67.89,
+    "t_preview": 2.04,
+    "t_analyze": 120.34,
+    "t_total": 122.38,
+    "analyze_status": "ok"
+  }
+}

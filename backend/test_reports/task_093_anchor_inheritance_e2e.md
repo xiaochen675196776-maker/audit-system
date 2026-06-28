@@ -1,6 +1,6 @@
 # TASK-093 锚点继承式映射真实生产闭环回归报告（含 TASK-094D 口径）
 
-**生成时间**: 2026-06-27 23:59:47
+**生成时间**: 2026-06-28 13:01:29
 
 **策略版本**: anchor_inheritance_v2 (mapping_strategy_version=2)
 
@@ -29,18 +29,18 @@
 - 人工 fixture 确认: 1906
 - 唯一安全候选自动确认: 17494
 - 继承减少比: 0.0766
-- 总耗时: 230.86s
+- 总耗时: 280.58s
 
 ## 2. 逐表统计（按 TASK-094D 新口径）
 
 | 文件 | Analyze | 前端确认模拟 | Execute | entry | 业务末级 | ignored | 零模板 | 汇总行 | 重复汇总 | 动态未解决 | inherited | 耗时 |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 会展中心余额表.xlsx | success | fixture 11 + unique 51 | executed | 66 | 66 | 0 | 123 | 7 | 0 | 0 | 62 | 2.19 |
-| 1-12科目余额表.xls | success | fixture 222 + unique 154 | executed | 924 | 924 | 0 | 0 | 7 | 0 | 0 | 591 | 3.6 |
-| 205201-2023.xls | success | fixture 1447 + unique 17154 | executed | 18917 | 18917 | 0 | 25405 | 3877 | 0 | 0 | 621 | 220.68 |
-| 科目余额表2023年导入.xls | success | fixture 66 + unique 26 | executed | 160 | 160 | 0 | 0 | 2 | 0 | 0 | 77 | 0.88 |
-| 医疗3月31日序时账及余额表.xlsx | success | fixture 11 + unique 43 | executed | 87 | 87 | 0 | 2 | 8 | 0 | 0 | 82 | 1.34 |
-| 科目余额表-成都迪康-240930.xls | success | fixture 149 + unique 66 | executed | 293 | 293 | 0 | 0 | 2 | 0 | 0 | 129 | 2.17 |
+| 会展中心余额表.xlsx | success | fixture 11 + unique 51 | executed | 66 | 66 | 0 | 123 | 7 | 0 | 0 | 62 | 2.24 |
+| 1-12科目余额表.xls | success | fixture 222 + unique 154 | executed | 924 | 924 | 0 | 0 | 7 | 0 | 0 | 591 | 4.21 |
+| 205201-2023.xls | success | fixture 1447 + unique 17154 | executed | 18917 | 18917 | 0 | 25405 | 3877 | 0 | 0 | 621 | 269.14 |
+| 科目余额表2023年导入.xls | success | fixture 66 + unique 26 | executed | 160 | 160 | 0 | 0 | 2 | 0 | 0 | 77 | 1.02 |
+| 医疗3月31日序时账及余额表.xlsx | success | fixture 11 + unique 43 | executed | 87 | 87 | 0 | 2 | 8 | 0 | 0 | 82 | 1.5 |
+| 科目余额表-成都迪康-240930.xls | success | fixture 149 + unique 66 | executed | 293 | 293 | 0 | 0 | 2 | 0 | 0 | 129 | 2.47 |
 
 ## 3. 业务金额勾稽（新口径）
 
@@ -62,4 +62,4 @@
 - entry_count == eligible_business_leaf_count: ✅
 - 5 类行集合勾稽: ✅
 - 业务金额勾稽差 < 0.01: ✅
-- 总耗时: 230.86s
+- 总耗时: 280.58s
