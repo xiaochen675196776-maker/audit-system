@@ -1,0 +1,28 @@
+name: Fixture Sensitive Scan
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  sensitive-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run sensitive data scanner
+        run: |
+          python scripts/check_sensitive_fixture.py --strict --root .
+      - name: Run fixture governance test
+        run: |
+          pip install pytest
+          cd backend
+          pytest tests/test_task_094a_fixture_governance.py -v --tb=short
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./_test_sensitive.db
