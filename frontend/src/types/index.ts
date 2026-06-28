@@ -452,6 +452,132 @@ export interface ConfirmedNodeMapping {
   selection_source?: 'auto_confirmed' | 'user_confirmed' | 'user_corrected'
 }
 
+// ===== TASK-096A：唯一 NodeKey 确认列表相关类型 =====
+
+/**
+ * 前端组合的「唯一节点确认行」。
+ *
+ * 来源：
+ * - 后端 `unique_mapping_nodes` 提供主键、代表行、绑定行集合、映射角色、推荐候选；
+ * - 前端本地状态（selectedByNodeKey / explicitOverrideNodeKeys 等）补 selected_candidate / is_ignored / explicit_override。
+ *
+ * 注意：本接口不重复后端 UniqueMappingNode 的所有字段，
+ * 仅前端展示与逻辑所需的字段；后端全量字段保留在 `UniqueMappingNode`。
+ */
+export interface UniqueNodeReviewRow {
+  /** 后端主键：唯一节点的稳定身份 */
+  node_key: string
+  /** 后端建议的代表行（用于展开 binding 时高亮） */
+  representative_row_index: number
+  /** 绑定的原始行数量 */
+  source_row_count: number
+  /** 绑定的原始行 indexes（来自 row_node_bindings） */
+  source_row_indexes: number[]
+  /** 客户科目代码（聚合自代表行 / hierarchy） */
+  account_code: string | null
+  /** 客户科目名称 */
+  account_name: string | null
+  /** 客户层级完整路径（聚合自 hierarchy） */
+  full_path: string
+  /** 父节点 node_key（如有） */
+  parent_node_key: string | null
+  /** 后端节点类型 */
+  node_type: 'account' | 'auxiliary' | 'summary' | string
+  /** 后端映射角色 */
+  mapping_role: string
+  /** 后端是否要求用户确认 */
+  requires_confirmation: boolean
+  /** 后端自动解析结果 */
+  resolved_standard_account_id: string | null
+  resolved_standard_account_code?: string | null
+  resolved_standard_account_name?: string | null
+  /** 后端最高分推荐候选（未确认） */
+  suggested_standard_account_id: string | null
+  suggested_standard_account_code?: string | null
+  suggested_standard_account_name?: string | null
+  /** 推荐候选 */
+  candidates: MappingCandidate[]
+  /** 前端：当前用户选择的标准科目（candidate 形态） */
+  selected_candidate?: MappingCandidate | null
+  /** 前端：是否显式开启 override（仅对 inherited 节点有意义） */
+  explicit_override?: boolean
+  /** 前端：是否被业务忽略（绑定行全忽略时为 true） */
+  is_ignored?: boolean
+  /** 警告文本（聚合自 amounts/errors） */
+  warnings?: string[]
+  /** 后端解析来源（如 auto_unique_safe / unique_safe / fixture_confirmed） */
+  resolution_source?: string | null
+  /** 后端解析原因 */
+  resolution_reason?: string | null
+  /** 后端继承证据（仅 inherited） */
+  inheritance_evidence?: string[]
+}
+
+/**
+ * 唯一节点模式下的本地映射状态（行级 → NodeKey 级升级）。
+ *
+ * 严格禁止在 NodeKey 模式下把 selectedByRow / explicitOverrideRows 作为主状态。
+ * 旧后端无 unique_mapping_nodes 时，组件仍可使用 selectedByRow 等行级字段，
+ * 但本任务完成时，NodeKey 模式的主表与提交构造必须只依赖本结构。
+ */
+export interface NodeMappingLocalState {
+  /** 按 node_key 维度的标准科目选择 */
+  selectedByNodeKey: Record<string, MappingCandidate | null | undefined>
+  /** 按 node_key 维度的显式覆盖开关（仅 inherited 节点允许） */
+  explicitOverrideNodeKeys: Record<string, boolean | undefined>
+  /** 按 node_key 维度的是否业务忽略 */
+  ignoredNodeKeys: Record<string, boolean | undefined>
+  /** 按 node_key 维度的展开状态 */
+  expandedNodeKeys: Record<string, boolean | undefined>
+}
+
+/**
+ * 旧行级模式下，同 node_key 不同目标时的冲突描述。
+ *
+ * 用于：
+ * - 阻止确认 / 执行（canConfirm=false / canExecute=false）
+ * - 渲染冲突提示（节点 + 两个原始行 + 两个目标）
+ */
+export interface NodeSelectionConflict {
+  node_key: string
+  representative_row_index: number | null
+  bound_row_indexes: number[]
+  conflicting_selections: Array<{
+    row_index: number
+    standard_account_id: string
+    standard_account_code: string
+    standard_account_name: string
+    client_account_code: string | null
+    client_account_name: string | null
+  }>
+}
+
+/**
+ * NodeKey 模式下的统计指标。
+ *
+ * 所有计数均按唯一节点计算，不按绑定原始行重复计算。
+ */
+export interface NodeMappingStats {
+  /** 唯一节点总数 */
+  total_node_count: number
+  /** 唯一节点中需要用户确认的数量 */
+  confirmation_required_count: number
+  /** 已映射节点（已选 candidate 或自动 unique_safe） */
+  mapped_count: number
+  /** 未映射节点（需要选择但尚未选择） */
+  unmapped_count: number
+  /** 警告节点（聚合自 analyze warnings） */
+  warning_count: number
+  /** 显式覆盖节点（inherited + explicit_override 开启） */
+  explicit_override_count: number
+  /** 自动继承节点（inherited 且未 override） */
+  inherited_count: number
+  /** 待确认锚点（anchor/breakpoint + requires_confirmation + 未选） */
+  anchor_pending_count: number
+  /** 绑定原始行总数 */
+  bound_raw_row_count: number
+}
+
 export interface StdExecuteRequest {
   confirmed_mappings: ConfirmedMapping[]
   confirmed_node_mappings?: ConfirmedNodeMapping[]

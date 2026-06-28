@@ -189,12 +189,21 @@
                 </div>
                 <div class="std-match-header-actions">
                   <el-button size="small" @click="stdStepBack">上一步：字段映射</el-button>
-                  <el-radio-group v-model="stdRowFilter" size="small" class="std-row-filter">
-                    <el-radio-button value="all">全部 {{ stdReviewRows.length }}</el-radio-button>
-                    <el-radio-button value="unmapped">未匹配 {{ stdUnmappedCount }}</el-radio-button>
-                    <el-radio-button value="matched">已匹配 {{ stdMatchedCount }}</el-radio-button>
-                    <el-radio-button value="ignored">已忽略 {{ stdIgnoredRowIndexes.length }}</el-radio-button>
-                    <el-radio-button value="warning">有警告 {{ stdWarningRowCount }}</el-radio-button>
+                  <el-radio-group
+                    :model-value="nodeMapping.isNodeKeyMode.value ? stdNodeFilter : stdRowFilter"
+                    @update:model-value="(v: any) => nodeMapping.isNodeKeyMode.value ? stdNodeFilter = v : stdRowFilter = v"
+                    size="small"
+                    class="std-row-filter"
+                  >
+                    <el-radio-button v-if="!nodeMapping.isNodeKeyMode.value" value="all">全部 {{ stdReviewRows.length }}</el-radio-button>
+                    <el-radio-button v-if="!nodeMapping.isNodeKeyMode.value" value="unmapped">未匹配 {{ stdUnmappedCount }}</el-radio-button>
+                    <el-radio-button v-if="!nodeMapping.isNodeKeyMode.value" value="matched">已匹配 {{ stdMatchedCount }}</el-radio-button>
+                    <el-radio-button v-if="!nodeMapping.isNodeKeyMode.value" value="ignored">已忽略 {{ stdIgnoredRowIndexes.length }}</el-radio-button>
+                    <el-radio-button v-if="!nodeMapping.isNodeKeyMode.value" value="warning">有警告 {{ stdWarningRowCount }}</el-radio-button>
+                    <el-radio-button v-if="nodeMapping.isNodeKeyMode.value" value="all">全部 {{ nodeMapping.nodeStats.value.total_node_count }}</el-radio-button>
+                    <el-radio-button v-if="nodeMapping.isNodeKeyMode.value" value="unmapped">未匹配 {{ nodeMapping.nodeStats.value.unmapped_count }}</el-radio-button>
+                    <el-radio-button v-if="nodeMapping.isNodeKeyMode.value" value="matched">已匹配 {{ nodeMapping.nodeStats.value.mapped_count }}</el-radio-button>
+                    <el-radio-button v-if="nodeMapping.isNodeKeyMode.value" value="warning">有警告 {{ nodeMapping.nodeStats.value.warning_count }}</el-radio-button>
                   </el-radio-group>
                 </div>
               </div>
@@ -241,7 +250,35 @@
               </div>
 
               <div class="std-match-table-wrap">
+                <!-- TASK-096A：NodeKey 模式（后端返回 unique_mapping_nodes）使用唯一节点主表 -->
+                <UniqueNodeMappingTable
+                  v-if="nodeMapping.isNodeKeyMode.value"
+                  :rows="nodeMapping.uniqueNodeRows.value"
+                  :stats="nodeMapping.nodeStats.value"
+                  :conflicts="nodeMapping.detectNodeSelectionConflicts()"
+                  :expanded-keys="Object.keys(nodeMapping.expandedNodeKeys.value).filter(k => nodeMapping.expandedNodeKeys.value[k])"
+                  :search-queries="nodeMapping.searchQueriesByNodeKey.value"
+                  :search-results="nodeMapping.searchResultsByNodeKey.value"
+                  :row-by-index="nodeMapping.rowByIndex.value"
+                  :filter-mode="stdNodeFilter"
+                  :picker-node-key="stdNodePickerKey"
+                  :role-of="(node) => nodeMapping.effectiveNodeMappingRole(node)"
+                  :display-of="(node) => nodeMapping.nodeDisplayStatus(node)"
+                  :requires-mapping="(node) => nodeMapping.nodeRequiresMapping(node)"
+                  :warning-count-for="(node) => nodeMapping.nodeWarnings(node).length"
+                  :get-bound-row-indexes="(node) => nodeMapping.rowBindingsByNodeKey.value.get(node.node_key) || []"
+                  @select-candidate="(node, c) => nodeMapping.selectNodeCandidate(node.node_key, c)"
+                  @select-searched="(node, sa) => stdSelectSearchedNodeAccount(node, sa)"
+                  @clear="(node) => nodeMapping.clearNodeCandidate(node.node_key)"
+                  @set-override="(node) => nodeMapping.setNodeOverride(node.node_key)"
+                  @restore-inheritance="(node) => nodeMapping.restoreNodeInheritance(node.node_key)"
+                  @search-input="(node, kw) => nodeMapping.searchStandardAccounts(node.node_key, kw)"
+                  @toggle-expand="(node) => nodeMapping.toggleNodeExpanded(node.node_key)"
+                  @open-picker="(node) => stdNodePickerKey = (stdNodePickerKey === node.node_key ? null : node.node_key)"
+                />
+                <!-- 旧行级兼容模式（后端无 unique_mapping_nodes）保留原始行表 -->
                 <el-table
+                  v-else
                   :data="stdFilteredReviewRows"
                   stripe
                   size="small"
@@ -491,7 +528,12 @@
                   </el-table-column>
                 </el-table>
               </div>
-              <div v-if="stdFilteredReviewRows.length === 0" class="std-empty-filter">当前筛选下没有行。</div>
+              <div
+                v-if="(nodeMapping.isNodeKeyMode.value ? nodeMapping.uniqueNodeRows.value.length : stdFilteredReviewRows.length) === 0"
+                class="std-empty-filter"
+              >
+                {{ nodeMapping.isNodeKeyMode.value ? '当前筛选下没有唯一节点。' : '当前筛选下没有行。' }}
+              </div>
             </div>
 
             <div class="step-footer">
@@ -1164,12 +1206,16 @@ import {
   normalizeMappingRecommend,
   type LocalMappingState,
 } from '@/utils/anchorInheritanceMapping'
+import { useUniqueNodeMapping } from '@/composables/useUniqueNodeMapping'
+import UniqueNodeMappingTable from '@/components/standard-import/UniqueNodeMappingTable.vue'
 import type {
   Company,
   ImportPreviewResponse,
   ImportExecuteResponse,
   MappingRow,
   ImportResultDisplay,
+  UniqueNodeReviewRow,
+  MappingCandidate,
 } from '@/types'
 
 // ===== 步骤定义 =====
@@ -2017,6 +2063,9 @@ const stdLocalMappingState = computed<LocalMappingState>(() => ({
   ignoredRows: stdIgnoredRows.value,
 }))
 
+const stdNodeFilter = ref<'all' | 'unmapped' | 'mapped' | 'warning'>('all')
+const stdNodePickerKey = ref<string | null>(null)
+
 function stdRowHasIdentity(row: StdReviewRow): boolean {
   return !!(row.client_account_code || row.client_account_name)
 }
@@ -2211,6 +2260,44 @@ const stdHasWarnings = computed(() => stdWarnings.value.length > 0)
 // 警告确认状态（步骤 3 中使用）
 const stdWarningsConfirmed = ref(false)
 
+// ===== TASK-096A：NodeKey 模式 composable =====
+const nodeMapping = useUniqueNodeMapping({
+  analyzeResult: stdAnalyzeResult as any,
+  warnings: stdWarnings as any,
+  warningsConfirmed: stdWarningsConfirmed as any,
+})
+
+// 旧行级 state 写入 → 同步到 nodeMapping 旧字段，确保冲突检测能扫到
+// 仅在 NodeKey 模式下进行桥接（保证旧行级写入不丢）
+watch(
+  () => stdConfirmedMap.value,
+  (val) => {
+    nodeMapping.selectedByRow.value = val
+  },
+  { deep: true },
+)
+watch(
+  () => stdExplicitOverrideRows.value,
+  (val) => {
+    nodeMapping.explicitOverrideRows.value = val
+  },
+  { deep: true },
+)
+watch(
+  () => stdConfirmedUnresolvedRows.value,
+  (val) => {
+    nodeMapping.confirmedUnresolvedRows.value = val
+  },
+  { deep: true },
+)
+watch(
+  () => stdIgnoredRows.value,
+  (val) => {
+    nodeMapping.ignoredRows.value = val
+  },
+  { deep: true },
+)
+
 function levelSourceLabel(s: string): string {
   const map: Record<string, string> = {
     code: '代码', code_prefix: '代码前缀', indent: '缩进',
@@ -2252,6 +2339,14 @@ function stdSelectCandidate(ri: number, candidate: import('@/types').MappingCand
   const row = stdReviewRowByIndex(ri)
   if (row?.rec?.mapping_role === 'unresolved') {
     stdConfirmedUnresolvedRows.value[ri] = true
+  }
+  // TASK-096A：NodeKey 模式下同步写入 selectedByNodeKey，
+  // 保证 buildConfirmedNodeMappingsFromNodeState 能直接由 NodeKey 状态生成提交
+  if (nodeMapping.isNodeKeyMode.value) {
+    const nodeKey = row?.rec?.node_key
+    if (nodeKey) {
+      nodeMapping.selectNodeCandidate(nodeKey, candidate)
+    }
   }
   // 切换映射后重置警告确认
   if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
@@ -2460,10 +2555,22 @@ const stdParticipatingLeafCount = computed(() => {
 const stdCanConfirm = computed(() => {
   if (stdBlockingErrors.value.length > 0) return false
   if (stdUnmappedCount.value > 0) return false
+  // TASK-096A：NodeKey 模式下额外检查冲突 + 节点未映射
+  if (nodeMapping.isNodeKeyMode.value) {
+    if (nodeMapping.detectNodeSelectionConflicts().length > 0) return false
+    if (nodeMapping.nodeStats.value.unmapped_count > 0) return false
+  }
   return true
 })
 
 const stdConfirmHint = computed(() => {
+  // TASK-096A：NodeKey 模式下优先用 node 级提示
+  if (nodeMapping.isNodeKeyMode.value) {
+    if (nodeMapping.detectNodeSelectionConflicts().length > 0) return '存在 NodeKey 冲突，请先解决同节点不同目标的选择'
+    if (nodeMapping.nodeStats.value.unmapped_count > 0) return `还有 ${nodeMapping.nodeStats.value.unmapped_count} 个唯一节点未映射到标准科目`
+    if (stdBlockingErrors.value.length > 0) return `还有 ${stdBlockingErrors.value.length} 条错误需要处理`
+    return ''
+  }
   if (stdUnmappedCount.value > 0) return `还有 ${stdUnmappedCount.value} 个科目未映射到标准科目`
   if (stdBlockingErrors.value.length > 0) return `还有 ${stdBlockingErrors.value.length} 条错误需要处理`
   return ''
@@ -2476,6 +2583,11 @@ const stdCanExecute = computed(() => {
   if (stdExecuting.value) return false
   // ANCHOR-INHERITANCE-MAPPING：未解析末级必须为 0
   if (stdUnresolvedLeafCount.value > 0) return false
+  // TASK-096A：NodeKey 模式额外检查
+  if (nodeMapping.isNodeKeyMode.value) {
+    if (nodeMapping.detectNodeSelectionConflicts().length > 0) return false
+    if (nodeMapping.nodeStats.value.unmapped_count > 0) return false
+  }
   // 有警告但未确认时，禁止执行
   if (stdWarnings.value.length > 0 && !stdWarningsConfirmed.value) return false
   return true
@@ -2483,6 +2595,11 @@ const stdCanExecute = computed(() => {
 
 const stdExecuteHint = computed(() => {
   if (stdBlockingErrors.value.length > 0) return `还有 ${stdBlockingErrors.value.length} 条错误需要处理`
+  // TASK-096A：NodeKey 冲突 / 未映射优先提示
+  if (nodeMapping.isNodeKeyMode.value) {
+    if (nodeMapping.detectNodeSelectionConflicts().length > 0) return '存在 NodeKey 冲突，请先解决同节点不同目标的选择'
+    if (nodeMapping.nodeStats.value.unmapped_count > 0) return `还有 ${nodeMapping.nodeStats.value.unmapped_count} 个唯一节点未映射，请返回上一步完成映射`
+  }
   if (stdUnmappedCount.value > 0) return `还有 ${stdUnmappedCount.value} 个科目未映射，请返回上一步完成映射`
   if (stdUnresolvedLeafCount.value > 0) return `还有 ${stdUnresolvedLeafCount.value} 个未解决末级，请完成对应锚点确认`
   if (stdWarnings.value.length > 0 && !stdWarningsConfirmed.value) return `请先勾选确认以上 ${stdWarnings.value.length} 条警告`
@@ -2549,6 +2666,35 @@ function stdSelectSearchedAccount(ri: number, sa: any) {
   if (stdWarningsConfirmed.value) stdWarningsConfirmed.value = false
 }
 
+// TASK-096A：NodeKey 模式下，搜索结果直接写入 selectedByNodeKey
+function stdSelectSearchedNodeAccount(node: UniqueNodeReviewRow, sa: any) {
+  if (!sa.is_active) {
+    ElMessage.warning('该标准科目已停用，请选择启用的科目')
+    return
+  }
+  const candidate: MappingCandidate = {
+    standard_account_id: sa.id,
+    standard_account_code: sa.account_code,
+    standard_account_name: sa.account_name,
+    score: 1.0,
+    source: 'user_selected',
+    reason: `用户手动选择 → ${sa.account_code} ${sa.account_name}`,
+    warning: null,
+    standard_balance_direction: sa.balance_direction,
+    auto_confirmable: false,
+    compatibility_status: 'compatible',
+    compatibility_reason: '用户人工确认',
+    evidence: ['user_selected'],
+  }
+  nodeMapping.selectNodeCandidate(node.node_key, candidate)
+  // 关闭 picker
+  stdNodePickerKey.value = null
+  // 同步桥接到旧行级（保证兼容模式下也能通过冲突检测）
+  if (node.representative_row_index !== null && node.representative_row_index !== undefined) {
+    stdConfirmedMap.value[node.representative_row_index] = candidate
+  }
+}
+
 function stdGoConfirm() {
   // 重置警告确认状态
   stdWarningsConfirmed.value = false
@@ -2602,8 +2748,12 @@ async function stdGoExecute() {
     // ANCHOR-INHERITANCE-MAPPING：只提交锚点 / 中断点 / 显式覆盖
     // 普通 inherited 行不提交，由后端通过继承映射计划自动解析
     const confirmedMappings = stdBuildAnchorOnlyConfirmedMappings()
-    const confirmedNodeMappings = stdBuildConfirmedNodeMappings()
     const hasNodeApi = (stdAnalyzeResult.value?.unique_mapping_nodes?.length || 0) > 0
+    // TASK-096A：NodeKey 模式直接由 NodeKey 状态构造 confirmed_node_mappings
+    // 禁止先生成 row mappings 再 Map 折叠
+    const confirmedNodeMappings = hasNodeApi
+      ? nodeMapping.buildConfirmedNodeMappingsFromNodeState()
+      : stdBuildConfirmedNodeMappings()
 
     const req: import('@/types').StdExecuteRequest = {
       confirmed_mappings: hasNodeApi ? [] : confirmedMappings,
@@ -2715,6 +2865,42 @@ defineExpose({
     },
     get explicitOverrideRows() {
       return stdExplicitOverrideRows.value
+    },
+    // TASK-096A：NodeKey 模式测试入口
+    __nodeKey: {
+      isNodeKeyMode: () => nodeMapping.isNodeKeyMode.value,
+      uniqueNodeRows: () => nodeMapping.uniqueNodeRows.value,
+      nodeStats: () => nodeMapping.nodeStats.value,
+      selectedByNodeKey: () => nodeMapping.selectedByNodeKey.value,
+      explicitOverrideNodeKeys: () => nodeMapping.explicitOverrideNodeKeys.value,
+      ignoredNodeKeys: () => nodeMapping.ignoredNodeKeys.value,
+      expandedNodeKeys: () => nodeMapping.expandedNodeKeys.value,
+      conflicts: () => nodeMapping.detectNodeSelectionConflicts(),
+      canConfirm: () => nodeMapping.canConfirm.value,
+      canExecute: () => nodeMapping.canExecute.value,
+      buildConfirmedNodeMappings: () => nodeMapping.buildConfirmedNodeMappingsFromNodeState(),
+      selectNodeCandidate: (nodeKey: string, candidate: any) =>
+        nodeMapping.selectNodeCandidate(nodeKey, candidate),
+      clearNodeCandidate: (nodeKey: string) => nodeMapping.clearNodeCandidate(nodeKey),
+      setNodeOverride: (nodeKey: string) => nodeMapping.setNodeOverride(nodeKey),
+      restoreNodeInheritance: (nodeKey: string) => nodeMapping.restoreNodeInheritance(nodeKey),
+      setNodeIgnored: (nodeKey: string, ignored: boolean) =>
+        nodeMapping.setNodeIgnored(nodeKey, ignored),
+      toggleNodeExpanded: (nodeKey: string) => nodeMapping.toggleNodeExpanded(nodeKey),
+      nodeDisplayStatus: (nodeKey: string) => {
+        const node = nodeMapping.nodeByKey.value.get(nodeKey)
+        return node ? nodeMapping.nodeDisplayStatus(node) : null
+      },
+      nodeRequiresMapping: (nodeKey: string) => {
+        const node = nodeMapping.nodeByKey.value.get(nodeKey)
+        return node ? nodeMapping.nodeRequiresMapping(node) : false
+      },
+      effectiveNodeMappingRole: (nodeKey: string) => {
+        const node = nodeMapping.nodeByKey.value.get(nodeKey)
+        return node ? nodeMapping.effectiveNodeMappingRole(node) : null
+      },
+      // 旧行级桥接（与原测试兼容）
+      __legacyBuildConfirmedMappings: () => nodeMapping.buildLegacyConfirmedMappings(),
     },
   },
 })
