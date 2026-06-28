@@ -1,0 +1,3140 @@
+{
+  "task": "TASK-094E",
+  "section": "§7 映射正确性检查与抽查",
+  "generated_at": "2026-06-28T13:35:47",
+  "seed": 42,
+  "sample_quota": {
+    "per_file_count": 20,
+    "chengdu_dikang_extra": 50,
+    "file_205201_unique_node_count": 50
+  },
+  "compatibility_dimensions": [
+    "account_category",
+    "balance_direction",
+    "code_prefix",
+    "semantic_category",
+    "contra_account"
+  ],
+  "totals": {
+    "sampled": 164,
+    "ok": 164,
+    "violations": 0,
+    "ok_ratio": 1.0
+  },
+  "samples": {
+    "huizhan": [
+      {
+        "row_index": 22,
+        "row_key": "sha256:9a99f40d54cc98cca0ad8b8ed11c8db3",
+        "source_account_code": "160105",
+        "source_account_name_masked": "固定资产-办公家具",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160105 '固定资产-办公家具' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 21,
+        "row_key": "sha256:cbe76b82941dde7c96ea1838c095006b",
+        "source_account_code": "160104",
+        "source_account_name_masked": "固定资产-办公设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160104 '固定资产-办公设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 17,
+        "row_key": "sha256:f995e5ee71967a7767bab7432017aa96",
+        "source_account_code": "1601",
+        "source_account_name_masked": "固定资产",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 1601 '固定资产' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 75,
+        "row_key": "sha256:9b8b574e007e32e32f7adec5fde610ef",
+        "source_account_code": "22210101",
+        "source_account_name_masked": "应交税费-应交增值税-进项税",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 22210101 '应交税费-应交增值税-进项税' 对应标准科目 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 119,
+        "row_key": "sha256:3d5ba1c7c38a9a0200cbe579fba85284",
+        "source_account_code": "4103",
+        "source_account_name_masked": "本年利润",
+        "standard_account_code": "4103",
+        "standard_account_name": "未分配利润",
+        "review_reason": "源科目 4103 '本年利润' 按年末结转统一映射至 4103 '未分配利润',余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 20,
+        "row_key": "sha256:7969f13742dd7d7285f13e0b90cbd404",
+        "source_account_code": "160103",
+        "source_account_name_masked": "固定资产-运输设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160103 '固定资产-运输设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 111,
+        "row_key": "sha256:0f9b6ef641f9e85af7957173b88b8460",
+        "source_account_code": "2501",
+        "source_account_name_masked": "长期借款",
+        "standard_account_code": "2502",
+        "standard_account_name": "长期借款",
+        "review_reason": "源科目 2501 '长期借款' 对应标准科目 2502 '长期借款',反映企业向银行或其他金融机构借入的偿还期在一年以上的借款,余额方向贷方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 23,
+        "row_key": "sha256:0ef9dd1660a798b05311a66380378cdb",
+        "source_account_code": "160199",
+        "source_account_name_masked": "固定资产-其他",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160199 '固定资产-其他' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 18,
+        "row_key": "sha256:f6b87b567959f02d618e19b6b1d5d964",
+        "source_account_code": "160101",
+        "source_account_name_masked": "固定资产-房屋、建筑物",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160101 '固定资产-房屋、建筑物' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 19,
+        "row_key": "sha256:e18834fb4876c9095cca4c838d6f3b5a",
+        "source_account_code": "160102",
+        "source_account_name_masked": "固定资产-专用设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160102 '固定资产-专用设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 2,
+        "row_key": "sha256:30c5c0c2ea3e97a9c7978b7abbb66121",
+        "source_account_code": "1122",
+        "source_account_name_masked": "应收账款",
+        "standard_account_code": "112201",
+        "standard_account_name": "应收账款",
+        "review_reason": "源科目 1122 '应收账款' 对应标准科目 112201 '应收账款',反映企业因销售商品、提供劳务等应向购货单位/接受劳务单位收取的款项,余额方向借方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 13,
+        "row_key": "sha256:11f35f51b9cf5b1b7bf30822e24698fc",
+        "source_account_code": "123101",
+        "source_account_name_masked": "坏账准备-应收账款",
+        "standard_account_code": "112202",
+        "standard_account_name": "减：应收账款-坏账准备",
+        "review_reason": "源科目 123101 '坏账准备-应收账款' 对应标准科目 112202 '减:应收账款-坏账准备',反映应收账款计提的坏账准备,余额方向贷方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 78,
+        "row_key": "sha256:8e7cf1ca97d4179c828807a765e84fb4",
+        "source_account_code": "22210102",
+        "source_account_name_masked": "应交税费-应交增值税-销项税",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 22210102 '应交税费-应交增值税-销项税' 对应标准科目 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      }
+    ],
+    "112": [
+      {
+        "row_index": 72,
+        "row_key": "sha256:8e0a2a84c7fed5efe482c12f0b339e1f",
+        "source_account_code": "1133",
+        "source_account_name_masked": "[01.019]客户AS-保证金",
+        "standard_account_code": "122101",
+        "standard_account_name": "其他应收款",
+        "review_reason": "源科目 1133 '[01.019]客户AS-保证金'(员工/供应商名已脱敏),反映其他应收款下的备用金/押金/挂账余额,统一映射至 122101 '其他应收款',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 251,
+        "row_key": "sha256:c49f590d6a06c0b833219829da747714",
+        "source_account_code": "1701.002",
+        "source_account_name_masked": "固定资产清理-清理收入",
+        "standard_account_code": "1606",
+        "standard_account_name": "固定资产清理",
+        "review_reason": "源科目 1701.002 属于固定资产清理(客户原账下的'固定资产清理-收入'子目),统一映射至 1606 '固定资产清理',反映企业因出售/报废/毁损转入清理的固定资产账面价值,余额方向借方。注:旧 fixture 错误映射至 160101 固定资产-原值,TASK-094A 修正为正确目标。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36,
+        "row_key": "sha256:15bfdeb42292d9ea5f79943b9bef3aa7",
+        "source_account_code": "1131",
+        "source_account_name_masked": "[003]客户G",
+        "standard_account_code": "112201",
+        "standard_account_name": "应收账款",
+        "review_reason": "源科目 1131 '应收账款-[003]客户G'(客户名已脱敏),反映该客户应收账款余额,统一映射至 112201 '应收账款',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 853,
+        "row_key": "sha256:9144aa9c12ab756fa3f3685eaccf8f70",
+        "source_account_code": "4107.001.006.003",
+        "source_account_name_masked": "材料费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 4107.001.006.003 '材料费' 属于研发支出费用化明细,统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 243,
+        "row_key": "sha256:9bd49f5533901811070194b8252f7958",
+        "source_account_code": "1501.04",
+        "source_account_name_masked": "固定资产-经营-运输设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 1501.04 '固定资产-经营-运输设备' 属于固定资产明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 101,
+        "row_key": "sha256:c0274b7dd2211cdc0ee08bfd910ce7aa",
+        "source_account_code": "1133",
+        "source_account_name_masked": "[02.041]员工013-备用金",
+        "standard_account_code": "122101",
+        "standard_account_name": "其他应收款",
+        "review_reason": "源科目 1133 '[02.041]员工013-备用金'(员工/供应商名已脱敏),反映其他应收款下的备用金/押金/挂账余额,统一映射至 122101 '其他应收款',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 906,
+        "row_key": "sha256:d1c6f9e4deea19e507b9e3a23f1fbdda",
+        "source_account_code": "5203",
+        "source_account_name_masked": "其他业务收入",
+        "standard_account_code": "6051",
+        "standard_account_name": "其中：其他业务收入",
+        "review_reason": "源科目 5203 '其他业务收入' 对应标准科目 6051 '其中:其他业务收入',反映企业主营业务以外的其他经营活动收入,余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 80,
+        "row_key": "sha256:12eaefc42c8bb102fe2e5554211e5e21",
+        "source_account_code": "1133",
+        "source_account_name_masked": "[01.030]供应商Y-挂账",
+        "standard_account_code": "122101",
+        "standard_account_name": "其他应收款",
+        "review_reason": "源科目 1133 '[01.030]供应商Y-挂账'(员工/供应商名已脱敏),反映其他应收款下的备用金/押金/挂账余额,统一映射至 122101 '其他应收款',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 995,
+        "row_key": "sha256:67107459e94735beeeabddd22e3e26fa",
+        "source_account_code": "5502.039",
+        "source_account_name_masked": "其他",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 5502.039 '其他' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 263,
+        "row_key": "sha256:81287c24f068d05af2e2dadc90d5b67c",
+        "source_account_code": "1802.09",
+        "source_account_name_masked": "某软件-版权",
+        "standard_account_code": "1801",
+        "standard_account_name": "长期待摊费用",
+        "review_reason": "源科目 1802.09 '某软件-版权' 属于长期待摊费用下的软件明细,统一映射至 1801 '长期待摊费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 918,
+        "row_key": "sha256:0137c708ec4096af272fbece8c7e2584",
+        "source_account_code": "5405",
+        "source_account_name_masked": "营业外收入",
+        "standard_account_code": "6301",
+        "standard_account_name": "加：营业外收入",
+        "review_reason": "源科目 5405 '营业外收入' 对应标准科目 6301 '加:营业外收入',反映与企业日常经营活动无直接关系的各项利得,余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 974,
+        "row_key": "sha256:bc3d359e244cf3c07d13be07fd3837e9",
+        "source_account_code": "5502",
+        "source_account_name_masked": "管理费用-合计",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 5502 '管理费用-合计' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 56,
+        "row_key": "sha256:dfb7b125905a551f9d99bba98e5bb417",
+        "source_account_code": "1131",
+        "source_account_name_masked": "[034]客户AA",
+        "standard_account_code": "112201",
+        "standard_account_name": "应收账款",
+        "review_reason": "源科目 1131 '应收账款-[034]客户AA'(客户名已脱敏),反映该客户应收账款余额,统一映射至 112201 '应收账款',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 857,
+        "row_key": "sha256:3aeb615f20359bc8cd9a54bf63f95909",
+        "source_account_code": "4107.001.006.008",
+        "source_account_name_masked": "折旧费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 4107.001.006.008 '折旧费' 属于研发支出费用化明细,统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 253,
+        "row_key": "sha256:6c829c0ba56f77e7854198f8a1aa6a52",
+        "source_account_code": "1702.01",
+        "source_account_name_masked": "使用权资产-原值",
+        "standard_account_code": "164101",
+        "standard_account_name": "使用权资产-原值",
+        "review_reason": "源科目 1702.01 '使用权资产-原值' 属于使用权资产明细,统一映射至 164101 '使用权资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 235,
+        "row_key": "sha256:32aa511595ae0694775b1d827c3295f3",
+        "source_account_code": "1475.02",
+        "source_account_name_masked": "包装费",
+        "standard_account_code": "1801",
+        "standard_account_name": "长期待摊费用",
+        "review_reason": "源科目 1475.02 '包装费' 属于长期待摊费用下的明细,统一映射至 1801。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 48,
+        "row_key": "sha256:0ed111c3b976a5d7f76a9e83c9ffd5a4",
+        "source_account_code": "1131",
+        "source_account_name_masked": "[022]客户S",
+        "standard_account_code": "112201",
+        "standard_account_name": "应收账款",
+        "review_reason": "源科目 1131 '应收账款-[022]客户S'(客户名已脱敏),反映该客户应收账款余额,统一映射至 112201 '应收账款',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 969,
+        "row_key": "sha256:42e4797c32e0302e00e884df39422767",
+        "source_account_code": "5501.041",
+        "source_account_name_masked": "价值兑现",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目 5501.041 '价值兑现' 属于销售费用下的明细,统一映射至 6601 '减:销售费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 971,
+        "row_key": "sha256:c347d764a552a716c7664cb0c312c498",
+        "source_account_code": "5501.043",
+        "source_account_name_masked": "力资费",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目 5501.043 '力资费' 属于销售费用下的明细,统一映射至 6601 '减:销售费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 645,
+        "row_key": "sha256:8012be5a940dd61211b725f28bcbf82a",
+        "source_account_code": "2131",
+        "source_account_name_masked": "[030]客户Y-预收",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 2131 '[030]客户Y-预收' 属于预收账款下的客户明细(客户名已脱敏);按企业会计准则预收账款已并入'合同负债'(2205),在客户原账口径下统一映射至 2241 '其他应付款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      }
+    ],
+    "tb_2023": [
+      {
+        "row_index": 145,
+        "row_key": "sha256:7f622a13eb90ce6fc62eead8d844bd4f",
+        "source_account_code": "521.013.063.004",
+        "source_account_name_masked": "保险费",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '保险费' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 61,
+        "row_key": "sha256:451fc88c625698bb82385fba47db0d0f",
+        "source_account_code": "161",
+        "source_account_name_masked": "固定资产",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目编码 161 对应'固定资产',按现行企业会计准则统一映射至 160101 '固定资产-原值',反映固定资产入账原值,余额方向借方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 150,
+        "row_key": "sha256:645b37b3b6aa281bf2fa4e9bad586486",
+        "source_account_code": "521.013.064.002",
+        "source_account_name_masked": "工资",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '工资' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 133,
+        "row_key": "sha256:dcb8c15118bc013a443b9dc49f92728e",
+        "source_account_code": "521.012",
+        "source_account_name_masked": "安全生产费用",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '安全生产费用' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 90,
+        "row_key": "sha256:2b355aa6b67ca72076e19b75e321d16f",
+        "source_account_code": "321",
+        "source_account_name_masked": "本年利润",
+        "standard_account_code": "4103",
+        "standard_account_name": "未分配利润",
+        "review_reason": "源科目'本年利润'按年末结转逻辑统一映射至 4103 '未分配利润',反映企业期末累计未分配利润,余额方向贷方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 127,
+        "row_key": "sha256:956c32bfcca23bb161b1748280f46460",
+        "source_account_code": "521.004",
+        "source_account_name_masked": "汽车",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '汽车' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 85,
+        "row_key": "sha256:a13971409bc5e7b250c09b56589b8b6a",
+        "source_account_code": "229.08",
+        "source_account_name_masked": "地方教育费附加",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 '地方教育费附加' 在 2241 '其他应付款' 下汇总反映附加税及附加未缴余额,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 125,
+        "row_key": "sha256:67038cf1adaaf97c9f8ae678e264efad",
+        "source_account_code": "521.002",
+        "source_account_name_masked": "办公费",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '办公费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 119,
+        "row_key": "sha256:b69ad38d07a468287ffac427cbf297c8",
+        "source_account_code": "503.003",
+        "source_account_name_masked": "差旅费",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目 '差旅费' 为销售费用明细,统一映射至 6601 '减:销售费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 116,
+        "row_key": "sha256:32d88b2398dd0d4c8e6e25b5e06e3f6c",
+        "source_account_code": "502",
+        "source_account_name_masked": "产品销售成本",
+        "standard_account_code": "6401",
+        "standard_account_name": "其中：主营业务成本",
+        "review_reason": "源科目'产品销售成本'为传统小企业科目,按现行准则统一映射至 6401 '其中:主营业务成本',反映已销售产品的直接成本,余额方向借方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 106,
+        "row_key": "sha256:5d0959178c6186c7a0c56898a8e8cb32",
+        "source_account_code": "501.004",
+        "source_account_name_masked": "产品D-抗垢剂",
+        "standard_account_code": "6001",
+        "standard_account_name": "其中：主营业务收入",
+        "review_reason": "源科目 501.004 属于 501 主营业务收入下的'产品D'细分(已脱敏为抗垢剂),反映企业销售抗垢剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 164,
+        "row_key": "sha256:12fcc128e425d12f7044604d9798ce27",
+        "source_account_code": "521.013.066.004",
+        "source_account_name_masked": "养老金",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '养老金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 167,
+        "row_key": "sha256:4d36913dfb942bacc382a631acf22328",
+        "source_account_code": "521.016",
+        "source_account_name_masked": "住房公积金",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '住房公积金' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 83,
+        "row_key": "sha256:539743fdc8996bd5ddc684f58f922db6",
+        "source_account_code": "229.03",
+        "source_account_name_masked": "教育事业附加费",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 '教育事业附加费' 在 2241 '其他应付款' 下汇总反映附加税及附加未缴余额,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 129,
+        "row_key": "sha256:0b64b751e1cfe4fa866cb50224156bb5",
+        "source_account_code": "521.006",
+        "source_account_name_masked": "其他管理费用",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '其他管理费用' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 103,
+        "row_key": "sha256:e4af4b170f1c141f8230ec76240bd9bb",
+        "source_account_code": "501.001",
+        "source_account_name_masked": "产品A-防腐剂",
+        "standard_account_code": "6001",
+        "standard_account_name": "其中：主营业务收入",
+        "review_reason": "源科目 501.001 属于 501 主营业务收入下的'产品A'细分(已脱敏为防腐剂),反映企业销售防腐剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 105,
+        "row_key": "sha256:4159f148dd1ff078ea5fb935d3315814",
+        "source_account_code": "501.003",
+        "source_account_name_masked": "产品C-破乳剂",
+        "standard_account_code": "6001",
+        "standard_account_name": "其中：主营业务收入",
+        "review_reason": "源科目 501.003 属于 501 主营业务收入下的'产品C'细分(已脱敏为破乳剂),反映企业销售破乳剂的收入,统一映射至 6001 '其中:主营业务收入',余额方向贷方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 128,
+        "row_key": "sha256:9379285b64da86ad80a723693fabff03",
+        "source_account_code": "521.005",
+        "source_account_name_masked": "业务招待费",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '业务招待费' 为管理费用明细,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 146,
+        "row_key": "sha256:470a1f88e0cd5d70e76e2e72a6527480",
+        "source_account_code": "521.013.063.005",
+        "source_account_name_masked": "住房公积金",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 '住房公积金' 为管理费用部门细分,统一映射至 6602 '减:管理费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 120,
+        "row_key": "sha256:ae8084da67d530e19b414445da0fde4f",
+        "source_account_code": "503.004",
+        "source_account_name_masked": "其他费用",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目 '其他费用' 为销售费用明细,统一映射至 6601 '减:销售费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      }
+    ],
+    "yiliao": [
+      {
+        "row_index": 77,
+        "row_key": "sha256:6cfb691fe4facec1914c70b0d4154cf1",
+        "source_account_code": "27050101",
+        "source_account_name_masked": "租赁负债-租赁付款额-合同金额",
+        "standard_account_code": "270201",
+        "standard_account_name": "租赁负债-租赁合同付款额",
+        "review_reason": "源科目'租赁付款额-合同金额'属于租赁负债下的本金明细,映射至 270201 '租赁负债-租赁合同付款额',反映承租人尚未支付的租赁付款额本金,余额方向为贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 38,
+        "row_key": "sha256:bf5dfff6631137da5365f8a2fd48d651",
+        "source_account_code": "165101",
+        "source_account_name_masked": "使用权资产-房屋及建筑物",
+        "standard_account_code": "164101",
+        "standard_account_name": "使用权资产-原值",
+        "review_reason": "源科目'使用权资产-房屋及建筑物'属于新租赁准则下的'使用权资产-原值'范畴,统一映射至 164101,反映承租人对租赁资产的初始入账价值,余额方向为借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 115,
+        "row_key": "sha256:7abace65acd93ae2a1ca24ad4726fc97",
+        "source_account_code": "66011301",
+        "source_account_name_masked": "销售费用-租房成本-租金",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目'租房成本-租金'属于销售费用明细,统一映射至 6601 '减:销售费用',反映销售环节房租支出,余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 83,
+        "row_key": "sha256:b519b5f4d555dea5a5c3235187ca8ae2",
+        "source_account_code": "4103",
+        "source_account_name_masked": "本年利润",
+        "standard_account_code": "4103",
+        "standard_account_name": "未分配利润",
+        "review_reason": "源科目'本年利润'按企业会计准则年末结转至'利润分配-未分配利润',标准科目 4103 即'未分配利润',余额方向均为贷方,反映企业累计未分配利润,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 32,
+        "row_key": "sha256:b03513368e5b2de13fe569c47f465af5",
+        "source_account_code": "160105",
+        "source_account_name_masked": "固定资产-其他设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目'其他设备'为固定资产原值下的兜底明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 28,
+        "row_key": "sha256:17f997836135b439a144552a2f737840",
+        "source_account_code": "1471",
+        "source_account_name_masked": "存货跌价准备",
+        "standard_account_code": "147101",
+        "standard_account_name": "减：存货-资产减值损失",
+        "review_reason": "源科目为'存货跌价准备',会计性质属于资产备抵类(余额方向贷方,冲减存货账面价值)。标准科目 147101 为'减:存货-资产减值损失',同属资产备抵且余额方向为贷方,性质一致,映射成立。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 78,
+        "row_key": "sha256:e86982a560a1dfecfd2a7b336e1f1e68",
+        "source_account_code": "27050102",
+        "source_account_name_masked": "租赁负债-租赁付款额-已付款",
+        "standard_account_code": "270201",
+        "standard_account_name": "租赁负债-租赁合同付款额",
+        "review_reason": "源科目'租赁付款额-已付款'虽代表已经支付的部分,但原始科目类别仍属于租赁负债(贷方反映尚未支付余额),统一映射至 270201 '租赁负债-租赁合同付款额'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 31,
+        "row_key": "sha256:00311017309eec6a177e1fa1e1305d44",
+        "source_account_code": "160104",
+        "source_account_name_masked": "固定资产-电子设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目'电子设备'为固定资产-原值的明细分类,统一映射至 160101,反映固定资产账面原值,余额方向为借方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 114,
+        "row_key": "sha256:3112e3589aea0d865cc8eba5ea1a65c0",
+        "source_account_code": "660113",
+        "source_account_name_masked": "销售费用-租房成本",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目'销售费用-租房成本'属于销售费用项下的租赁相关支出,统一映射至 6601 '减:销售费用',反映销售环节发生的费用支出,余额方向为借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 29,
+        "row_key": "sha256:2a7f14bbc945ee133b19f0039a92eb83",
+        "source_account_code": "1601",
+        "source_account_name_masked": "固定资产",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目'固定资产'按字面应对应标准科目 160101 '固定资产-原值',反映固定资产入账原值,余额方向均为借方,无误。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 30,
+        "row_key": "sha256:94ce7634946dfb3705da0b1d9015eb2c",
+        "source_account_code": "160102",
+        "source_account_name_masked": "固定资产-机器设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目为'固定资产-机器设备',按企业会计准则下属明细属于固定资产原值范畴,统一映射至标准科目 160101 '固定资产-原值',以避免跨大类错误。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      }
+    ],
+    "205201": [
+      {
+        "row_index": 36585,
+        "row_key": "sha256:e246f544f711f7fdc2c0b03dd64035dc",
+        "source_account_code": "66029906",
+        "source_account_name_masked": "管理费用__其他__检测费",
+        "standard_account_code": "6602",
+        "standard_account_name": "",
+        "review_reason": "源科目 66029906 '管理费用__其他__检测费' 按标准科目编码规则统一映射至 6602;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34517,
+        "row_key": "sha256:ffda72708d3790cb8ef33916054dcd02",
+        "source_account_code": "64023103",
+        "source_account_name_masked": "其他业务成本__外部成本__水电成本",
+        "standard_account_code": "6402",
+        "standard_account_name": "",
+        "review_reason": "源科目 64023103 '其他业务成本__外部成本__水电成本' 按标准科目编码规则统一映射至 6402;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34813,
+        "row_key": "sha256:43cc1e30dcf00f3b58ec3c3b3c723769",
+        "source_account_code": "66010601",
+        "source_account_name_masked": "销售费用__电脑费用__网络费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66010601 '销售费用__电脑费用__网络费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36579,
+        "row_key": "sha256:acfd6c618d8c8b51a147c4e5cf77acae",
+        "source_account_code": "66029903",
+        "source_account_name_masked": "管理费用__其他__企业及产品相关认证费",
+        "standard_account_code": "6602",
+        "standard_account_name": "",
+        "review_reason": "源科目 66029903 '管理费用__其他__企业及产品相关认证费' 按标准科目编码规则统一映射至 6602;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34755,
+        "row_key": "sha256:b21c272d6217d4837aa9803874b3105c",
+        "source_account_code": "66010402",
+        "source_account_name_masked": "销售费用__差旅费__食宿费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66010402 '销售费用__差旅费__食宿费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34873,
+        "row_key": "sha256:6e3771559dc8621844cec09ebfc1518b",
+        "source_account_code": "66010901",
+        "source_account_name_masked": "销售费用__样板费__自用",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66010901 '销售费用__样板费__自用' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 35003,
+        "row_key": "sha256:519e784db87b92d11843cc25be91f2fb",
+        "source_account_code": "66011210",
+        "source_account_name_masked": "销售费用__展厅费__其他费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66011210 '销售费用__展厅费__其他费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36679,
+        "row_key": "sha256:5375325dfbb2746284b829030cc34ebe",
+        "source_account_code": "680101",
+        "source_account_name_masked": "所得税费用__当期所得税费用",
+        "standard_account_code": "6801",
+        "standard_account_name": "",
+        "review_reason": "源科目 680101 '所得税费用__当期所得税费用' 按标准科目编码规则统一映射至 6801;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 35001,
+        "row_key": "sha256:6f6e2322d43d6821edfd763e9a98d9e3",
+        "source_account_code": "66011206",
+        "source_account_name_masked": "销售费用__展厅费__装修用砖",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66011206 '销售费用__展厅费__装修用砖' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 35111,
+        "row_key": "sha256:3541418aaf690c069e33e1880b76d0e8",
+        "source_account_code": "66012002",
+        "source_account_name_masked": "销售费用__办公费__邮件费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66012002 '销售费用__办公费__邮件费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34425,
+        "row_key": "sha256:b5d8bdf7de834ef4d697410f6213e624",
+        "source_account_code": "53010202",
+        "source_account_name_masked": "研发支出__费用化支出__人员工资",
+        "standard_account_code": "660201",
+        "standard_account_name": "",
+        "review_reason": "源科目 53010202 '研发支出__费用化支出__人员工资' 按标准科目编码规则统一映射至 660201;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16089,
+        "row_key": "sha256:75b9c37a377bb0b8a2c501aafe0dd9ed",
+        "source_account_code": "15110205",
+        "source_account_name_masked": "长期股权投资__其他单位投资__其他综合收益",
+        "standard_account_code": "151101",
+        "standard_account_name": "",
+        "review_reason": "源科目 15110205 '长期股权投资__其他单位投资__其他综合收益' 按标准科目编码规则统一映射至 151101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34493,
+        "row_key": "sha256:e6c9fe64d2503d1260da0df87dc757ad",
+        "source_account_code": "640103",
+        "source_account_name_masked": "主营业务成本__内部销售成本",
+        "standard_account_code": "6401",
+        "standard_account_name": "",
+        "review_reason": "源科目 640103 '主营业务成本__内部销售成本' 按标准科目编码规则统一映射至 6401;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16293,
+        "row_key": "sha256:66c1f28aebab884c21614a9241047fd2",
+        "source_account_code": "220207",
+        "source_account_name_masked": "应付账款__广告资料",
+        "standard_account_code": "2202",
+        "standard_account_name": "",
+        "review_reason": "源科目 220207 '应付账款__广告资料' 按标准科目编码规则统一映射至 2202;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34513,
+        "row_key": "sha256:539d55edb883591c4867460c693ff145",
+        "source_account_code": "64023101",
+        "source_account_name_masked": "其他业务成本__外部成本__租金成本",
+        "standard_account_code": "6402",
+        "standard_account_name": "",
+        "review_reason": "源科目 64023101 '其他业务成本__外部成本__租金成本' 按标准科目编码规则统一映射至 6402;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 15095,
+        "row_key": "sha256:c6a0a8585bf5517261be360e8dbc47f4",
+        "source_account_code": "113201",
+        "source_account_name_masked": "应收利息__应收外部单位利息",
+        "standard_account_code": "1132",
+        "standard_account_name": "",
+        "review_reason": "源科目 113201 '应收利息__应收外部单位利息' 按标准科目编码规则统一映射至 1132;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16099,
+        "row_key": "sha256:c6b146bb78bfad2960551b9f721217cf",
+        "source_account_code": "152801",
+        "source_account_name_masked": "其他权益工具投资__股权",
+        "standard_account_code": "150501",
+        "standard_account_name": "",
+        "review_reason": "源科目 152801 '其他权益工具投资__股权' 按标准科目编码规则统一映射至 150501;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 17417,
+        "row_key": "sha256:85607355076a4854c184c674f54e831e",
+        "source_account_code": "220299",
+        "source_account_name_masked": "应付账款__其他",
+        "standard_account_code": "2202",
+        "standard_account_name": "",
+        "review_reason": "源科目 220299 '应付账款__其他' 按标准科目编码规则统一映射至 2202;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34511,
+        "row_key": "sha256:aefd872e1200af136b98662dcfc6e068",
+        "source_account_code": "640106",
+        "source_account_name_masked": "主营业务成本__直接加工成本",
+        "standard_account_code": "6401",
+        "standard_account_name": "",
+        "review_reason": "源科目 640106 '主营业务成本__直接加工成本' 按标准科目编码规则统一映射至 6401;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16275,
+        "row_key": "sha256:957f774496e5d506cd9c7fc766b96a4f",
+        "source_account_code": "220205",
+        "source_account_name_masked": "应付账款__承包费",
+        "standard_account_code": "2202",
+        "standard_account_name": "",
+        "review_reason": "源科目 220205 '应付账款__承包费' 按标准科目编码规则统一映射至 2202;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34449,
+        "row_key": "sha256:a2ad75272f4a99942680ff9f6f0a35cb",
+        "source_account_code": "60513105",
+        "source_account_name_masked": "其他业务收入__外部销售__废旧物资收入",
+        "standard_account_code": "6051",
+        "standard_account_name": "",
+        "review_reason": "源科目 60513105 '其他业务收入__外部销售__废旧物资收入' 按标准科目编码规则统一映射至 6051;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16107,
+        "row_key": "sha256:316b335e6d2f2aafb5a5fbe362d417f1",
+        "source_account_code": "160103",
+        "source_account_name_masked": "固定资产__运输工具",
+        "standard_account_code": "160101",
+        "standard_account_name": "",
+        "review_reason": "源科目 160103 '固定资产__运输工具' 按标准科目编码规则统一映射至 160101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34435,
+        "row_key": "sha256:89ed5a8a779a498adaf3d609ea2a64f1",
+        "source_account_code": "600105",
+        "source_account_name_masked": "主营业务收入__样板销售",
+        "standard_account_code": "6001",
+        "standard_account_name": "",
+        "review_reason": "源科目 600105 '主营业务收入__样板销售' 按标准科目编码规则统一映射至 6001;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36663,
+        "row_key": "sha256:f0001c0b51250325027842cb04150a29",
+        "source_account_code": "66032206",
+        "source_account_name_masked": "财务费用__利息收入__外单位利息收入",
+        "standard_account_code": "6603",
+        "standard_account_name": "",
+        "review_reason": "源科目 66032206 '财务费用__利息收入__外单位利息收入' 按标准科目编码规则统一映射至 6603;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 35201,
+        "row_key": "sha256:4828a9401a28fde9169fd030c30b8ec5",
+        "source_account_code": "66019906",
+        "source_account_name_masked": "销售费用__其他__电商费用",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66019906 '销售费用__其他__电商费用' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16109,
+        "row_key": "sha256:361cf59fa54353fc471a88a9440df3e6",
+        "source_account_code": "160105",
+        "source_account_name_masked": "固定资产__电子设备及其他",
+        "standard_account_code": "160101",
+        "standard_account_name": "",
+        "review_reason": "源科目 160105 '固定资产__电子设备及其他' 按标准科目编码规则统一映射至 160101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 44470,
+        "row_key": "sha256:58a9da873eb6705d0970c09a4ee6b79d",
+        "source_account_code": "152101",
+        "source_account_name_masked": "投资性房地产__房产",
+        "standard_account_code": "152101",
+        "standard_account_name": "",
+        "review_reason": "源科目 152101 '投资性房地产__房产' 按标准科目编码规则统一映射至 152101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 44464,
+        "row_key": "sha256:f08ee3af14f8c325d45c437c18c44d91",
+        "source_account_code": "150102",
+        "source_account_name_masked": "债权投资__应计利息",
+        "standard_account_code": "150201",
+        "standard_account_name": "",
+        "review_reason": "源科目 150102 '债权投资__应计利息' 按标准科目编码规则统一映射至 150201;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34431,
+        "row_key": "sha256:a463a9c5d2c897e099f9dfab866f13c2",
+        "source_account_code": "600102",
+        "source_account_name_masked": "主营业务收入__直接销售",
+        "standard_account_code": "6001",
+        "standard_account_name": "",
+        "review_reason": "源科目 600102 '主营业务收入__直接销售' 按标准科目编码规则统一映射至 6001;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34819,
+        "row_key": "sha256:fd4ec7ba84cff8d565616423a396070e",
+        "source_account_code": "66010602",
+        "source_account_name_masked": "销售费用__电脑费用__软件费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66010602 '销售费用__电脑费用__软件费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16917,
+        "row_key": "sha256:d25ae49e78b309f5239fb3cbb26f39f9",
+        "source_account_code": "220219",
+        "source_account_name_masked": "应付账款__暂估进项税",
+        "standard_account_code": "2202",
+        "standard_account_name": "",
+        "review_reason": "源科目 220219 '应付账款__暂估进项税' 按标准科目编码规则统一映射至 2202;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34515,
+        "row_key": "sha256:b531bace18a4e4a8dd7c5571ea1cc99b",
+        "source_account_code": "64023102",
+        "source_account_name_masked": "其他业务成本__外部成本__材料成本",
+        "standard_account_code": "6402",
+        "standard_account_name": "",
+        "review_reason": "源科目 64023102 '其他业务成本__外部成本__材料成本' 按标准科目编码规则统一映射至 6402;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36583,
+        "row_key": "sha256:6d0258d454424c25338be15563ace53f",
+        "source_account_code": "66029905",
+        "source_account_name_masked": "管理费用__其他__会员费",
+        "standard_account_code": "6602",
+        "standard_account_name": "",
+        "review_reason": "源科目 66029905 '管理费用__其他__会员费' 按标准科目编码规则统一映射至 6602;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36657,
+        "row_key": "sha256:c7cab6a3f22a427d95de3d2565f33d41",
+        "source_account_code": "66032201",
+        "source_account_name_masked": "财务费用__利息收入__银行存款利息收入",
+        "standard_account_code": "6603",
+        "standard_account_name": "",
+        "review_reason": "源科目 66032201 '财务费用__利息收入__银行存款利息收入' 按标准科目编码规则统一映射至 6603;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16067,
+        "row_key": "sha256:47c70de0ef1f29bda8cec66baef4673e",
+        "source_account_code": "15110201",
+        "source_account_name_masked": "长期股权投资__其他单位投资__投资成本",
+        "standard_account_code": "151101",
+        "standard_account_name": "",
+        "review_reason": "源科目 15110201 '长期股权投资__其他单位投资__投资成本' 按标准科目编码规则统一映射至 151101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34891,
+        "row_key": "sha256:1ceadf3d55c608aa1385929a7262fcc9",
+        "source_account_code": "660110",
+        "source_account_name_masked": "销售费用__运输费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 660110 '销售费用__运输费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16103,
+        "row_key": "sha256:419ff4a6830dee82df2bda1d7d71a5b0",
+        "source_account_code": "160101",
+        "source_account_name_masked": "固定资产__建筑物",
+        "standard_account_code": "160101",
+        "standard_account_name": "",
+        "review_reason": "源科目 160101 '固定资产__建筑物' 按标准科目编码规则统一映射至 160101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36581,
+        "row_key": "sha256:b442df355ba693443672f5decdb94690",
+        "source_account_code": "66029904",
+        "source_account_name_masked": "管理费用__其他__厂服费",
+        "standard_account_code": "6602",
+        "standard_account_name": "",
+        "review_reason": "源科目 66029904 '管理费用__其他__厂服费' 按标准科目编码规则统一映射至 6602;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34421,
+        "row_key": "sha256:7193d5002f6625ce2ad7b8b82eb59603",
+        "source_account_code": "410402",
+        "source_account_name_masked": "利润分配__提取法定盈余公积",
+        "standard_account_code": "410501",
+        "standard_account_name": "",
+        "review_reason": "源科目 410402 '利润分配__提取法定盈余公积' 按标准科目编码规则统一映射至 410501;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34585,
+        "row_key": "sha256:8bacf4077f251c7930c3c4e4f48ca235",
+        "source_account_code": "66010104",
+        "source_account_name_masked": "销售费用__职工薪酬__社保费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66010104 '销售费用__职工薪酬__社保费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34447,
+        "row_key": "sha256:94348788fc54a6ab9b60df8b94f0f4c3",
+        "source_account_code": "60513103",
+        "source_account_name_masked": "其他业务收入__外部销售__水电费收入",
+        "standard_account_code": "6051",
+        "standard_account_name": "",
+        "review_reason": "源科目 60513103 '其他业务收入__外部销售__水电费收入' 按标准科目编码规则统一映射至 6051;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 35203,
+        "row_key": "sha256:a08f28f5eb773fcc7d836c175481ff51",
+        "source_account_code": "66019999",
+        "source_account_name_masked": "销售费用__其他__其他杂费",
+        "standard_account_code": "6601",
+        "standard_account_name": "",
+        "review_reason": "源科目 66019999 '销售费用__其他__其他杂费' 按标准科目编码规则统一映射至 6601;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34439,
+        "row_key": "sha256:d45ef23d6bd7b6c5b02a9f3d2f218af5",
+        "source_account_code": "600108",
+        "source_account_name_masked": "主营业务收入__价外费收入",
+        "standard_account_code": "6001",
+        "standard_account_name": "",
+        "review_reason": "源科目 600108 '主营业务收入__价外费收入' 按标准科目编码规则统一映射至 6001;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 34427,
+        "row_key": "sha256:7f29d81827826ee26aa89ab937ee4dbf",
+        "source_account_code": "53010203",
+        "source_account_name_masked": "研发支出__费用化支出__折旧及长期摊销",
+        "standard_account_code": "660201",
+        "standard_account_name": "",
+        "review_reason": "源科目 53010203 '研发支出__费用化支出__折旧及长期摊销' 按标准科目编码规则统一映射至 660201;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36391,
+        "row_key": "sha256:a28cc6f59a8cbea18d4f388743a403e0",
+        "source_account_code": "660218",
+        "source_account_name_masked": "管理费用__修理费",
+        "standard_account_code": "6602",
+        "standard_account_name": "",
+        "review_reason": "源科目 660218 '管理费用__修理费' 按标准科目编码规则统一映射至 6602;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16641,
+        "row_key": "sha256:c4c54e054018e0a7e92b1eb88ba1cc6d",
+        "source_account_code": "220215",
+        "source_account_name_masked": "应付账款__工程运费",
+        "standard_account_code": "2202",
+        "standard_account_name": "",
+        "review_reason": "源科目 220215 '应付账款__工程运费' 按标准科目编码规则统一映射至 2202;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 16105,
+        "row_key": "sha256:6c4a5d02d7407d936e5ca5f38d39b3c3",
+        "source_account_code": "160102",
+        "source_account_name_masked": "固定资产__机械设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "",
+        "review_reason": "源科目 160102 '固定资产__机械设备' 按标准科目编码规则统一映射至 160101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 968,
+        "row_key": "sha256:26887673eba4c3cda1a79b81f0e22fe0",
+        "source_account_code": "112105",
+        "source_account_name_masked": "应收票据__财司票",
+        "standard_account_code": "112101",
+        "standard_account_name": "",
+        "review_reason": "源科目 112105 '应收票据__财司票' 按标准科目编码规则统一映射至 112101;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36681,
+        "row_key": "sha256:ed4ab9ce08d47eaf37e89df11520fed7",
+        "source_account_code": "680102",
+        "source_account_name_masked": "所得税费用__递延所得税费用",
+        "standard_account_code": "6801",
+        "standard_account_name": "",
+        "review_reason": "源科目 680102 '所得税费用__递延所得税费用' 按标准科目编码规则统一映射至 6801;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_index": 36577,
+        "row_key": "sha256:cbed7ca36ec3b0aad37cfc9248adb4d3",
+        "source_account_code": "66029902",
+        "source_account_name_masked": "管理费用__其他__专利和知识产权",
+        "standard_account_code": "6602",
+        "standard_account_name": "",
+        "review_reason": "源科目 66029902 '管理费用__其他__专利和知识产权' 按标准科目编码规则统一映射至 6602;此 entry 来自 TASK-093 真实回归合并样本 (同一 (src, name) 在原 205201.xls 中可能多次重复,本 v2 fixture 已合并到稳定 row_key)。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      }
+    ],
+    "chengdu_dikang_extra": [
+      {
+        "row_key": "sha256:24ac7fc551ceff057527c327feb60fee",
+        "row_index": 134,
+        "source_account_code": "22110302",
+        "source_account_name_masked": "医疗保险费",
+        "standard_account_code": "2211",
+        "standard_account_name": "应付职工薪酬",
+        "review_reason": "源科目 22110302 '医疗保险费' 属于应付职工薪酬下的明细(脱敏后无真实员工名),统一映射至 2211 '应付职工薪酬',余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:e76a959eb2db84a4d936173a90733485",
+        "row_index": 153,
+        "source_account_code": "2221010202",
+        "source_account_name_masked": "销项税13%",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 2221010202 '销项税13%' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:1689cccda5de5f410959e6ba6905609c",
+        "row_index": 76,
+        "source_account_code": "160103",
+        "source_account_name_masked": "运输设备",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 160103 '运输设备' 属于固定资产下的明细,统一映射至 160101 '固定资产-原值'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:0f7671e0119e3dc668f7df674d0fed49",
+        "row_index": 275,
+        "source_account_code": "60010302",
+        "source_account_name_masked": "加工收入",
+        "standard_account_code": "6001",
+        "standard_account_name": "其中：主营业务收入",
+        "review_reason": "源科目 60010302 '加工收入' 属于主营业务收入下的明细,统一映射至 6001 '其中:主营业务收入'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:e94b2121bb3052d75bc8db30b8d521fd",
+        "row_index": 99,
+        "source_account_code": "170201",
+        "source_account_name_masked": "土地使用权",
+        "standard_account_code": "1702",
+        "standard_account_name": "减：无形资产-累计摊销",
+        "review_reason": "客户原账 170201 '土地使用权' 在该口径下按累计摊销记录,统一映射至 1702 '减:无形资产-累计摊销'。严格语义下应映射至 170101 '无形资产-原值',此处在不破坏客户原账口径的前提下保持 1702;TASK-094E 阶段会进一步分离'无形资产原值'与'累计摊销'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:bf2765a182c45ecc2134c888a797f0cb",
+        "row_index": 300,
+        "source_account_code": "64020304",
+        "source_account_name_masked": "受托研发成本",
+        "standard_account_code": "6402",
+        "standard_account_name": "其中：其他业务成本",
+        "review_reason": "源科目 64020304 '受托研发成本' 属于其他业务成本下的明细,统一映射至 6402 '其中:其他业务成本'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:f4413534242d168a8fa56b1eb6b8c3ab",
+        "row_index": 102,
+        "source_account_code": "170205",
+        "source_account_name_masked": "软件",
+        "standard_account_code": "1702",
+        "standard_account_name": "减：无形资产-累计摊销",
+        "review_reason": "客户原账 170205 '软件' 在该口径下按累计摊销记录,统一映射至 1702。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:f1aca39281f4b850b64522451a58a66e",
+        "row_index": 347,
+        "source_account_code": "6602010206",
+        "source_account_name_masked": "社保保险",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 6602010206 '社保保险' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:20e144a086cf593eee150c70f219f6f5",
+        "row_index": 188,
+        "source_account_code": "2241021405",
+        "source_account_name_masked": "个人认缴爱心互助金",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 2241021405 '个人认缴爱心互助金' 属于其他应付款下的明细,统一映射至 2241 '其他应付款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:8079c72238ca726c7b0e12617f96ede1",
+        "row_index": 73,
+        "source_account_code": "1601",
+        "source_account_name_masked": "固定资产",
+        "standard_account_code": "160101",
+        "standard_account_name": "固定资产-原值",
+        "review_reason": "源科目 1601 '固定资产' 对应 160101 '固定资产-原值',反映固定资产账面原值,余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:6a3b4db52eaed6f55a88e4a600037456",
+        "row_index": 253,
+        "source_account_code": "5301010202",
+        "source_account_name_masked": "材料费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 5301010202 '材料费' 属于研发支出的费用化明细(已脱敏无真实员工/项目名),统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:f144cae07bcb2b2a277ce7c91ea05aad",
+        "row_index": 191,
+        "source_account_code": "2241029901",
+        "source_account_name_masked": "返还手续费",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 2241029901 '返还手续费' 属于其他应付款下的明细,统一映射至 2241 '其他应付款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:932e766503e3319ef143ce188b03f67c",
+        "row_index": 89,
+        "source_account_code": "1606",
+        "source_account_name_masked": "固定资产清理",
+        "standard_account_code": "1606",
+        "standard_account_name": "固定资产清理",
+        "review_reason": "源科目 1606 '固定资产清理' 对应标准科目 1606 '固定资产清理',反映企业因出售、报废、毁损等原因转入清理的固定资产账面价值,余额方向借方,合理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:51c2578c9e5c011f5fdd93ee6dfa027e",
+        "row_index": 266,
+        "source_account_code": "5301019999",
+        "source_account_name_masked": "其他",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 5301019999 '其他' 属于研发支出的费用化明细(已脱敏无真实员工/项目名),统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:36cb0ee24002e52a62c101b90e67a98e",
+        "row_index": 263,
+        "source_account_code": "5301019903",
+        "source_account_name_masked": "办公费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 5301019903 '办公费' 属于研发支出的费用化明细(已脱敏无真实员工/项目名),统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:195d384d33fd66246038870fe75e7cf0",
+        "row_index": 56,
+        "source_account_code": "122202",
+        "source_account_name_masked": "代收代付",
+        "standard_account_code": "122101",
+        "standard_account_name": "其他应收款",
+        "review_reason": "源科目 122202 '代收代付' 属于'其他应收款'类下的代收代付款项,旧 fixture 错误映射至 1403 原材料;正确目标为 122101 '其他应收款',反映企业受托代收代付的应收暂付款项余额。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:af6f3dcfdd7cce162008360b62db3583",
+        "row_index": 283,
+        "source_account_code": "6115",
+        "source_account_name_masked": "资产处置损益",
+        "standard_account_code": "6115",
+        "standard_account_name": "加：资产处置收益",
+        "review_reason": "源科目 6115 '资产处置损益' 对应标准科目 6115 '加:资产处置收益',反映企业出售、转让固定资产/无形资产等产生的利得或损失,余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:a6701f1caf6d2995477167fc78b30af1",
+        "row_index": 80,
+        "source_account_code": "160201",
+        "source_account_name_masked": "房屋、建筑物",
+        "standard_account_code": "1602",
+        "standard_account_name": "减：固定资产-累计折旧",
+        "review_reason": "源科目 160201 '房屋、建筑物' 在客户原账中按资产口径记录房屋建筑物净值,标准科目 1602 '减:固定资产-累计折旧' 表示累计折旧,严格来说 1601 房屋应映射至 160101 固定资产-原值;但客户原账的'1602'实际对应房屋及建筑物类别而非累计折旧,此处暂按客户口径映射至 1602;后续在 TASK-094E 由客户口径调整专项处理。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:3f1eabcf13f29e452cffee961b4754c1",
+        "row_index": 284,
+        "source_account_code": "611502",
+        "source_account_name_masked": "处置非流动资产利得",
+        "standard_account_code": "6115",
+        "standard_account_name": "加：资产处置收益",
+        "review_reason": "源科目 611502 '处置非流动资产利得' 为资产处置收益明细,统一映射至 6115。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:d0c12188d9454afcb57100a727499cd9",
+        "row_index": 151,
+        "source_account_code": "2221010107",
+        "source_account_name_masked": "代扣代缴完税凭证",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 2221010107 '代扣代缴完税凭证' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:83f25037b2ac7d2865aaf2dd5eef7f88",
+        "row_index": 127,
+        "source_account_code": "2211010101",
+        "source_account_name_masked": "月度工资",
+        "standard_account_code": "2211",
+        "standard_account_name": "应付职工薪酬",
+        "review_reason": "源科目 2211010101 '月度工资' 属于应付职工薪酬下的明细(脱敏后无真实员工名),统一映射至 2211 '应付职工薪酬',余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:7ee07e118feedcea485a9ebe4ed0d73c",
+        "row_index": 282,
+        "source_account_code": "60510399",
+        "source_account_name_masked": "其他",
+        "standard_account_code": "6051",
+        "standard_account_name": "其中：其他业务收入",
+        "review_reason": "源科目 60510399 '其他' 属于其他业务收入下的明细,统一映射至 6051 '其中:其他业务收入'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:cd3f54a8bcc2d66ae3c83adef1121619",
+        "row_index": 345,
+        "source_account_code": "660201010101",
+        "source_account_name_masked": "月度工资",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 660201010101 '月度工资' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:d2986f5837d7ab9e5c6c34ef12361f72",
+        "row_index": 156,
+        "source_account_code": "2221010209",
+        "source_account_name_masked": "销项税3%",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 2221010209 '销项税3%' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:64ea2d92535061ddc9cec01d4e569894",
+        "row_index": 131,
+        "source_account_code": "22110299",
+        "source_account_name_masked": "其他福利",
+        "standard_account_code": "2211",
+        "standard_account_name": "应付职工薪酬",
+        "review_reason": "源科目 22110299 '其他福利' 属于应付职工薪酬下的明细(脱敏后无真实员工名),统一映射至 2211 '应付职工薪酬',余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:88e41566078f3b8b485108dd028e2b59",
+        "row_index": 100,
+        "source_account_code": "170202",
+        "source_account_name_masked": "专利权",
+        "standard_account_code": "1702",
+        "standard_account_name": "减：无形资产-累计摊销",
+        "review_reason": "客户原账 170202 '专利权' 在该口径下按累计摊销记录,统一映射至 1702。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:1fadea61604a8fd423fa05fd3e66898d",
+        "row_index": 11,
+        "source_account_code": "1002010601",
+        "source_account_name_masked": "国有银行C_支行04-BANK_ACCT_REDACTED",
+        "standard_account_code": "1002",
+        "standard_account_name": "银行存款",
+        "review_reason": "原脱敏后国有银行A/B/C 支行账号,已脱敏;映射至 1002 '银行存款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:9fa006c672fa194f9ab43b85636c9f54",
+        "row_index": 101,
+        "source_account_code": "170203",
+        "source_account_name_masked": "非专利技术",
+        "standard_account_code": "1702",
+        "standard_account_name": "减：无形资产-累计摊销",
+        "review_reason": "客户原账 170203 '非专利技术' 在该口径下按累计摊销记录,统一映射至 1702。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:b0c85e0fd31637e812b289edbcfc4679",
+        "row_index": 350,
+        "source_account_code": "66020105",
+        "source_account_name_masked": "工会经费",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 66020105 '工会经费' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:d94c250be25631c1716cd8fd48d40ac8",
+        "row_index": 390,
+        "source_account_code": "660301",
+        "source_account_name_masked": "利息收支",
+        "standard_account_code": "6603",
+        "standard_account_name": "减：财务费用",
+        "review_reason": "源科目 660301 '利息收支' 属于财务费用下的利息收支大类,统一映射至 6603 '减:财务费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:05cb6ffec5c44babcd9d82d6c719f29d",
+        "row_index": 157,
+        "source_account_code": "2221010211",
+        "source_account_name_masked": "销项税2%",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 2221010211 '销项税2%' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:4fea597eae8654bd5f5474f4d1666cee",
+        "row_index": 270,
+        "source_account_code": "5301020202",
+        "source_account_name_masked": "材料费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 5301020202 '材料费' 属于研发支出的费用化明细,统一映射至 660201 '减:研发费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:d273e372b08f05f7c24c2dbc8fb12f04",
+        "row_index": 158,
+        "source_account_code": "22210105",
+        "source_account_name_masked": "转出未交增值税",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 22210105 '转出未交增值税' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:5cb4ebac83f5a542f2a51d504d5433fd",
+        "row_index": 361,
+        "source_account_code": "66020799",
+        "source_account_name_masked": "其他",
+        "standard_account_code": "6602",
+        "standard_account_name": "减：管理费用",
+        "review_reason": "源科目 66020799 '其他' 属于管理费用下的明细,统一映射至 6602 '减:管理费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:04207f221413b16f1d51d0b7fb134e36",
+        "row_index": 197,
+        "source_account_code": "22410405",
+        "source_account_name_masked": "营销部运费",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 22410405 '营销部运费' 属于其他应付款下的明细,统一映射至 2241 '其他应付款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:daa9ae3cb9fbc7043f0d458c6d35681a",
+        "row_index": 16,
+        "source_account_code": "1002011101",
+        "source_account_name_masked": "国有银行E_支行07-BANK_ACCT_REDACTED",
+        "standard_account_code": "1002",
+        "standard_account_name": "银行存款",
+        "review_reason": "原脱敏后国有银行A/B/C 支行账号,已脱敏;映射至 1002 '银行存款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:99a331f169bbdba6b448242538a24a91",
+        "row_index": 320,
+        "source_account_code": "66010110",
+        "source_account_name_masked": "销售提成",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目 66010110 '销售提成' 属于销售费用下的明细,统一映射至 6601 '减:销售费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:267ea4e3e027cf8a3e4042fbbc5a6309",
+        "row_index": 296,
+        "source_account_code": "64010303",
+        "source_account_name_masked": "运输成本",
+        "standard_account_code": "6401",
+        "standard_account_name": "其中：主营业务成本",
+        "review_reason": "源科目 64010303 '运输成本' 属于主营业务成本下的明细,统一映射至 6401 '其中:主营业务成本'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:e73ee86025c6f5585cdaaca1569ff97f",
+        "row_index": 135,
+        "source_account_code": "22110303",
+        "source_account_name_masked": "工伤保险费",
+        "standard_account_code": "2211",
+        "standard_account_name": "应付职工薪酬",
+        "review_reason": "源科目 22110303 '工伤保险费' 属于应付职工薪酬下的明细(脱敏后无真实员工名),统一映射至 2211 '应付职工薪酬',余额方向贷方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:47f4a0d6b72b6f6850d7705f4d575b0c",
+        "row_index": 271,
+        "source_account_code": "53010205",
+        "source_account_name_masked": "委托外部研究开发费用",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 53010205 '委托外部研究开发费用' 属于研发支出的费用化明细,统一映射至 660201 '减:研发费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:2180bf1b6c0044127ed895a1cc91e0bf",
+        "row_index": 92,
+        "source_account_code": "160699",
+        "source_account_name_masked": "其他设备清理",
+        "standard_account_code": "1606",
+        "standard_account_name": "固定资产清理",
+        "review_reason": "源科目 160699 '其他设备清理' 为固定资产清理的明细,统一映射至 1606 '固定资产清理'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:ce13fe5de2bf71d126054840782949c7",
+        "row_index": 228,
+        "source_account_code": "51010105",
+        "source_account_name_masked": "工会经费",
+        "standard_account_code": "5101",
+        "standard_account_name": "制造费用",
+        "review_reason": "源科目 51010105 '工会经费' 属于制造费用下的明细,统一映射至 5101 '制造费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:c01ffcfb04c8c63999a917fa0017137c",
+        "row_index": 148,
+        "source_account_code": "2221010102",
+        "source_account_name_masked": "购进农产品计算抵扣",
+        "standard_account_code": "2221",
+        "standard_account_name": "应交税费",
+        "review_reason": "源科目 2221010102 '购进农产品计算抵扣' 属于应交税费下的明细,统一映射至 2221 '应交税费'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:2c2dbc4f2f5578dda09fc01688f02ce3",
+        "row_index": 181,
+        "source_account_code": "2241020203",
+        "source_account_name_masked": "招标保证金",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 2241020203 '招标保证金' 属于其他应付款下的明细,统一映射至 2241 '其他应付款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:711ce636adba20215d19f9aad3a1541c",
+        "row_index": 262,
+        "source_account_code": "5301019902",
+        "source_account_name_masked": "差旅费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 5301019902 '差旅费' 属于研发支出的费用化明细(已脱敏无真实员工/项目名),统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:b021d194bd081d1c50e43c0f0e283347",
+        "row_index": 192,
+        "source_account_code": "2241029902",
+        "source_account_name_masked": "卸货费",
+        "standard_account_code": "2241",
+        "standard_account_name": "其他应付款",
+        "review_reason": "源科目 2241029902 '卸货费' 属于其他应付款下的明细,统一映射至 2241 '其他应付款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:2d4eb44c79c71b2068c5c81d0f67b31d",
+        "row_index": 318,
+        "source_account_code": "66010104",
+        "source_account_name_masked": "职工福利",
+        "standard_account_code": "6601",
+        "standard_account_name": "减：销售费用",
+        "review_reason": "源科目 66010104 '职工福利' 属于销售费用下的明细,统一映射至 6601 '减:销售费用'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:9834800ce651628ca1f1cdc3cc4fe9a4",
+        "row_index": 12,
+        "source_account_code": "1002010602",
+        "source_account_name_masked": "国有银行C_支行05-BANK_ACCT_REDACTED",
+        "standard_account_code": "1002",
+        "standard_account_name": "银行存款",
+        "review_reason": "原脱敏后国有银行A/B/C 支行账号,已脱敏;映射至 1002 '银行存款'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:7ed02837b98b1c0fdb2c27afdfc7aedc",
+        "row_index": 252,
+        "source_account_code": "5301010201",
+        "source_account_name_masked": "检测费",
+        "standard_account_code": "660201",
+        "standard_account_name": "减：研发费用",
+        "review_reason": "源科目 5301010201 '检测费' 属于研发支出的费用化明细(已脱敏无真实员工/项目名),统一映射至 660201 '减:研发费用',余额方向借方。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      },
+      {
+        "row_key": "sha256:17cfe0a2580a49ab462e35e841a1ea43",
+        "row_index": 91,
+        "source_account_code": "160603",
+        "source_account_name_masked": "运输设备清理",
+        "standard_account_code": "1606",
+        "standard_account_name": "固定资产清理",
+        "review_reason": "源科目 160603 '运输设备清理' 为固定资产清理的明细,统一映射至 1606 '固定资产清理'。",
+        "review_evidence": [
+          "account_code_prefix",
+          "source_account_name",
+          "parent_account_path"
+        ],
+        "reviewed_by": "reviewer_internal_id",
+        "reviewed_at": "2026-06-27",
+        "review_status": "approved",
+        "check": {
+          "ok": true,
+          "violations": []
+        }
+      }
+    ]
+  }
+}

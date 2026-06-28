@@ -1,10 +1,49 @@
 {
-  "task": "TASK-093",
-  "generated_at": "2026-06-28 13:33:24",
-  "strategy": "anchor_inheritance_v2",
-  "strategy_version": 2,
-  "baseline_commit": "59d5dba020bad7ab1194173bcc5e8f1598b5c59b",
-  "summary": {
+  "task": "TASK-094E",
+  "section": "§6/§11 最终六表 E2E 报告",
+  "generated_at": "2026-06-28T13:38:56",
+  "source": "task_093_anchor_inheritance_e2e.json (刚刚由 test_anchor_inheritance_regression.py 生成)",
+  "performance_runs": {
+    "six_table_full": {
+      "runs": [
+        274.71,
+        278.43
+      ],
+      "median": 276.57,
+      "target": 180,
+      "status": "EXCEED"
+    },
+    "file_205201": {
+      "runs": [
+        263.45,
+        249.17,
+        251.13
+      ],
+      "median": 251.13,
+      "target": 120,
+      "status": "EXCEED"
+    }
+  },
+  "performance_targets": {
+    "total_seconds": 180,
+    "file_205201_seconds": 120,
+    "per_other_file_seconds": 10
+  },
+  "red_lines": [
+    "sensitive_data_scan_zero_hits",
+    "no_auto_highest_confirm",
+    "no_auto_ignore_no_candidate",
+    "no_fixture_modification",
+    "no_skip_failed_file",
+    "all_six_files_executed",
+    "zero_unresolved_per_file",
+    "amount_difference_under_0.01_per_file_field",
+    "analyze_execute_consistent_classification",
+    "real_test_not_just_source_string",
+    "report_matches_real_run",
+    "ci_or_local_test_actually_run"
+  ],
+  "upstream_summary": {
     "files": 1,
     "executed_files": 1,
     "failed_files": 0,
@@ -31,7 +70,7 @@
     "total_t_seconds": 248.07,
     "inheritance_reduction_ratio": 0.0325
   },
-  "rows": [
+  "upstream_rows": [
     {
       "file_key": "205201",
       "file_name": "205201-2023.xls",

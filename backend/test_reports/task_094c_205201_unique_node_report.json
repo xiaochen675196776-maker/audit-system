@@ -1,6 +1,6 @@
 {
   "task": "TASK-094C",
-  "generated_at": "2026-06-28T13:01:28",
+  "generated_at": "2026-06-28T13:42:59",
   "summary": {
     "file_name": "205201-2023.xls",
     "customer_label": "205201",
@@ -23,9 +23,9 @@
     "summary_node_count": 1,
     "duplicate_binding_count": 97741,
     "raw_row_compression_ratio": 67.89,
-    "t_preview": 2.04,
-    "t_analyze": 120.34,
-    "t_total": 122.38,
+    "t_preview": 1.83,
+    "t_analyze": 110.43,
+    "t_total": 112.25,
     "analyze_status": "ok"
   }
 }
