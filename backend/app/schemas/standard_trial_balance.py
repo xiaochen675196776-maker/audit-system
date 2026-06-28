@@ -547,12 +547,28 @@ class AnalyzeRequest(BaseModel):
     customer_label: str | None = Field(None, max_length=200, description="客户标识")
     source_label: str | None = Field(None, max_length=200, description="来源标识")
     hierarchy_mode: str = Field("auto", description="层级识别模式: auto/code/indent/flat")
+    # TASK-096B：响应模式（默认 auto，根据重复绑定率自动选择）
+    # - node: 仅返回 unique_mapping_nodes + row_node_bindings + 必要 hierarchy 摘要
+    # - legacy: 返回完整 mapping_recommendations 行级列表（旧客户端）
+    # - hybrid: 两者都返回（小文件 / 调试）
+    # - auto: 服务端根据 total_rows / unique_node_count 比例自动选择（默认）
+    response_mode: str = Field(
+        "auto",
+        description="响应模式: auto / node / legacy / hybrid",
+    )
 
     @field_validator("hierarchy_mode")
     @classmethod
     def check_hierarchy_mode(cls, v: str) -> str:
         if v not in VALID_HIERARCHY_MODES:
             raise ValueError(f"不支持的层级模式: {v}，可选: {', '.join(VALID_HIERARCHY_MODES)}")
+        return v
+
+    @field_validator("response_mode")
+    @classmethod
+    def check_response_mode(cls, v: str) -> str:
+        if v not in {"auto", "node", "legacy", "hybrid"}:
+            raise ValueError(f"不支持的 response_mode: {v}，可选: auto/node/legacy/hybrid")
         return v
 
 
@@ -639,6 +655,23 @@ class RowNodeBindingResponse(BaseModel):
     is_representative: bool = False
 
 
+class AnalyzeProfileStage(BaseModel):
+    """TASK-096B：单阶段 profile"""
+    name: str
+    elapsed_seconds: float
+    input_count: int = 0
+    output_count: int = 0
+
+
+class AnalyzeProfile(BaseModel):
+    """TASK-096B：Analyze 阶段级 profile（13 个阶段）"""
+    stages: list[AnalyzeProfileStage] = Field(default_factory=list)
+    total_seconds: float = 0.0
+    response_mode: str = "auto"
+    response_mode_resolved: str = "node"
+    response_size_bytes: int = 0
+
+
 class AnalyzeResponse(BaseModel):
     """分析响应"""
     batch_id: uuid.UUID
@@ -667,6 +700,9 @@ class AnalyzeResponse(BaseModel):
     summary_node_count: int = 0
     duplicate_binding_count: int = 0
     raw_row_compression_ratio: float = 0.0
+    # TASK-096B：阶段级 profile + response_mode
+    profile: AnalyzeProfile | None = None
+    response_mode_resolved: str = "node"
 
 
 class ConfirmedMapping(BaseModel):

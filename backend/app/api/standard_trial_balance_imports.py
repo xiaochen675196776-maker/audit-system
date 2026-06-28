@@ -146,6 +146,7 @@ async def analyze(
             customer_label=body.customer_label,
             source_label=body.source_label,
             hierarchy_mode=body.hierarchy_mode,
+            response_mode=body.response_mode,
         )
         return AnalyzeResponse(**result)
     except ValueError as e:

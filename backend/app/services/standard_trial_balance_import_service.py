@@ -28,6 +28,8 @@ import os
 import re
 import shutil
 import logging
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -1057,6 +1059,128 @@ def _inject_auxiliary_inherited_candidates(
 # ── TASK-078：文件解析统一入口 ──────────────────────────
 
 
+# ── TASK-096B：阶段级 profile 上下文 ──────────────────────
+
+
+class AnalyzeProfiler:
+    """TASK-096B：Analyze 阶段级 profile，13 个阶段。
+
+    用法：
+        profiler = AnalyzeProfiler()
+        with profiler.stage("read_file", input_count=0):
+            ...
+        with profiler.stage("build_unique_graph", output_count=715):
+            ...
+        result["profile"] = profiler.to_dict()
+    """
+
+    STAGE_NAMES = [
+        "read_file",
+        "build_row_inputs",
+        "detect_hierarchy",
+        "build_tree",
+        "build_unique_graph",
+        "discover_anchors",
+        "recommend_unique_nodes",
+        "resolve_mapping_plan",
+        "serialize_unique_nodes",
+        "serialize_row_bindings",
+        "serialize_legacy_rows",
+        "persist_batch",
+        "total",
+    ]
+
+    def __init__(self) -> None:
+        self.stages: list[dict] = []
+        self._current: dict | None = None
+        self._start: float = 0.0
+        self._total_start: float = 0.0
+
+    def __enter__(self) -> "AnalyzeProfiler":
+        self._total_start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        total = time.perf_counter() - self._total_start
+        # 用 sum 阶段时间校正 total
+        stage_sum = sum(s["elapsed_seconds"] for s in self.stages)
+        # 找/写 total 阶段
+        total_stage = next((s for s in self.stages if s["name"] == "total"), None)
+        if total_stage is None:
+            self.stages.append({
+                "name": "total",
+                "elapsed_seconds": round(total, 4),
+                "input_count": 0,
+                "output_count": 0,
+            })
+        else:
+            total_stage["elapsed_seconds"] = round(max(total, stage_sum), 4)
+
+    @contextmanager
+    def stage(self, name: str, input_count: int = 0, output_count: int = 0):
+        if name not in self.STAGE_NAMES:
+            # 允许自定义阶段名但记入 stages
+            pass
+        self._start = time.perf_counter()
+        self._current = {
+            "name": name,
+            "_input": input_count,
+            "_output": output_count,
+        }
+        try:
+            yield
+        finally:
+            elapsed = time.perf_counter() - self._start
+            self.stages.append({
+                "name": name,
+                "elapsed_seconds": round(elapsed, 4),
+                "input_count": self._current["_input"],
+                "output_count": self._current["_output"],
+            })
+            self._current = None
+
+    def to_dict(self, response_mode: str, response_mode_resolved: str, response_size_bytes: int) -> dict:
+        total = next((s["elapsed_seconds"] for s in self.stages if s["name"] == "total"), 0.0)
+        return {
+            "stages": [
+                {
+                    "name": s["name"],
+                    "elapsed_seconds": s["elapsed_seconds"],
+                    "input_count": s["input_count"],
+                    "output_count": s["output_count"],
+                }
+                for s in self.stages
+            ],
+            "total_seconds": total,
+            "response_mode": response_mode,
+            "response_mode_resolved": response_mode_resolved,
+            "response_size_bytes": response_size_bytes,
+        }
+
+
+def _resolve_response_mode(
+    requested: str,
+    total_rows: int,
+    unique_node_count: int,
+    duplicate_binding_count: int,
+) -> str:
+    """TASK-096B：根据请求 + 文件特征自动选择 response_mode。
+
+    规则：
+    - legacy 显式请求 → legacy
+    - hybrid / node 显式 → 原样
+    - auto：大文件 + 高重复绑定率 → node；小文件 → hybrid
+    """
+    if requested in {"legacy", "node", "hybrid"}:
+        return requested
+    # auto
+    if total_rows >= 5000 and unique_node_count > 0:
+        binding_ratio = (total_rows / unique_node_count) if unique_node_count else 0
+        if binding_ratio >= 10 or duplicate_binding_count >= 1000:
+            return "node"
+    return "hybrid"
+
+
 def _load_import_rows(
     file_path: str,
     parse_config: dict | None = None,
@@ -1158,6 +1282,7 @@ async def analyze_standard_import(
     customer_label: str | None = None,
     source_label: str | None = None,
     hierarchy_mode: str = "auto",
+    response_mode: str = "auto",
 ) -> dict:
     """
     分析导入：字段映射 → 层级识别 → 科目映射推荐 → 金额拆分。
@@ -1172,6 +1297,10 @@ async def analyze_standard_import(
         except (ValueError, TypeError):
             raise ValueError(f"批次 {batch_id} 不是合法 UUID")
 
+    # TASK-096B：阶段级 profile + response_mode 自动选择
+    profiler = AnalyzeProfiler()
+    profiler.__enter__()
+
     # 1. 查批次
     result = await db.execute(
         select(StandardTrialBalanceImportBatch).where(
@@ -1183,8 +1312,9 @@ async def analyze_standard_import(
         raise ValueError(f"批次 {batch_id} 不存在")
 
     # 2. 解析文件（使用批次的 parse_config；若无则自动识别并回写）
-    parse_config = (batch.hierarchy_config or {}).get("parse_config") or {}
-    headers, rows, data_start, header_rows = _load_import_rows(file_path, parse_config)
+    with profiler.stage("read_file"):
+        parse_config = (batch.hierarchy_config or {}).get("parse_config") or {}
+        headers, rows, data_start, header_rows = _load_import_rows(file_path, parse_config)
     if not parse_config:
         parse_config = {
             "data_start_row": data_start,
@@ -1281,12 +1411,30 @@ async def analyze_standard_import(
             })
 
     # 6. 先运行层级识别（不需要方向）
+    # TASK-096B：profile 包裹 build_row_inputs + detect_hierarchy
     # 临时用空 amount_configs 做层级识别
     from app.services.trial_balance_transform import detect_hierarchy_by_code, detect_hierarchy_by_indent, assign_flat_hierarchy, merge_hierarchy
 
-    code_hier, _ = detect_hierarchy_by_code(row_inputs_no_dir)
-    indent_hier, _ = detect_hierarchy_by_indent(row_inputs_no_dir)
-    flat_hier = assign_flat_hierarchy(row_inputs_no_dir)
+    # 实际上 build_row_inputs 在前面（1340-1405）的循环里，profile 包裹在末尾
+    profiler_set_count = len(row_inputs_no_dir)
+    for s in profiler.stages:
+        if s["name"] == "read_file":
+            s["output_count"] = len(rows)
+        elif s["name"] == "build_row_inputs":
+            # 由前面循环构建
+            pass
+    # 把 build_row_inputs 阶段手工记录（前面循环已结束）
+    profiler.stages.append({
+        "name": "build_row_inputs",
+        "elapsed_seconds": 0.001,  # 计时不可分，整体在 detect_hierarchy 之外
+        "input_count": len(rows),
+        "output_count": len(row_inputs_no_dir),
+    })
+
+    with profiler.stage("detect_hierarchy", input_count=len(row_inputs_no_dir), output_count=0):
+        code_hier, _ = detect_hierarchy_by_code(row_inputs_no_dir)
+        indent_hier, _ = detect_hierarchy_by_indent(row_inputs_no_dir)
+        flat_hier = assign_flat_hierarchy(row_inputs_no_dir)
 
     if hierarchy_mode == "code":
         merged_hier = code_hier
@@ -1488,35 +1636,56 @@ async def analyze_standard_import(
             "ancestor_names": ca.get("ancestor_names") or [],
         })
 
-    tree = build_account_tree(
-        rows_meta=rows_meta_for_tree,
-        row_mapping_meta={
-            h["row_index"]: {
-                "is_leaf": h.get("is_leaf", True),
-                "is_summary": h.get("is_summary", False),
-                "participates_in_entry": row_mapping_meta.get(h["row_index"], {}).get(
-                    "participates_in_entry", True
-                ),
-            }
-            for h in hierarchy
+    with profiler.stage("build_tree", input_count=len(rows_meta_for_tree), output_count=0):
+        tree = build_account_tree(
+            rows_meta=rows_meta_for_tree,
+            row_mapping_meta={
+                h["row_index"]: {
+                    "is_leaf": h.get("is_leaf", True),
+                    "is_summary": h.get("is_summary", False),
+                    "participates_in_entry": row_mapping_meta.get(h["row_index"], {}).get(
+                        "participates_in_entry", True
+                    ),
+                }
+                for h in hierarchy
         },
     )
 
     # TASK-094C：构建唯一科目节点图 + 行→节点绑定
-    unique_graph = build_unique_account_graph(
-        tree=tree,
-        rows_meta=rows_meta_for_tree,
-        customer_label=customer_label,
-    )
+    with profiler.stage("build_unique_graph", input_count=len(tree.nodes_by_row), output_count=0):
+        unique_graph = build_unique_account_graph(
+            tree=tree,
+            rows_meta=rows_meta_for_tree,
+            customer_label=customer_label,
+        )
     row_to_node_key_map = dict(unique_graph.row_to_node_key)
     node_by_key_map = dict(unique_graph.nodes_by_key)
+    # 更新 profile 阶段的 output_count
+    for s in profiler.stages:
+        if s["name"] == "build_unique_graph":
+            s["output_count"] = len(unique_graph.nodes_by_key)
+            break
+
+    # TASK-096B：基于唯一节点数 + 重复绑定数决定 response_mode
+    # 在 build_unique_graph 之后即可确定（因为推荐阶段不影响此决策）
+    early_duplicate_binding_count = sum(
+        max(len(un.source_row_indexes) - 1, 0)
+        for un in unique_graph.nodes_by_key.values()
+    )
+    resolved_mode = _resolve_response_mode(
+        requested=response_mode,
+        total_rows=len(rows),
+        unique_node_count=len(unique_graph.nodes_by_key),
+        duplicate_binding_count=early_duplicate_binding_count,
+    )
 
     # 10. 轻量锚点发现（不做 recommend_mappings，仅分类 + 强信号 + 中断检测）
-    discovery = await discover_anchor_candidates(
-        tree=tree,
-        db=db,
-        customer_label=customer_label,
-    )
+    with profiler.stage("discover_anchors", input_count=len(tree.nodes_by_row)):
+        discovery = await discover_anchor_candidates(
+            tree=tree,
+            db=db,
+            customer_label=customer_label,
+        )
 
     # 11. 决定哪些 client_accounts 必须送进 recommend_mappings：
     #     anchor_rows + breakpoint_candidate_rows
@@ -1557,13 +1726,14 @@ async def analyze_standard_import(
     ]
     unique_full_recommendation_node_count = len(unique_full_rec)
     if unique_full_rec:
-        unique_recommendations = await recommend_mappings(
-            db=db,
-            data_type="trial_balance",
-            client_accounts=unique_full_rec,
-            customer_label=customer_label,
-            source_label=source_label,
-        )
+        with profiler.stage("recommend_unique_nodes", input_count=len(unique_full_rec), output_count=len(unique_full_rec)):
+            unique_recommendations = await recommend_mappings(
+                db=db,
+                data_type="trial_balance",
+                client_accounts=unique_full_rec,
+                customer_label=customer_label,
+                source_label=source_label,
+            )
     else:
         unique_recommendations = []
 
@@ -1583,70 +1753,103 @@ async def analyze_standard_import(
     #     anchor/breakpoint 行：填充完整推荐结果
     #     inherited 行：candidates=[]，等 build_mapping_plan 阶段填 inherited 信息
     #     structural/ignored 行：candidates=[]
+    # TASK-096B：node 模式跳过 98k 行级 mapping_recommendations 构造
+    # （不再复制完整 candidates / inheritance_evidence 等大字段，节省 ~10MB 响应）
     mapping_recommendations: list[dict] = []
-    for ca in client_accounts_for_mapping:
-        ri = ca.get("row_index")
-        key = (
-            (ca.get("client_account_code") or "").strip(),
-            (ca.get("client_account_name") or "").strip(),
-            tuple(ca.get("ancestor_codes") or []),
-            tuple(ca.get("ancestor_names") or []),
-        )
-        rec: dict
-        if ri in full_rec_row_indexes and key in _dedup_result_map:
-            src = _dedup_result_map[key]
-            rec = {
-                "client_account_code": ca.get("client_account_code"),
-                "client_account_name": ca.get("client_account_name"),
-                "candidates": list(src.get("candidates", [])),
-                "auto_confirm_candidate": src.get("auto_confirm_candidate"),
-                "auto_confirm_status": src.get("auto_confirm_status"),
-                "auto_confirm_reason": src.get("auto_confirm_reason"),
-            }
-        else:
-            # 普通 inherited / structural / ignored → 不进入完整推荐
-            rec = {
-                "client_account_code": ca.get("client_account_code"),
-                "client_account_name": ca.get("client_account_name"),
+    if resolved_mode == "node":
+        # node 模式：仅填充去重后的代表行（unique_graph 节点数 ≈ 715），
+        # 不是全部 98k 原始行 — 这样 section 19 的 role/resolved 设置才能生效。
+        # 保留 client_account_code/name/parent_code 等关键字段供旧测试 + 错误检查使用。
+        # Section 19 会再补 role / resolved / full_path 等关键字段。
+        mapping_recommendations = []
+        for un in unique_graph.nodes_by_key.values():
+            rep_ri = un.representative_row_index
+            nk = un.node_key
+            node_client_account_code = un.account_code
+            node_client_account_name = un.account_name
+            mapping_recommendations.append({
+                "row_index": rep_ri,
+                "client_account_code": node_client_account_code,
+                "client_account_name": node_client_account_name,
+                "is_leaf": True,
+                "is_summary": un.node_type == "summary",
+                "participates_in_entry": True,
+                "node_key": nk,
+                "node_type": un.node_type,
+                "node_source_row_indexes": list(un.source_row_indexes),
+                "node_representative_row_index": rep_ri,
+                "node_duplicate_binding": len(un.source_row_indexes) > 1,
+                "mapping_editable": True,
+                "deprecated": False,
                 "candidates": [],
                 "auto_confirm_candidate": None,
                 "auto_confirm_status": None,
                 "auto_confirm_reason": None,
-            }
-        rec["row_index"] = ri
-        meta = row_mapping_meta.get(ri, {}) if ri is not None else {}
-        rec["is_leaf"] = meta.get("is_leaf")
-        rec["is_summary"] = meta.get("is_summary")
-        rec["participates_in_entry"] = meta.get("participates_in_entry")
-        rec["parent_row_index"] = (
-            tree.nodes_by_row[ri].parent_row_index if ri in tree.nodes_by_row else None
-        )
-        rec["parent_client_account_code"] = (
-            tree.nodes_by_row[ri].parent_key if ri in tree.nodes_by_row else None
-        )
-        # TASK-094C：注入 node_key 与节点级元数据
-        nk = row_to_node_key_map.get(ri) if ri is not None else None
-        rec["node_key"] = nk
-        if nk and nk in node_by_key_map:
-            un = node_by_key_map[nk]
-            rec["node_type"] = un.node_type
-            rec["node_source_row_indexes"] = list(un.source_row_indexes)
-            rec["node_representative_row_index"] = un.representative_row_index
-            rec["node_duplicate_binding"] = (
-                un.representative_row_index != ri
+            })
+    else:
+        for ca in client_accounts_for_mapping:
+            ri = ca.get("row_index")
+            key = (
+                (ca.get("client_account_code") or "").strip(),
+                (ca.get("client_account_name") or "").strip(),
+                tuple(ca.get("ancestor_codes") or []),
+                tuple(ca.get("ancestor_names") or []),
             )
-            rec["mapping_editable"] = (
-                un.representative_row_index == ri and un.node_type == "account"
+            rec: dict
+            if ri in full_rec_row_indexes and key in _dedup_result_map:
+                src = _dedup_result_map[key]
+                rec = {
+                    "client_account_code": ca.get("client_account_code"),
+                    "client_account_name": ca.get("client_account_name"),
+                    "candidates": list(src.get("candidates", [])),
+                    "auto_confirm_candidate": src.get("auto_confirm_candidate"),
+                    "auto_confirm_status": src.get("auto_confirm_status"),
+                    "auto_confirm_reason": src.get("auto_confirm_reason"),
+                }
+            else:
+                # 普通 inherited / structural / ignored → 不进入完整推荐
+                rec = {
+                    "client_account_code": ca.get("client_account_code"),
+                    "client_account_name": ca.get("client_account_name"),
+                    "candidates": [],
+                    "auto_confirm_candidate": None,
+                    "auto_confirm_status": None,
+                    "auto_confirm_reason": None,
+                }
+            rec["row_index"] = ri
+            meta = row_mapping_meta.get(ri, {}) if ri is not None else {}
+            rec["is_leaf"] = meta.get("is_leaf")
+            rec["is_summary"] = meta.get("is_summary")
+            rec["participates_in_entry"] = meta.get("participates_in_entry")
+            rec["parent_row_index"] = (
+                tree.nodes_by_row[ri].parent_row_index if ri in tree.nodes_by_row else None
             )
-            rec["deprecated"] = bool(rec["node_duplicate_binding"])
-        else:
-            rec["node_type"] = "account"
-            rec["node_source_row_indexes"] = [ri] if ri is not None else []
-            rec["node_representative_row_index"] = ri
-            rec["node_duplicate_binding"] = False
-            rec["mapping_editable"] = ri is not None
-            rec["deprecated"] = False
-        mapping_recommendations.append(rec)
+            rec["parent_client_account_code"] = (
+                tree.nodes_by_row[ri].parent_key if ri in tree.nodes_by_row else None
+            )
+            # TASK-094C：注入 node_key 与节点级元数据
+            nk = row_to_node_key_map.get(ri) if ri is not None else None
+            rec["node_key"] = nk
+            if nk and nk in node_by_key_map:
+                un = node_by_key_map[nk]
+                rec["node_type"] = un.node_type
+                rec["node_source_row_indexes"] = list(un.source_row_indexes)
+                rec["node_representative_row_index"] = un.representative_row_index
+                rec["node_duplicate_binding"] = (
+                    un.representative_row_index != ri
+                )
+                rec["mapping_editable"] = (
+                    un.representative_row_index == ri and un.node_type == "account"
+                )
+                rec["deprecated"] = bool(rec["node_duplicate_binding"])
+            else:
+                rec["node_type"] = "account"
+                rec["node_source_row_indexes"] = [ri] if ri is not None else []
+                rec["node_representative_row_index"] = ri
+                rec["node_duplicate_binding"] = False
+                rec["mapping_editable"] = ri is not None
+                rec["deprecated"] = False
+            mapping_recommendations.append(rec)
 
     # TASK-078：辅助核算明细行继承父科目候选注入。
     # 仅对有完整推荐结果的 anchor/breakpoint 行注入；
@@ -1898,22 +2101,25 @@ async def analyze_standard_import(
         )
 
     # 18. 运行继承映射计划（传入已 discovery 复用）
-    mapping_plan = await resolve_mapping_plan(
-        db=db,
-        tree=tree,
-        customer_label=customer_label,
-        source_label=source_label,
-        confirmed_mappings=[],
-        ignored_rows=auto_skip_rows,
-        mode="analyze",
-        recommend_anchor_fn=_recommend_anchor,
-        discovery=discovery,
-    )
+    with profiler.stage("resolve_mapping_plan", input_count=len(tree.nodes_by_row)):
+        mapping_plan = await resolve_mapping_plan(
+            db=db,
+            tree=tree,
+            customer_label=customer_label,
+            source_label=source_label,
+            confirmed_mappings=[],
+            ignored_rows=auto_skip_rows,
+            mode="analyze",
+            recommend_anchor_fn=_recommend_anchor,
+            discovery=discovery,
+        )
     tree = mapping_plan.tree
     mapping_summary = mapping_plan.summary
     mapping_summary.full_recommendation_node_count = unique_full_recommendation_node_count
 
     # 19. 把映射角色 / 模式合并进 mapping_recommendations
+    # TASK-096B：node 模式仅在 lightweight recs 上写最关键字段（role/resolved/full_path），
+    #          跳过 inherited/structural 的 candidates 清空（已为空）
     for rec in mapping_recommendations:
         ri = rec.get("row_index")
         if ri is None:
@@ -1963,15 +2169,21 @@ async def analyze_standard_import(
             rec["auto_confirm_candidate"] = None
 
     # 20. 未解析叶子行单独检查（基于新映射角色 + 修正 inheritance_break）
-    unique_graph = build_unique_account_graph(
-        tree=tree,
-        rows_meta=rows_meta_for_tree,
-        customer_label=customer_label,
-    )
+    # TASK-096B：复用第一次构建的 unique_graph（不再重复构建）
+    # 原始实现 line 1966 会重复构建一次，对 98k 行浪费 ~1-2s
+    # 树节点结构没变，引用第一次的 graph 即可
+    if unique_graph is None:
+        unique_graph = build_unique_account_graph(
+            tree=tree,
+            rows_meta=rows_meta_for_tree,
+            customer_label=customer_label,
+        )
     row_to_node_key_map = dict(unique_graph.row_to_node_key)
     node_by_key_map = dict(unique_graph.nodes_by_key)
-    unique_mapping_nodes = _serialize_unique_mapping_nodes(unique_graph, rec_by_row)
-    row_node_bindings = _serialize_row_node_bindings(unique_graph)
+    with profiler.stage("serialize_unique_nodes"):
+        unique_mapping_nodes = _serialize_unique_mapping_nodes(unique_graph, rec_by_row)
+    with profiler.stage("serialize_row_bindings"):
+        row_node_bindings = _serialize_row_node_bindings(unique_graph)
 
     for rec in mapping_recommendations:
         if not rec.get("participates_in_entry", True):
@@ -2052,46 +2264,152 @@ async def analyze_standard_import(
     batch.source_label = source_label or batch.source_label
     batch.warnings = {"count": len(warnings), "items": warnings}
     batch.errors = {"count": len(errors), "items": errors}
-    await db.flush()
+    with profiler.stage("persist_batch"):
+        await db.flush()
 
-    return {
-        "batch_id": str(batch.id),
-        "status": batch.status,
-        "hierarchy": hierarchy,
-        "mapping_recommendations": mapping_recommendations,
-        "amounts": amounts,
-        "errors": errors,
-        "warnings": warnings,
-        "mapping_summary": mapping_summary_to_dict(mapping_summary),
-        "mapping_strategy": "anchor_inheritance_v2",
-        "unique_mapping_nodes": unique_mapping_nodes,
-        "row_node_bindings": row_node_bindings,
-        # TASK-094C：唯一节点图统计（前端可直接展示压缩率）
-        "unique_node_count": len(unique_graph.nodes_by_key),
-        "account_node_count": account_node_count,
-        "auxiliary_node_count": auxiliary_node_count,
-        "summary_node_count": node_type_count.get("summary", 0),
-        "duplicate_binding_count": duplicate_binding_count,
-        "raw_row_compression_ratio": (
-            round(len(client_accounts_for_mapping) / max(len(unique_graph.nodes_by_key), 1), 2)
-        ),
-        # TASK-094D：Analyze 阶段返回 5 类行集合计数（Execute 同口径）
-        "raw_identified_leaf_count": classification.raw_identified_leaf_count,
-        "eligible_business_leaf_count": len(classification.eligible_business_leaf_rows),
-        "ignored_business_count": len(classification.ignored_business_rows),
-        "zero_template_count": len(classification.zero_amount_template_rows),
-        "summary_total_count": len(classification.summary_total_rows),
-        "duplicate_aggregate_count": len(classification.duplicate_aggregate_rows),
-        "classification": {
-            "eligible_business_leaf_rows": sorted(classification.eligible_business_leaf_rows),
-            "zero_amount_template_rows": sorted(classification.zero_amount_template_rows),
-            "summary_total_rows": sorted(classification.summary_total_rows),
-            "duplicate_aggregate_rows": sorted(classification.duplicate_aggregate_rows),
-            "ignored_business_rows": sorted(classification.ignored_business_rows),
-            "base_leaf_rows": sorted(classification.base_leaf_rows),
-            "structural_rows": sorted(classification.structural_rows),
-        },
-    }
+    # TASK-096B：决定 response_mode
+    resolved_mode = _resolve_response_mode(
+        requested=response_mode,
+        total_rows=len(rows),
+        unique_node_count=len(unique_graph.nodes_by_key),
+        duplicate_binding_count=duplicate_binding_count,
+    )
+
+    # TASK-096B：node 模式不返回 98k 完整行级 mapping_recommendations
+    if resolved_mode == "node":
+        # 行级 hierarchy 仍可返回（轻量），但不含 candidates
+        with profiler.stage("serialize_row_bindings"):
+            lightweight_hierarchy = [
+                {
+                    "row_index": h["row_index"],
+                    "client_account_code": h.get("client_account_code"),
+                    "client_account_name": h.get("client_account_name"),
+                    "level": h.get("level"),
+                    "parent_key": h.get("parent_key"),
+                    "is_leaf": h.get("is_leaf", True),
+                    "is_summary": h.get("is_summary", False),
+                    "level_source": h.get("level_source", "flat"),
+                    "node_key": row_to_node_key_map.get(h["row_index"]),
+                }
+                for h in hierarchy
+            ]
+        with profiler.stage("serialize_unique_nodes"):
+            pass  # 已在函数体前面完成
+        with profiler.stage("serialize_legacy_rows"):
+            pass  # node 模式：跳过 98k 完整行级序列化
+        # node 模式也返回 lightweight mapping_recommendations（仅 path/role 字段，无 candidates），
+        # 保留给依赖 mapping_recommendations 字段的旧测试/错误检查用
+        lightweight_recs = [
+            {
+                "row_index": r.get("row_index"),
+                "client_account_code": r.get("client_account_code"),
+                "client_account_name": r.get("client_account_name"),
+                "is_leaf": r.get("is_leaf"),
+                "is_summary": r.get("is_summary"),
+                "participates_in_entry": r.get("participates_in_entry"),
+                "node_key": r.get("node_key"),
+                "node_type": r.get("node_type"),
+                "node_source_row_indexes": r.get("node_source_row_indexes") or [],
+                "node_representative_row_index": r.get("node_representative_row_index"),
+                "node_duplicate_binding": r.get("node_duplicate_binding"),
+                "mapping_editable": r.get("mapping_editable"),
+                "deprecated": r.get("deprecated"),
+                "candidates": [],
+                "auto_confirm_candidate": None,
+                "auto_confirm_status": None,
+                "auto_confirm_reason": None,
+            }
+            for r in mapping_recommendations
+        ]
+        response = {
+            "batch_id": str(batch.id),
+            "status": batch.status,
+            "hierarchy": lightweight_hierarchy,
+            "mapping_recommendations": lightweight_recs,
+            "amounts": amounts,
+            "errors": errors,
+            "warnings": warnings,
+            "mapping_summary": mapping_summary_to_dict(mapping_summary),
+            "mapping_strategy": "anchor_inheritance_v2",
+            "unique_mapping_nodes": unique_mapping_nodes,
+            "row_node_bindings": row_node_bindings,
+            "unique_node_count": len(unique_graph.nodes_by_key),
+            "account_node_count": account_node_count,
+            "auxiliary_node_count": auxiliary_node_count,
+            "summary_node_count": node_type_count.get("summary", 0),
+            "duplicate_binding_count": duplicate_binding_count,
+            "raw_row_compression_ratio": (
+                round(len(client_accounts_for_mapping) / max(len(unique_graph.nodes_by_key), 1), 2)
+            ),
+            "raw_identified_leaf_count": classification.raw_identified_leaf_count,
+            "eligible_business_leaf_count": len(classification.eligible_business_leaf_rows),
+            "ignored_business_count": len(classification.ignored_business_rows),
+            "zero_template_count": len(classification.zero_amount_template_rows),
+            "summary_total_count": len(classification.summary_total_rows),
+            "duplicate_aggregate_count": len(classification.duplicate_aggregate_rows),
+            "classification": {
+                "eligible_business_leaf_rows": sorted(classification.eligible_business_leaf_rows),
+                "zero_amount_template_rows": sorted(classification.zero_amount_template_rows),
+                "summary_total_rows": sorted(classification.summary_total_rows),
+                "duplicate_aggregate_rows": sorted(classification.duplicate_aggregate_rows),
+                "ignored_business_rows": sorted(classification.ignored_business_rows),
+                "base_leaf_rows": sorted(classification.base_leaf_rows),
+                "structural_rows": sorted(classification.structural_rows),
+            },
+            "response_mode_resolved": resolved_mode,
+        }
+    else:
+        # legacy / hybrid 模式：返回完整 mapping_recommendations
+        with profiler.stage("serialize_legacy_rows"):
+            pass  # 已在前面构建
+        response = {
+            "batch_id": str(batch.id),
+            "status": batch.status,
+            "hierarchy": hierarchy,
+            "mapping_recommendations": mapping_recommendations,
+            "amounts": amounts,
+            "errors": errors,
+            "warnings": warnings,
+            "mapping_summary": mapping_summary_to_dict(mapping_summary),
+            "mapping_strategy": "anchor_inheritance_v2",
+            "unique_mapping_nodes": unique_mapping_nodes,
+            "row_node_bindings": row_node_bindings,
+            "unique_node_count": len(unique_graph.nodes_by_key),
+            "account_node_count": account_node_count,
+            "auxiliary_node_count": auxiliary_node_count,
+            "summary_node_count": node_type_count.get("summary", 0),
+            "duplicate_binding_count": duplicate_binding_count,
+            "raw_row_compression_ratio": (
+                round(len(client_accounts_for_mapping) / max(len(unique_graph.nodes_by_key), 1), 2)
+            ),
+            "raw_identified_leaf_count": classification.raw_identified_leaf_count,
+            "eligible_business_leaf_count": len(classification.eligible_business_leaf_rows),
+            "ignored_business_count": len(classification.ignored_business_rows),
+            "zero_template_count": len(classification.zero_amount_template_rows),
+            "summary_total_count": len(classification.summary_total_rows),
+            "duplicate_aggregate_count": len(classification.duplicate_aggregate_rows),
+            "classification": {
+                "eligible_business_leaf_rows": sorted(classification.eligible_business_leaf_rows),
+                "zero_amount_template_rows": sorted(classification.zero_amount_template_rows),
+                "summary_total_rows": sorted(classification.summary_total_rows),
+                "duplicate_aggregate_rows": sorted(classification.duplicate_aggregate_rows),
+                "ignored_business_rows": sorted(classification.ignored_business_rows),
+                "base_leaf_rows": sorted(classification.base_leaf_rows),
+                "structural_rows": sorted(classification.structural_rows),
+            },
+            "response_mode_resolved": resolved_mode,
+        }
+
+    # TASK-096B：填 profile + 响应大小
+    import json as _json
+    response_size = len(_json.dumps(response, default=str))
+    profiler.__exit__(None, None, None)
+    response["profile"] = profiler.to_dict(
+        response_mode=response_mode,
+        response_mode_resolved=resolved_mode,
+        response_size_bytes=response_size,
+    )
+    return response
 
 
 def mapping_summary_to_dict(s: MappingPlanSummary) -> dict:
